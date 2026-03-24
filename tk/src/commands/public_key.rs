@@ -1,5 +1,6 @@
 use clap::Args as ClapArgs;
 
+/// Arguments for the `tk public-key` subcommand.
 #[derive(Debug, ClapArgs)]
 #[command(about, long_about = None)]
 pub struct Args {}

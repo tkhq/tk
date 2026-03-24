@@ -9,6 +9,7 @@ use tokio::process::Command;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
+use turnkey_auth::config::default_config_dir_from_home;
 use turnkey_auth::ssh;
 use turnkey_auth::ssh::protocol;
 use wiremock::matchers::{header_exists, method, path};
@@ -23,7 +24,7 @@ const OVERSIZED_FRAME_LENGTH: usize = 1 << 20;
 
 #[tokio::test]
 async fn ssh_agent_start_reports_running_status() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let pid_file_path = temp.path().join("auth.sock.pid");
 
@@ -51,12 +52,8 @@ async fn ssh_agent_start_reports_running_status() {
         .env("TURNKEY_API_BASE_URL", server.uri())
         .output()
         .await
-        .expect("tk ssh-agent start should run");
-    assert!(
-        output.status.success(),
-        "start should succeed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+        .unwrap();
+    assert!(output.status.success());
 
     wait_for_path(&socket_path).await;
     wait_for_path(&pid_file_path).await;
@@ -70,17 +67,9 @@ async fn ssh_agent_start_reports_running_status() {
         .arg(&pid_file_path)
         .output()
         .await
-        .expect("tk ssh-agent status should run");
-    assert!(
-        status.status.success(),
-        "status should succeed: {}",
-        String::from_utf8_lossy(&status.stderr)
-    );
-    assert!(
-        String::from_utf8_lossy(&status.stdout).contains("running"),
-        "status stdout should mention running: {}",
-        String::from_utf8_lossy(&status.stdout)
-    );
+        .unwrap();
+    assert!(status.status.success());
+    assert!(String::from_utf8_lossy(&status.stdout).contains("running"));
 
     let stop = Command::new(env!("CARGO_BIN_EXE_tk"))
         .arg("ssh-agent")
@@ -91,17 +80,13 @@ async fn ssh_agent_start_reports_running_status() {
         .arg(&pid_file_path)
         .output()
         .await
-        .expect("tk ssh-agent stop should run");
-    assert!(
-        stop.status.success(),
-        "stop should succeed: {}",
-        String::from_utf8_lossy(&stop.stderr)
-    );
+        .unwrap();
+    assert!(stop.status.success());
 }
 
 #[tokio::test]
 async fn ssh_agent_start_uses_default_socket_path_when_socket_is_omitted() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let home = temp.path();
     let socket_path = default_socket_path(home);
     let pid_file_path = socket_path.with_extension("sock.pid");
@@ -110,7 +95,24 @@ async fn ssh_agent_start_uses_default_socket_path_when_socket_is_omitted() {
     mount_get_private_key_mock(&server, &hex::encode(TURNKEY_TEST_PUBLIC_KEY)).await;
 
     let api_key = TurnkeyP256ApiKey::generate();
-    let output = run_agent_command_with_home(&["start"], home, &server, &api_key).await;
+    let output = Command::new(env!("CARGO_BIN_EXE_tk"))
+        .arg("ssh-agent")
+        .arg("start")
+        .env("HOME", home)
+        .env("TURNKEY_ORGANIZATION_ID", "org-id")
+        .env(
+            "TURNKEY_API_PUBLIC_KEY",
+            hex::encode(api_key.compressed_public_key()),
+        )
+        .env(
+            "TURNKEY_API_PRIVATE_KEY",
+            hex::encode(api_key.private_key()),
+        )
+        .env("TURNKEY_PRIVATE_KEY_ID", "pk-id")
+        .env("TURNKEY_API_BASE_URL", server.uri())
+        .output()
+        .await
+        .unwrap();
     assert!(
         output.status.success(),
         "start should succeed: {}",
@@ -120,7 +122,24 @@ async fn ssh_agent_start_uses_default_socket_path_when_socket_is_omitted() {
     wait_for_path(&socket_path).await;
     wait_for_path(&pid_file_path).await;
 
-    let status = run_agent_command_with_home(&["status"], home, &server, &api_key).await;
+    let status = Command::new(env!("CARGO_BIN_EXE_tk"))
+        .arg("ssh-agent")
+        .arg("status")
+        .env("HOME", home)
+        .env("TURNKEY_ORGANIZATION_ID", "org-id")
+        .env(
+            "TURNKEY_API_PUBLIC_KEY",
+            hex::encode(api_key.compressed_public_key()),
+        )
+        .env(
+            "TURNKEY_API_PRIVATE_KEY",
+            hex::encode(api_key.private_key()),
+        )
+        .env("TURNKEY_PRIVATE_KEY_ID", "pk-id")
+        .env("TURNKEY_API_BASE_URL", server.uri())
+        .output()
+        .await
+        .unwrap();
     assert!(
         status.status.success(),
         "status should succeed: {}",
@@ -132,7 +151,24 @@ async fn ssh_agent_start_uses_default_socket_path_when_socket_is_omitted() {
         String::from_utf8_lossy(&status.stdout)
     );
 
-    let stop = run_agent_command_with_home(&["stop"], home, &server, &api_key).await;
+    let stop = Command::new(env!("CARGO_BIN_EXE_tk"))
+        .arg("ssh-agent")
+        .arg("stop")
+        .env("HOME", home)
+        .env("TURNKEY_ORGANIZATION_ID", "org-id")
+        .env(
+            "TURNKEY_API_PUBLIC_KEY",
+            hex::encode(api_key.compressed_public_key()),
+        )
+        .env(
+            "TURNKEY_API_PRIVATE_KEY",
+            hex::encode(api_key.private_key()),
+        )
+        .env("TURNKEY_PRIVATE_KEY_ID", "pk-id")
+        .env("TURNKEY_API_BASE_URL", server.uri())
+        .output()
+        .await
+        .unwrap();
     assert!(
         stop.status.success(),
         "stop should succeed: {}",
@@ -142,7 +178,7 @@ async fn ssh_agent_start_uses_default_socket_path_when_socket_is_omitted() {
 
 #[tokio::test]
 async fn ssh_agent_start_rejects_duplicate_process() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let pid_file_path = temp.path().join("auth.sock.pid");
 
@@ -166,17 +202,13 @@ async fn ssh_agent_start_rejects_duplicate_process() {
         &api_key,
     )
     .await;
-    assert!(!output.status.success(), "duplicate start should fail");
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("already running"),
-        "duplicate start stderr should mention already running: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("already running"));
 }
 
 #[tokio::test]
 async fn ssh_agent_stop_terminates_background_process() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let pid_file_path = temp.path().join("auth.sock.pid");
 
@@ -200,25 +232,11 @@ async fn ssh_agent_stop_terminates_background_process() {
         &api_key,
     )
     .await;
-    assert!(
-        stop.status.success(),
-        "stop should succeed: {}",
-        String::from_utf8_lossy(&stop.stderr)
-    );
+    assert!(stop.status.success());
 
     child.wait_for_exit().await;
-    assert!(
-        !fs::try_exists(&socket_path)
-            .await
-            .expect("socket path should be readable"),
-        "socket should be removed after stop"
-    );
-    assert!(
-        !fs::try_exists(&pid_file_path)
-            .await
-            .expect("pid file path should be readable"),
-        "pid file should be removed after stop"
-    );
+    assert!(!fs::try_exists(&socket_path).await.unwrap());
+    assert!(!fs::try_exists(&pid_file_path).await.unwrap());
 
     let status = run_agent_command(
         &[
@@ -232,18 +250,16 @@ async fn ssh_agent_stop_terminates_background_process() {
         &api_key,
     )
     .await;
-    assert!(!status.status.success(), "status should fail after stop");
+    assert!(!status.status.success());
 }
 
 #[tokio::test]
 async fn ssh_agent_start_recovers_from_stale_pid_file() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let pid_file_path = temp.path().join("auth.sock.pid");
 
-    fs::write(&pid_file_path, "999999\n")
-        .await
-        .expect("stale pid file should be writable");
+    fs::write(&pid_file_path, "999999\n").await.unwrap();
 
     let server = MockServer::start().await;
     mount_get_private_key_mock(&server, &hex::encode(TURNKEY_TEST_PUBLIC_KEY)).await;
@@ -257,12 +273,11 @@ async fn ssh_agent_start_recovers_from_stale_pid_file() {
 
 #[tokio::test]
 async fn ssh_agent_start_does_not_report_ready_from_stale_socket() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let pid_file_path = temp.path().join("auth.sock.pid");
 
-    let stale_listener =
-        tokio::net::UnixListener::bind(&socket_path).expect("stale socket should bind");
+    let stale_listener = tokio::net::UnixListener::bind(&socket_path).unwrap();
     drop(stale_listener);
 
     let output = Command::new(env!("CARGO_BIN_EXE_tk"))
@@ -280,35 +295,24 @@ async fn ssh_agent_start_does_not_report_ready_from_stale_socket() {
         .env_remove("TURNKEY_API_BASE_URL")
         .output()
         .await
-        .expect("tk ssh-agent start should run");
+        .unwrap();
 
-    assert!(
-        !output.status.success(),
-        "start should fail without agent configuration"
-    );
-    assert!(
-        !fs::try_exists(&pid_file_path)
-            .await
-            .expect("pid file path should be readable"),
-        "pid file should be removed after failed start"
-    );
+    assert!(!output.status.success());
+    assert!(!fs::try_exists(&pid_file_path).await.unwrap());
 }
 
 #[tokio::test]
 async fn ssh_agent_stop_does_not_kill_unowned_live_pid() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let pid_file_path = temp.path().join("auth.sock.pid");
 
-    let mut unrelated = Command::new("sleep")
-        .arg("30")
-        .spawn()
-        .expect("sleep should spawn");
-    let unrelated_pid = unrelated.id().expect("sleep pid should be available");
+    let mut unrelated = Command::new("sleep").arg("30").spawn().unwrap();
+    let unrelated_pid = unrelated.id().unwrap();
 
     fs::write(&pid_file_path, format!("{unrelated_pid}\n"))
         .await
-        .expect("stale pid file should be writable");
+        .unwrap();
 
     let server = MockServer::start().await;
     let api_key = TurnkeyP256ApiKey::generate();
@@ -325,31 +329,17 @@ async fn ssh_agent_stop_does_not_kill_unowned_live_pid() {
     )
     .await;
 
-    assert!(
-        stop.status.success(),
-        "stop should treat unowned pid state as stale: {}",
-        String::from_utf8_lossy(&stop.stderr)
-    );
-    assert!(
-        String::from_utf8_lossy(&stop.stdout).contains("not running"),
-        "stop stdout should report stale state: {}",
-        String::from_utf8_lossy(&stop.stdout)
-    );
-    assert!(
-        unrelated
-            .try_wait()
-            .expect("sleep status should be readable")
-            .is_none(),
-        "stop should not signal an unrelated live pid"
-    );
+    assert!(stop.status.success());
+    assert!(String::from_utf8_lossy(&stop.stdout).contains("not running"));
+    assert!(unrelated.try_wait().unwrap().is_none());
 
-    unrelated.start_kill().expect("sleep should be killable");
-    let _ = unrelated.wait().await.expect("sleep should exit");
+    unrelated.start_kill().unwrap();
+    let _ = unrelated.wait().await.unwrap();
 }
 
 #[tokio::test]
 async fn ssh_agent_lists_identity_and_signs_for_configured_key() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let public_key_blob = public_key_blob(&TURNKEY_TEST_PUBLIC_KEY);
 
@@ -381,14 +371,9 @@ async fn ssh_agent_lists_identity_and_signs_for_configured_key() {
         protocol::encode_sign_response(&TURNKEY_TEST_SIGNATURE).unwrap()
     );
 
-    let requests = server
-        .received_requests()
-        .await
-        .expect("request recording should be enabled");
+    let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 2);
-    let sign_request_body: serde_json::Value = requests[1]
-        .body_json()
-        .expect("sign request body should be valid JSON");
+    let sign_request_body: serde_json::Value = requests[1].body_json().unwrap();
     assert_eq!(
         sign_request_body["parameters"]["payload"],
         hex::encode(challenge)
@@ -405,7 +390,7 @@ async fn ssh_agent_lists_identity_and_signs_for_configured_key() {
 
 #[tokio::test]
 async fn ssh_agent_rejects_other_keys_and_unsupported_messages() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let other_public_key_blob = public_key_blob(&[0x11; 32]);
 
@@ -432,16 +417,13 @@ async fn ssh_agent_rejects_other_keys_and_unsupported_messages() {
         protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[])
     );
 
-    let requests = server
-        .received_requests()
-        .await
-        .expect("request recording should be enabled");
+    let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
 }
 
 #[tokio::test]
 async fn ssh_agent_contains_malformed_clients_and_keeps_serving() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let public_key_blob = public_key_blob(&TURNKEY_TEST_PUBLIC_KEY);
 
@@ -454,9 +436,7 @@ async fn ssh_agent_contains_malformed_clients_and_keeps_serving() {
 
     send_partial_frame_then_disconnect(&socket_path).await;
     sleep(Duration::from_millis(150)).await;
-    child
-        .assert_running("ssh-agent should survive malformed clients")
-        .await;
+    child.assert_running().await;
 
     let identities = exchange_frame(
         &socket_path,
@@ -468,16 +448,13 @@ async fn ssh_agent_contains_malformed_clients_and_keeps_serving() {
         protocol::encode_request_identities_response(&public_key_blob).unwrap()
     );
 
-    let requests = server
-        .received_requests()
-        .await
-        .expect("request recording should be enabled");
+    let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
 }
 
 #[tokio::test]
 async fn ssh_agent_rejects_oversized_frames_and_keeps_serving() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let public_key_blob = public_key_blob(&TURNKEY_TEST_PUBLIC_KEY);
 
@@ -490,13 +467,11 @@ async fn ssh_agent_rejects_oversized_frames_and_keeps_serving() {
 
     let oversized_socket_path = socket_path.clone();
     let oversized_client = tokio::spawn(async move {
-        let mut stream = UnixStream::connect(&oversized_socket_path)
-            .await
-            .expect("ssh-agent socket should accept");
+        let mut stream = UnixStream::connect(&oversized_socket_path).await.unwrap();
         stream
             .write_all(&((OVERSIZED_FRAME_LENGTH as u32).to_be_bytes()))
             .await
-            .expect("oversized frame header should write");
+            .unwrap();
         sleep(HELD_CONNECTION_DURATION).await;
     });
 
@@ -515,20 +490,15 @@ async fn ssh_agent_rejects_oversized_frames_and_keeps_serving() {
         protocol::encode_request_identities_response(&public_key_blob).unwrap()
     );
 
-    let requests = server
-        .received_requests()
-        .await
-        .expect("request recording should be enabled");
+    let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
 
-    oversized_client
-        .await
-        .expect("oversized client thread should finish");
+    oversized_client.await.unwrap();
 }
 
 #[tokio::test]
 async fn ssh_agent_times_out_stalled_clients_and_keeps_serving() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
     let public_key_blob = public_key_blob(&TURNKEY_TEST_PUBLIC_KEY);
 
@@ -541,13 +511,11 @@ async fn ssh_agent_times_out_stalled_clients_and_keeps_serving() {
 
     let stalled_socket_path = socket_path.clone();
     let stalled_client = tokio::spawn(async move {
-        let mut stream = UnixStream::connect(&stalled_socket_path)
-            .await
-            .expect("ssh-agent socket should accept");
+        let mut stream = UnixStream::connect(&stalled_socket_path).await.unwrap();
         stream
             .write_all(&[0, 0, 0, 8, protocol::SSH_AGENTC_SIGN_REQUEST, 0, 0])
             .await
-            .expect("partial frame should write");
+            .unwrap();
         sleep(HELD_CONNECTION_DURATION).await;
     });
 
@@ -566,20 +534,15 @@ async fn ssh_agent_times_out_stalled_clients_and_keeps_serving() {
         protocol::encode_request_identities_response(&public_key_blob).unwrap()
     );
 
-    let requests = server
-        .received_requests()
-        .await
-        .expect("request recording should be enabled");
+    let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
 
-    stalled_client
-        .await
-        .expect("stalled client thread should finish");
+    stalled_client.await.unwrap();
 }
 
 #[tokio::test]
 async fn ssh_agent_exits_on_sigterm_and_removes_socket() {
-    let temp = tempdir().expect("temp dir should exist");
+    let temp = tempdir().unwrap();
     let socket_path = temp.path().join("auth.sock");
 
     let server = MockServer::start().await;
@@ -594,23 +557,17 @@ async fn ssh_agent_exits_on_sigterm_and_removes_socket() {
         .arg(child.pid().to_string())
         .status()
         .await
-        .expect("kill should run");
+        .unwrap();
     assert!(status.success());
 
     child.wait_for_exit().await;
-    assert!(
-        !fs::try_exists(&socket_path)
-            .await
-            .expect("socket path should be readable"),
-        "socket should be removed on shutdown"
-    );
+    assert!(!fs::try_exists(&socket_path).await.unwrap());
 }
 
 fn public_key_blob(public_key: &[u8]) -> Vec<u8> {
-    let public_key_line =
-        ssh::encode_public_key_line(public_key, None).expect("public key line should encode");
+    let public_key_line = ssh::encode_public_key_line(public_key, None).unwrap();
     ssh::parse_public_key_line(&public_key_line)
-        .expect("public key should parse")
+        .unwrap()
         .public_key_blob
 }
 
@@ -662,13 +619,9 @@ async fn spawn_tk_ssh_agent_with_pid_file(
         .env("TURNKEY_API_BASE_URL", server.uri())
         .output()
         .await
-        .expect("tk ssh-agent start should run");
+        .unwrap();
 
-    assert!(
-        output.status.success(),
-        "tk ssh-agent start should succeed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(output.status.success());
 
     ChildGuard {
         pid: read_pid_file(pid_file_path).await,
@@ -677,10 +630,7 @@ async fn spawn_tk_ssh_agent_with_pid_file(
 
 async fn wait_for_socket(socket_path: &Path, child: &mut ChildGuard) {
     for _ in 0..100 {
-        if fs::try_exists(socket_path)
-            .await
-            .expect("socket path should be readable")
-        {
+        if fs::try_exists(socket_path).await.unwrap() {
             return;
         }
 
@@ -701,22 +651,14 @@ async fn wait_for_socket(socket_path: &Path, child: &mut ChildGuard) {
 }
 
 async fn exchange_frame(socket_path: &Path, frame: &[u8]) -> Vec<u8> {
-    let mut stream = UnixStream::connect(socket_path)
-        .await
-        .expect("ssh-agent socket should accept");
-    stream.write_all(frame).await.expect("frame should write");
+    let mut stream = UnixStream::connect(socket_path).await.unwrap();
+    stream.write_all(frame).await.unwrap();
 
     let mut length = [0u8; 4];
-    stream
-        .read_exact(&mut length)
-        .await
-        .expect("frame length should be readable");
+    stream.read_exact(&mut length).await.unwrap();
     let length = u32::from_be_bytes(length) as usize;
     let mut body = vec![0u8; length];
-    stream
-        .read_exact(&mut body)
-        .await
-        .expect("frame body should be readable");
+    stream.read_exact(&mut body).await.unwrap();
 
     let mut response = (length as u32).to_be_bytes().to_vec();
     response.extend_from_slice(&body);
@@ -728,20 +670,15 @@ fn spawn_frame_request(socket_path: PathBuf, frame: Vec<u8>) -> JoinHandle<Vec<u
 }
 
 async fn recv_frame_result(handle: JoinHandle<Vec<u8>>, timeout_duration: Duration) -> Vec<u8> {
-    timeout(timeout_duration, handle)
-        .await
-        .expect("frame request should complete before timeout")
-        .expect("frame request task should complete")
+    timeout(timeout_duration, handle).await.unwrap().unwrap()
 }
 
 async fn send_partial_frame_then_disconnect(socket_path: &Path) {
-    let mut stream = UnixStream::connect(socket_path)
-        .await
-        .expect("ssh-agent socket should accept");
+    let mut stream = UnixStream::connect(socket_path).await.unwrap();
     stream
         .write_all(&[0, 0, 0, 8, protocol::SSH_AGENTC_SIGN_REQUEST, 0, 0])
         .await
-        .expect("partial frame should write");
+        .unwrap();
 }
 
 async fn mount_get_private_key_mock(server: &MockServer, public_key: &str) {
@@ -795,9 +732,9 @@ struct ChildGuard {
 }
 
 impl ChildGuard {
-    async fn assert_running(&mut self, context: &str) {
+    async fn assert_running(&mut self) {
         if !self.is_running().await {
-            panic!("{context}: pid {} is not running", self.pid);
+            panic!("pid {} is not running", self.pid);
         }
     }
 
@@ -813,7 +750,7 @@ impl ChildGuard {
             .stderr(std::process::Stdio::null())
             .status()
             .await
-            .expect("kill -0 should run")
+            .unwrap()
             .success()
     }
 
@@ -838,7 +775,7 @@ impl Drop for ChildGuard {
 
 async fn wait_for_path(path: &Path) {
     for _ in 0..100 {
-        if fs::try_exists(path).await.expect("path should be readable") {
+        if fs::try_exists(path).await.unwrap() {
             return;
         }
 
@@ -876,42 +813,11 @@ async fn run_agent_command(
     );
     command.env("TURNKEY_PRIVATE_KEY_ID", "pk-id");
     command.env("TURNKEY_API_BASE_URL", server.uri());
-    command
-        .output()
-        .await
-        .expect("tk ssh-agent command should run")
-}
-
-async fn run_agent_command_with_home(
-    args: &[&str],
-    home: &Path,
-    server: &MockServer,
-    api_key: &TurnkeyP256ApiKey,
-) -> std::process::Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_tk"));
-    command.arg("ssh-agent");
-    command.args(args);
-    command.env("HOME", home);
-    command.env("TURNKEY_ORGANIZATION_ID", "org-id");
-    command.env(
-        "TURNKEY_API_PUBLIC_KEY",
-        hex::encode(api_key.compressed_public_key()),
-    );
-    command.env(
-        "TURNKEY_API_PRIVATE_KEY",
-        hex::encode(api_key.private_key()),
-    );
-    command.env("TURNKEY_PRIVATE_KEY_ID", "pk-id");
-    command.env("TURNKEY_API_BASE_URL", server.uri());
-    command
-        .output()
-        .await
-        .expect("tk ssh-agent command should run")
+    command.output().await.unwrap()
 }
 
 fn default_socket_path(home: &Path) -> PathBuf {
-    home.join(".config")
-        .join("turnkey")
+    default_config_dir_from_home(home)
         .join("tk")
         .join("ssh-agent.sock")
 }

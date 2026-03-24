@@ -19,6 +19,6 @@ sha2 = { version = "0.10", default-features = false }
 tempfile = { version = "3.19.1", default-features = false }
 tokio = { version = "=1.47.1", default-features = false }
 toml = { version = "0.8", default-features = false, features = ["parse", "display"] }
-turnkey_api_key_stamper = { path = "/Users/zeke/tkhq/code/rust-sdk/api_key_stamper", version = "0.6.0" }
-turnkey_client = { path = "/Users/zeke/tkhq/code/rust-sdk/client", version = "0.6.0" }
+turnkey_api_key_stamper = { git = "https://github.com/tkhq/rust-sdk.git", rev = "a64ca2b0d3178089221b648f3365eb67def95219" }
+turnkey_client = { git = "https://github.com/tkhq/rust-sdk.git", rev = "a64ca2b0d3178089221b648f3365eb67def95219" }
 wiremock = { version = "0.6", default-features = false }

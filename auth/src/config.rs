@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_API_BASE_URL: &str = "https://api.turnkey.com";
 const CONFIG_PATH_ENV: &str = "TURNKEY_TK_CONFIG_PATH";
+/// Display path for the default `tk` config directory.
+pub const DEFAULT_CONFIG_DIR_DISPLAY: &str = "~/.config/turnkey/tk";
 
 const ORGANIZATION_ID_ENV: &str = "TURNKEY_ORGANIZATION_ID";
 const API_PUBLIC_KEY_ENV: &str = "TURNKEY_API_PUBLIC_KEY";
@@ -208,10 +210,17 @@ pub fn global_config_path() -> Result<PathBuf> {
 
     let home = read_value_from_process_env("HOME")
         .ok_or_else(|| anyhow!("missing HOME; set {CONFIG_PATH_ENV} to choose a config path"))?;
-    Ok(PathBuf::from(home)
-        .join(".config")
-        .join("turnkey")
-        .join("tk.toml"))
+    Ok(default_config_file_from_home(Path::new(&home)))
+}
+
+/// Returns the default `tk` config directory for a given home directory.
+pub fn default_config_dir_from_home(home: &Path) -> PathBuf {
+    home.join(".config").join("turnkey").join("tk")
+}
+
+/// Returns the default `tk` config file path for a given home directory.
+pub fn default_config_file_from_home(home: &Path) -> PathBuf {
+    default_config_dir_from_home(home).join("tk.toml")
 }
 
 /// Returns one resolved config value, redacting the private key when requested.

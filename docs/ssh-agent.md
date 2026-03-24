@@ -16,7 +16,7 @@ ssh user@host
 tk ssh-agent status
 ```
 
-When you are done:
+To kill the background agent:
 
 ```bash
 tk ssh-agent stop

@@ -1,5 +1,6 @@
 use clap::Args as ClapArgs;
 
+/// Arguments for the `tk git-sign` subcommand or direct SSH signer invocation.
 #[derive(Debug, ClapArgs)]
 #[command(about, long_about = None)]
 pub struct Args {

@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::ErrorKind;
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -9,6 +10,7 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::sleep;
+use turnkey_auth::config::default_config_dir_from_home;
 use turnkey_auth::ssh::protocol;
 
 use super::{InternalRunArgs, StartArgs, StatusArgs, StopArgs};
@@ -17,10 +19,11 @@ const START_TIMEOUT: Duration = Duration::from_secs(2);
 const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
+/// Starts the background SSH agent.
 pub async fn start(args: StartArgs) -> anyhow::Result<()> {
     let socket = resolve_socket_path(args.socket)?;
     let pid_file = resolve_pid_file(&socket, args.pid_file)?;
-    let lock_file = resolve_lock_file(&pid_file, None);
+    let lock_file = resolve_lock_file(&pid_file);
     create_parent_dir(&socket).await?;
     create_parent_dir(&pid_file).await?;
     create_parent_dir(&lock_file).await?;
@@ -44,8 +47,6 @@ pub async fn start(args: StartArgs) -> anyhow::Result<()> {
         .arg(&socket)
         .arg("--pid-file")
         .arg(&pid_file)
-        .arg("--lock-file")
-        .arg(&lock_file)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -69,10 +70,11 @@ pub async fn start(args: StartArgs) -> anyhow::Result<()> {
     }
 }
 
+/// Stops the background SSH agent.
 pub async fn stop(args: StopArgs) -> anyhow::Result<()> {
     let socket = resolve_socket_path(args.socket)?;
     let pid_file = resolve_pid_file(&socket, args.pid_file)?;
-    let lock_file = resolve_lock_file(&pid_file, None);
+    let lock_file = resolve_lock_file(&pid_file);
 
     if !is_lock_held_by_other(&lock_file).await? {
         let _ = fs::remove_file(&pid_file).await;
@@ -94,10 +96,11 @@ pub async fn stop(args: StopArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Reports the background SSH agent status.
 pub async fn status(args: StatusArgs) -> anyhow::Result<()> {
     let socket = resolve_socket_path(args.socket)?;
     let pid_file = resolve_pid_file(&socket, args.pid_file)?;
-    let lock_file = resolve_lock_file(&pid_file, None);
+    let lock_file = resolve_lock_file(&pid_file);
 
     if !is_lock_held_by_other(&lock_file).await? {
         return Err(anyhow!("ssh-agent is not running"));
@@ -105,7 +108,7 @@ pub async fn status(args: StatusArgs) -> anyhow::Result<()> {
 
     let pid = read_pid_file(&pid_file)
         .await?
-        .ok_or_else(|| anyhow!("ssh-agent is not running"))?;
+        .ok_or_else(|| anyhow!("ssh-agent pid file not found at {}", pid_file.display()))?;
 
     if !is_process_alive(pid) {
         return Err(anyhow!("ssh-agent pid {pid} is not running"));
@@ -113,7 +116,7 @@ pub async fn status(args: StatusArgs) -> anyhow::Result<()> {
 
     if probe_agent_socket(&socket).await.is_err() {
         return Err(anyhow!(
-            "ssh-agent pid {pid} is running but socket {} is not serving requests",
+            "ssh-agent pid {pid} is marked running but socket {} is not serving requests",
             socket.display()
         ));
     }
@@ -123,8 +126,10 @@ pub async fn status(args: StatusArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Runs the hidden in-process SSH agent daemon.
 pub async fn internal_run(args: InternalRunArgs) -> anyhow::Result<()> {
-    let _lock = AgentLock::acquire(&args.lock_file)
+    let lock_file = resolve_lock_file(&args.pid_file);
+    let _lock = AgentLock::acquire(&lock_file)
         .await?
         .ok_or_else(|| anyhow!("ssh-agent is already running"))?;
     write_pid_file(&args.pid_file, std::process::id()).await?;
@@ -138,10 +143,12 @@ pub async fn internal_run(args: InternalRunArgs) -> anyhow::Result<()> {
 async fn wait_for_startup(socket: &Path, child: &mut tokio::process::Child) -> anyhow::Result<()> {
     let iterations = START_TIMEOUT.as_millis() / POLL_INTERVAL.as_millis();
     for _ in 0..iterations {
+        // First, see whether the agent is already answering on the socket
         if probe_agent_socket(socket).await.is_ok() {
             return Ok(());
         }
 
+        // If it exited before coming up, surface that immediately
         if let Some(status) = child
             .try_wait()
             .context("failed to poll background ssh-agent status")?
@@ -149,6 +156,7 @@ async fn wait_for_startup(socket: &Path, child: &mut tokio::process::Child) -> a
             return Err(anyhow!("background ssh-agent exited early: {status}"));
         }
 
+        // Otherwise, wait a moment and try again until the timeout expires
         sleep(POLL_INTERVAL).await;
     }
 
@@ -194,11 +202,8 @@ fn resolve_pid_file(socket: &Path, pid_file: Option<PathBuf>) -> anyhow::Result<
     }
 }
 
-fn resolve_lock_file(pid_file: &Path, lock_file: Option<PathBuf>) -> PathBuf {
-    match lock_file {
-        Some(lock_file) => lock_file,
-        None => PathBuf::from(format!("{}.lock", pid_file.display())),
-    }
+fn resolve_lock_file(pid_file: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.lock", pid_file.display()))
 }
 
 fn resolve_socket_path(socket: Option<PathBuf>) -> anyhow::Result<PathBuf> {
@@ -211,9 +216,7 @@ fn resolve_socket_path(socket: Option<PathBuf>) -> anyhow::Result<PathBuf> {
 fn default_socket_path() -> anyhow::Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .ok_or_else(|| anyhow!("missing HOME; use --socket to set a path"))?;
-    Ok(PathBuf::from(home)
-        .join(".config")
-        .join("turnkey")
+    Ok(default_config_dir_from_home(Path::new(&home))
         .join("tk")
         .join("ssh-agent.sock"))
 }
@@ -343,6 +346,8 @@ fn is_process_alive(pid: u32) -> bool {
 }
 
 fn send_signal(pid: u32, signal: i32) -> std::io::Result<()> {
+    // SAFETY: libc::kill is an FFI syscall wrapper and does not dereference
+    // Rust pointers or access Rust managed memory
     let rc = unsafe { libc::kill(pid as i32, signal) };
     if rc == 0 {
         Ok(())
@@ -372,17 +377,17 @@ impl AgentLock {
 }
 
 fn open_lock_file(path: &Path) -> anyhow::Result<File> {
+    // The file contents do not matter - flock just cares about the file descriptor.
     std::fs::OpenOptions::new()
         .create(true)
         .read(true)
         .write(true)
+        .truncate(false)
         .open(path)
         .with_context(|| format!("failed to open lock file {}", path.display()))
 }
 
 fn try_lock_exclusive(file: &File) -> anyhow::Result<bool> {
-    use std::os::fd::AsRawFd;
-
     let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     if rc == 0 {
         Ok(true)
@@ -396,8 +401,6 @@ fn try_lock_exclusive(file: &File) -> anyhow::Result<bool> {
 }
 
 fn unlock_file(file: &File) -> anyhow::Result<()> {
-    use std::os::fd::AsRawFd;
-
     let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
     if rc == 0 {
         Ok(())
