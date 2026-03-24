@@ -14,8 +14,8 @@ Config file:
   Otherwise tk uses ~/.config/turnkey/tk.toml.
 
 SSH agent:
-  tk ssh-agent --socket /tmp/auth.sock
-  export SSH_AUTH_SOCK=/tmp/auth.sock
+  tk ssh-agent start
+  export SSH_AUTH_SOCK=~/.config/turnkey/tk/ssh-agent.sock
 ";
 
 #[derive(Debug, Parser)]
@@ -48,7 +48,7 @@ impl Cli {
 enum Commands {
     /// Inspect and update persistent auth configuration.
     Config(commands::config::Args),
-    /// Run a foreground SSH agent over a Unix socket.
+    /// Manage a background SSH agent over a Unix socket.
     SshAgent(commands::agent::Args),
     /// Sign a payload using the Git SSH signer interface.
     GitSign(commands::git_sign::Args),

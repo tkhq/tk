@@ -1,4 +1,4 @@
-/// Foreground SSH agent command.
+/// Background SSH agent lifecycle commands.
 pub mod agent;
 /// Persistent configuration inspection and mutation commands.
 pub mod config;
