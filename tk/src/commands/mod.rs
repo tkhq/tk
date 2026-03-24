@@ -1,3 +1,5 @@
+/// Foreground SSH agent command.
+pub mod agent;
 /// Persistent configuration inspection and mutation commands.
 pub mod config;
 /// Git SSH signing command implementation.
