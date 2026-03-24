@@ -7,7 +7,7 @@ use turnkey_auth::config::Config;
 #[test]
 fn config_resolution_prefers_env_over_global_over_default() {
     let temp = tempdir().expect("temp dir should exist");
-    let config_path = temp.path().join("auth.toml");
+    let config_path = temp.path().join("tk.toml");
     fs::write(
         &config_path,
         r#"[turnkey]

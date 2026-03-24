@@ -1,4 +1,5 @@
-#![doc = include_str!("../README.md")]
+//! Turnkey backed auth helpers for config resolution, Git SSH signing,
+//! public-key rendering, and SSH agent integration.
 
 /// Auth configuration resolution and persistence helpers.
 pub mod config;

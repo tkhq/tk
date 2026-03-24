@@ -10,8 +10,8 @@ Environment:
   TURNKEY_API_BASE_URL
 
 Config file:
-  Set TURNKEY_AUTH_CONFIG_PATH to override the config file location.
-  Otherwise auth uses ~/.config/turnkey/auth.toml.
+  Set TURNKEY_TK_CONFIG_PATH to override the config file location.
+  Otherwise tk uses ~/.config/turnkey/tk.toml.
 
 SSH agent:
   tk ssh-agent --socket /tmp/auth.sock

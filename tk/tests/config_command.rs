@@ -20,12 +20,12 @@ fn config_command_help_lists_subcommands() {
 #[test]
 fn config_round_trip() {
     let temp = tempdir().expect("temp dir should exist");
-    let config_path = temp.path().join("auth.toml");
+    let config_path = temp.path().join("tk.toml");
 
     let mut set_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
     set_cmd
         .args(["config", "set", "turnkey.organizationId", "persisted-org"])
-        .env("TURNKEY_AUTH_CONFIG_PATH", &config_path)
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
@@ -39,7 +39,7 @@ fn config_round_trip() {
     let mut get_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
     get_cmd
         .args(["config", "get", "turnkey.organizationId"])
-        .env("TURNKEY_AUTH_CONFIG_PATH", &config_path)
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
@@ -53,7 +53,7 @@ fn config_round_trip() {
     let mut list_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
     list_cmd
         .args(["config", "list"])
-        .env("TURNKEY_AUTH_CONFIG_PATH", &config_path)
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
         .env("TURNKEY_ORGANIZATION_ID", "env-org")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
@@ -67,7 +67,7 @@ fn config_round_trip() {
 #[test]
 fn config_list_and_get_redact_private_key() {
     let temp = tempdir().expect("temp dir should exist");
-    let config_path = temp.path().join("auth.toml");
+    let config_path = temp.path().join("tk.toml");
 
     let mut set_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
     set_cmd
@@ -77,7 +77,7 @@ fn config_list_and_get_redact_private_key() {
             "turnkey.apiPrivateKey",
             "persisted-private-key",
         ])
-        .env("TURNKEY_AUTH_CONFIG_PATH", &config_path)
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
@@ -88,7 +88,7 @@ fn config_list_and_get_redact_private_key() {
     let mut list_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
     list_cmd
         .args(["config", "list"])
-        .env("TURNKEY_AUTH_CONFIG_PATH", &config_path)
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
@@ -102,7 +102,7 @@ fn config_list_and_get_redact_private_key() {
     let mut get_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
     get_cmd
         .args(["config", "get", "turnkey.apiPrivateKey"])
-        .env("TURNKEY_AUTH_CONFIG_PATH", &config_path)
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")

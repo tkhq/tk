@@ -18,8 +18,8 @@ fn cli_help_lists_commands() {
         .stdout(predicate::str::contains("TURNKEY_API_PRIVATE_KEY"))
         .stdout(predicate::str::contains("TURNKEY_PRIVATE_KEY_ID"))
         .stdout(predicate::str::contains("TURNKEY_API_BASE_URL"))
-        .stdout(predicate::str::contains("TURNKEY_AUTH_CONFIG_PATH"))
-        .stdout(predicate::str::contains("~/.config/turnkey/auth.toml"))
+        .stdout(predicate::str::contains("TURNKEY_TK_CONFIG_PATH"))
+        .stdout(predicate::str::contains("~/.config/turnkey/tk.toml"))
         .stdout(predicate::str::contains(
             "ssh-agent   Run a foreground SSH agent over a Unix socket",
         ))
@@ -39,11 +39,11 @@ fn cli_help_lists_commands() {
 #[test]
 fn public_key_requires_turnkey_org_id() {
     let temp = tempdir().expect("temp dir should exist");
-    let config_path = temp.path().join("auth.toml");
+    let config_path = temp.path().join("tk.toml");
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
     cmd.arg("public-key")
-        .env("TURNKEY_AUTH_CONFIG_PATH", &config_path)
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")

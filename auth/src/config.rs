@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_API_BASE_URL: &str = "https://api.turnkey.com";
-const CONFIG_PATH_ENV: &str = "TURNKEY_AUTH_CONFIG_PATH";
+const CONFIG_PATH_ENV: &str = "TURNKEY_TK_CONFIG_PATH";
 
 const ORGANIZATION_ID_ENV: &str = "TURNKEY_ORGANIZATION_ID";
 const API_PUBLIC_KEY_ENV: &str = "TURNKEY_API_PUBLIC_KEY";
@@ -200,7 +200,7 @@ impl ConfigKey {
     }
 }
 
-/// Returns the global auth config path, honoring `TURNKEY_AUTH_CONFIG_PATH` when set.
+/// Returns the global tk config path, honoring `TURNKEY_TK_CONFIG_PATH` when set.
 pub fn global_config_path() -> Result<PathBuf> {
     if let Some(path) = read_value_from_process_env(CONFIG_PATH_ENV) {
         return Ok(PathBuf::from(path));
@@ -211,7 +211,7 @@ pub fn global_config_path() -> Result<PathBuf> {
     Ok(PathBuf::from(home)
         .join(".config")
         .join("turnkey")
-        .join("auth.toml"))
+        .join("tk.toml"))
 }
 
 /// Returns one resolved config value, redacting the private key when requested.
