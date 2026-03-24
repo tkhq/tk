@@ -1,0 +1,24 @@
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace]
+members = ["auth", "tk"]
+resolver = "3"
+
+[workspace.dependencies]
+anyhow = { version = "1.0", default-features = false }
+assert_cmd = { version = "2", default-features = false }
+base64 = { version = "0.22.0", default-features = false, features = ["std"] }
+clap = { version = "4.5", features = ["std", "derive", "help", "usage", "error-context", "env"], default-features = false }
+hex = { version = "0.4.3", default-features = false, features = ["std"] }
+predicates = { version = "3", default-features = false }
+serde = { version = "1.0.219", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1.0.140", default-features = false, features = ["std"] }
+sha2 = { version = "0.10", default-features = false }
+tempfile = { version = "3.19.1", default-features = false }
+tokio = { version = "=1.47.1", default-features = false }
+toml = { version = "0.8", default-features = false, features = ["parse", "display"] }
+turnkey_api_key_stamper = { path = "/Users/zeke/tkhq/code/rust-sdk/api_key_stamper", version = "0.6.0" }
+turnkey_client = { path = "/Users/zeke/tkhq/code/rust-sdk/client", version = "0.6.0" }
+wiremock = { version = "0.6", default-features = false }
