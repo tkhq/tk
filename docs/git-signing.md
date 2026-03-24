@@ -2,7 +2,7 @@
 
 Use `tk` as Git's SSH signing program after configuring your Turnkey credentials.
 
-Ensure you have followed the [configuration section of the readme](../README.md#configuration).
+Ensure you have followed the [configuration section of the repository readme](../README.md#configuration).
 
 ```bash
 git config --global gpg.format ssh

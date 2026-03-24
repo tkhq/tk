@@ -2,7 +2,7 @@
 
 Run `tk` as a foreground SSH agent when you want plain `ssh` to authenticate with your Turnkey Ed25519 key.
 
-Ensure you have followed the [configuration section of the readme](../README.md#configuration).
+Ensure you have followed the [configuration section of the repository readme](../README.md#configuration).
 
 Use two terminals:
 
