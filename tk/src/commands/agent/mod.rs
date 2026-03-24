@@ -20,7 +20,7 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         Command::Start(args) => daemon::start(args).await,
         Command::Stop(args) => daemon::stop(args).await,
         Command::Status(args) => daemon::status(args).await,
-        Command::InternalRun(args) => turnkey_auth::ssh::agent::run(args.socket).await,
+        Command::InternalRun(args) => daemon::internal_run(args).await,
     }
 }
 
@@ -74,4 +74,12 @@ pub struct InternalRunArgs {
     /// Unix socket path to bind for SSH agent connections.
     #[arg(long, value_name = "path")]
     pub socket: PathBuf,
+
+    /// PID file path for tracking the background SSH agent.
+    #[arg(long, value_name = "path", hide = true)]
+    pub pid_file: PathBuf,
+
+    /// Lock file path for tracking the background SSH agent.
+    #[arg(long, value_name = "path", hide = true)]
+    pub lock_file: PathBuf,
 }

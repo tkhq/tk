@@ -256,6 +256,98 @@ async fn ssh_agent_start_recovers_from_stale_pid_file() {
 }
 
 #[tokio::test]
+async fn ssh_agent_start_does_not_report_ready_from_stale_socket() {
+    let temp = tempdir().expect("temp dir should exist");
+    let socket_path = temp.path().join("auth.sock");
+    let pid_file_path = temp.path().join("auth.sock.pid");
+
+    let stale_listener =
+        tokio::net::UnixListener::bind(&socket_path).expect("stale socket should bind");
+    drop(stale_listener);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_tk"))
+        .arg("ssh-agent")
+        .arg("start")
+        .arg("--socket")
+        .arg(&socket_path)
+        .arg("--pid-file")
+        .arg(&pid_file_path)
+        .env("HOME", temp.path())
+        .env_remove("TURNKEY_ORGANIZATION_ID")
+        .env_remove("TURNKEY_API_PUBLIC_KEY")
+        .env_remove("TURNKEY_API_PRIVATE_KEY")
+        .env_remove("TURNKEY_PRIVATE_KEY_ID")
+        .env_remove("TURNKEY_API_BASE_URL")
+        .output()
+        .await
+        .expect("tk ssh-agent start should run");
+
+    assert!(
+        !output.status.success(),
+        "start should fail without agent configuration"
+    );
+    assert!(
+        !fs::try_exists(&pid_file_path)
+            .await
+            .expect("pid file path should be readable"),
+        "pid file should be removed after failed start"
+    );
+}
+
+#[tokio::test]
+async fn ssh_agent_stop_does_not_kill_unowned_live_pid() {
+    let temp = tempdir().expect("temp dir should exist");
+    let socket_path = temp.path().join("auth.sock");
+    let pid_file_path = temp.path().join("auth.sock.pid");
+
+    let mut unrelated = Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("sleep should spawn");
+    let unrelated_pid = unrelated.id().expect("sleep pid should be available");
+
+    fs::write(&pid_file_path, format!("{unrelated_pid}\n"))
+        .await
+        .expect("stale pid file should be writable");
+
+    let server = MockServer::start().await;
+    let api_key = TurnkeyP256ApiKey::generate();
+    let stop = run_agent_command(
+        &[
+            "stop",
+            "--socket",
+            socket_path.to_str().unwrap(),
+            "--pid-file",
+            pid_file_path.to_str().unwrap(),
+        ],
+        &server,
+        &api_key,
+    )
+    .await;
+
+    assert!(
+        stop.status.success(),
+        "stop should treat unowned pid state as stale: {}",
+        String::from_utf8_lossy(&stop.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&stop.stdout).contains("not running"),
+        "stop stdout should report stale state: {}",
+        String::from_utf8_lossy(&stop.stdout)
+    );
+    assert!(
+        unrelated
+            .try_wait()
+            .expect("sleep status should be readable")
+            .is_none(),
+        "stop should not signal an unrelated live pid"
+    );
+
+    unrelated.start_kill().expect("sleep should be killable");
+    let _ = unrelated.wait().await.expect("sleep should exit");
+}
+
+#[tokio::test]
 async fn ssh_agent_lists_identity_and_signs_for_configured_key() {
     let temp = tempdir().expect("temp dir should exist");
     let socket_path = temp.path().join("auth.sock");
