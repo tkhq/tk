@@ -277,9 +277,14 @@ async fn ssh_agent_start_does_not_report_ready_from_stale_socket() {
     let socket_path = temp.path().join("auth.sock");
     let pid_file_path = temp.path().join("auth.sock.pid");
 
+    // Simulate an unclean shutdown by creating a leftover socket path with no
+    // server behind it
     let stale_listener = tokio::net::UnixListener::bind(&socket_path).unwrap();
     drop(stale_listener);
 
+    // Clear auth configuration so a real daemon startup would fail.
+    // The command should only succeed if it incorrectly treats the stale socket
+    // as proof that the agent is already ready.
     let output = Command::new(env!("CARGO_BIN_EXE_tk"))
         .arg("ssh-agent")
         .arg("start")

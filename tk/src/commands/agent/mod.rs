@@ -1,4 +1,5 @@
 mod daemon;
+mod lock;
 
 use std::path::PathBuf;
 
