@@ -1,0 +1,19 @@
+[package]
+name = "turnkey_ssh"
+version = "0.0.0-alpha.0"
+edition.workspace = true
+license.workspace = true
+description = "Turnkey SSH workflows and protocol helpers"
+repository = "https://github.com/tkhq/rust-sdk"
+homepage = "https://turnkey.com"
+
+[dependencies]
+anyhow = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "signal", "time"] }
+turnkey_auth = { path = "../auth" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+wiremock = { workspace = true }

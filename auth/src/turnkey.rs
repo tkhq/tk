@@ -52,11 +52,6 @@ impl TurnkeySigner {
         self.sign_raw_ed25519_payload(payload).await
     }
 
-    /// Signs a raw SSH authentication payload through Turnkey and returns the 64-byte signature.
-    pub async fn sign_ssh_auth_payload(&self, payload: &[u8]) -> Result<Vec<u8>> {
-        self.sign_raw_ed25519_payload(payload).await
-    }
-
     async fn sign_raw_ed25519_payload(&self, payload: &[u8]) -> Result<Vec<u8>> {
         let response = self
             .client
@@ -142,7 +137,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn decode_signature_parts_signs_raw_ssh_auth_payload() {
+    async fn sign_ed25519_signs_raw_payload() {
         let server = MockServer::start().await;
         let payload = b"ssh-agent-challenge";
         let signature = [0x55; 64];
@@ -184,9 +179,9 @@ mod tests {
         .expect("signer should build");
 
         let result = signer
-            .sign_ssh_auth_payload(payload)
+            .sign_ed25519(payload)
             .await
-            .expect("ssh auth payload should sign");
+            .expect("payload should sign");
 
         let requests = server
             .received_requests()

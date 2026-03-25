@@ -3,18 +3,16 @@ name = "turnkey_auth"
 version = "0.0.0-alpha.0"
 edition.workspace = true
 license.workspace = true
-description = "Turnkey backed auth library for SSH, Git signing, and related workflows"
+description = "Turnkey-backed auth library for config resolution and signing"
 repository = "https://github.com/tkhq/rust-sdk"
 homepage = "https://turnkey.com"
 
 [dependencies]
 anyhow = { workspace = true }
-base64 = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }
+tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread"] }
 toml = { workspace = true }
 turnkey_api_key_stamper = { workspace = true }
 turnkey_client = { workspace = true }

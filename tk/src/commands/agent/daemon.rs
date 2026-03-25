@@ -1,6 +1,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow};
@@ -8,8 +9,11 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::sleep;
-use turnkey_auth::config::default_config_dir_from_home;
-use turnkey_auth::ssh::protocol;
+use turnkey_auth::{
+    config::{Config, default_config_dir_from_home},
+    turnkey::TurnkeySigner,
+};
+use turnkey_ssh::ssh::protocol;
 
 use super::lock::{AgentLock, is_lock_held_by_other, resolve_lock_file};
 use super::{InternalRunArgs, StartArgs, StatusArgs, StopArgs};
@@ -134,7 +138,8 @@ pub async fn internal_run(args: InternalRunArgs) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow!("ssh-agent is already running"))?;
     write_pid_file(&args.pid_file, std::process::id()).await?;
 
-    let result = turnkey_auth::ssh::agent::run(args.socket).await;
+    let signer = Arc::new(TurnkeySigner::new(Config::resolve().await?)?);
+    let result = turnkey_ssh::agent::run(args.socket, signer).await;
 
     let _ = fs::remove_file(&args.pid_file).await;
     result

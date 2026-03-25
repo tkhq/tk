@@ -1,4 +1,5 @@
 use clap::Args as ClapArgs;
+use turnkey_auth::{config::Config, turnkey::TurnkeySigner};
 
 /// Arguments for the `tk ssh git-sign` subcommand or direct SSH signer invocation.
 #[derive(Debug, ClapArgs)]
@@ -10,5 +11,6 @@ pub struct Args {
 
 /// Runs the `tk ssh git-sign` subcommand or direct SSH signer invocation.
 pub async fn run(args: Args) -> anyhow::Result<()> {
-    turnkey_auth::git_sign::run_git_sign(&args.ssh_keygen_args).await
+    let signer = TurnkeySigner::new(Config::resolve().await?)?;
+    turnkey_ssh::git_sign::run_git_sign(&signer, &args.ssh_keygen_args).await
 }

@@ -7,19 +7,17 @@ use anyhow::{Context, anyhow};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinSet;
+use turnkey_auth::turnkey::TurnkeySigner;
 
-use crate::config::Config;
 use crate::ssh;
 use crate::ssh::protocol;
-use crate::turnkey::TurnkeySigner;
 
 /// Runs a foreground SSH agent bound to the provided Unix socket path.
-pub async fn run(socket: PathBuf) -> anyhow::Result<()> {
+pub async fn run(socket: PathBuf, signer: Arc<TurnkeySigner>) -> anyhow::Result<()> {
     remove_stale_socket(&socket).await?;
     let socket_path = socket.clone();
 
     let result = async {
-        let signer = Arc::new(TurnkeySigner::new(Config::resolve().await?)?);
         let public_key = signer.get_public_key().await?;
         let public_key_blob = Arc::new(
             ssh::parse_public_key_line(&ssh::encode_public_key_line(&public_key, None)?)
@@ -111,7 +109,7 @@ async fn handle_connection(
             Some(protocol::SSH_AGENTC_SIGN_REQUEST) => {
                 match protocol::parse_sign_request_frame(&frame) {
                     Ok(request) if request.public_key_blob == *configured_public_key_blob => {
-                        match signer.sign_ssh_auth_payload(&request.data).await {
+                        match signer.sign_ed25519(&request.data).await {
                             Ok(signature) => protocol::encode_sign_response(&signature)
                                 .unwrap_or_else(|_| {
                                     protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[])

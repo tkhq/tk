@@ -1763,6 +1763,7 @@ dependencies = [
  "tokio",
  "turnkey_api_key_stamper",
  "turnkey_auth",
+ "turnkey_ssh",
  "wiremock",
 ]
 
@@ -1950,11 +1951,9 @@ name = "turnkey_auth"
 version = "0.0.0-alpha.0"
 dependencies = [
  "anyhow",
- "base64",
  "hex",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "tokio",
  "toml",
@@ -1978,6 +1977,19 @@ dependencies = [
  "thiserror",
  "tokio",
  "turnkey_api_key_stamper",
+]
+
+[[package]]
+name = "turnkey_ssh"
+version = "0.0.0-alpha.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "turnkey_auth",
+ "wiremock",
 ]
 
 [[package]]

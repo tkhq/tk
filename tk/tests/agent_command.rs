@@ -10,8 +10,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_auth::config::default_config_dir_from_home;
-use turnkey_auth::ssh;
-use turnkey_auth::ssh::protocol;
+use turnkey_ssh::ssh;
+use turnkey_ssh::ssh::protocol;
 use wiremock::matchers::{header_exists, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

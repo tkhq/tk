@@ -6,7 +6,7 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
-use turnkey_auth::ssh;
+use turnkey_ssh::ssh;
 use wiremock::matchers::{header_exists, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
