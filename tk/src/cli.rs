@@ -1,30 +1,14 @@
 use crate::commands;
 use clap::{Parser, Subcommand};
+use turnkey_auth::config::DEFAULT_CONFIG_DIR_DISPLAY;
 
-const AFTER_HELP: &str = "\
-Environment:
-  TURNKEY_ORGANIZATION_ID
-  TURNKEY_API_PUBLIC_KEY
-  TURNKEY_API_PRIVATE_KEY
-  TURNKEY_PRIVATE_KEY_ID
-  TURNKEY_API_BASE_URL
-
-Config file:
-  Set TURNKEY_TK_CONFIG_PATH to override the config file location.
-  Otherwise tk uses ~/.config/turnkey/tk.toml.
-
-SSH agent:
-  tk ssh-agent --socket /tmp/auth.sock
-  export SSH_AUTH_SOCK=/tmp/auth.sock
-";
-
+/// Top-level CLI arguments for the `tk` binary.
 #[derive(Debug, Parser)]
 #[command(
     about = "CLI for Turnkey backed auth workflows",
     long_about = None,
-    after_help = AFTER_HELP
+    after_help = after_help()
 )]
-/// Top-level CLI arguments for the `tk` binary.
 pub struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -48,10 +32,31 @@ impl Cli {
 enum Commands {
     /// Inspect and update persistent auth configuration.
     Config(commands::config::Args),
-    /// Run a foreground SSH agent over a Unix socket.
+    /// Manage a background SSH agent over a Unix socket.
     SshAgent(commands::agent::Args),
     /// Sign a payload using the Git SSH signer interface.
     GitSign(commands::git_sign::Args),
     /// Print the configured SSH public key.
     PublicKey(commands::public_key::Args),
+}
+
+fn after_help() -> String {
+    format!(
+        "\
+Environment:
+  TURNKEY_ORGANIZATION_ID
+  TURNKEY_API_PUBLIC_KEY
+  TURNKEY_API_PRIVATE_KEY
+  TURNKEY_PRIVATE_KEY_ID
+  TURNKEY_API_BASE_URL
+
+Config file:
+  Set TURNKEY_TK_CONFIG_PATH to override the config file location.
+  Otherwise tk uses {DEFAULT_CONFIG_DIR_DISPLAY}/tk.toml.
+
+SSH agent:
+  tk ssh-agent start
+  export SSH_AUTH_SOCK={DEFAULT_CONFIG_DIR_DISPLAY}/ssh-agent.sock
+",
+    )
 }

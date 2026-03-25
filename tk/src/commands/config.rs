@@ -2,6 +2,7 @@ use clap::{Args as ClapArgs, Subcommand};
 
 use turnkey_auth::config::{self, ConfigKey};
 
+/// Arguments for the `tk config` subcommand.
 #[derive(Debug, ClapArgs)]
 #[command(about, long_about = None)]
 pub struct Args {

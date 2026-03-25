@@ -1,24 +1,25 @@
 # SSH agent
 
-Run `tk` as a foreground SSH agent when you want plain `ssh` to authenticate with your Turnkey Ed25519 key.
+Run `tk` as a background SSH agent when you want plain `ssh` to authenticate with your Turnkey Ed25519 key.
 
 Ensure you have followed the [configuration section of the repository readme](../README.md#configuration).
 
-Use two terminals:
-
-Terminal 1:
-
 ```bash
-tk ssh-agent --socket /tmp/auth.sock
+tk ssh-agent start
 ```
 
-Terminal 2:
-
 ```bash
-export SSH_AUTH_SOCK=/tmp/auth.sock
+export SSH_AUTH_SOCK=~/.config/turnkey/tk/ssh-agent.sock
 
 ssh-add -L
 ssh user@host
+tk ssh-agent status
+```
+
+To kill the background agent:
+
+```bash
+tk ssh-agent stop
 ```
 
 `ssh-add -L` should print the Turnkey-backed OpenSSH public key while `ssh user@host` uses the agent socket for signing.

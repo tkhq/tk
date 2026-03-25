@@ -1756,6 +1756,7 @@ dependencies = [
  "base64",
  "clap",
  "hex",
+ "libc",
  "predicates",
  "serde_json",
  "tempfile",
@@ -1932,6 +1933,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "turnkey_api_key_stamper"
 version = "0.6.0"
+source = "git+https://github.com/tkhq/rust-sdk.git?rev=a64ca2b0d3178089221b648f3365eb67def95219#a64ca2b0d3178089221b648f3365eb67def95219"
 dependencies = [
  "base64",
  "hex",
@@ -1964,6 +1966,7 @@ dependencies = [
 [[package]]
 name = "turnkey_client"
 version = "0.6.0"
+source = "git+https://github.com/tkhq/rust-sdk.git?rev=a64ca2b0d3178089221b648f3365eb67def95219#a64ca2b0d3178089221b648f3365eb67def95219"
 dependencies = [
  "mime",
  "prost",
