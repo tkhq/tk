@@ -10,9 +10,7 @@ fn cli_help_lists_commands() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("config"))
-        .stdout(predicate::str::contains("git-sign"))
-        .stdout(predicate::str::contains("ssh-agent"))
-        .stdout(predicate::str::contains("public-key"))
+        .stdout(predicate::str::contains("ssh"))
         .stdout(predicate::str::contains("TURNKEY_ORGANIZATION_ID"))
         .stdout(predicate::str::contains("TURNKEY_API_PUBLIC_KEY"))
         .stdout(predicate::str::contains("TURNKEY_API_PRIVATE_KEY"))
@@ -20,18 +18,36 @@ fn cli_help_lists_commands() {
         .stdout(predicate::str::contains("TURNKEY_API_BASE_URL"))
         .stdout(predicate::str::contains("TURNKEY_TK_CONFIG_PATH"))
         .stdout(predicate::str::contains("~/.config/turnkey/tk/tk.toml"))
-        .stdout(predicate::str::contains(
-            "ssh-agent   Manage a background SSH agent over a Unix socket",
-        ))
-        .stdout(predicate::str::contains("tk ssh-agent start"))
+        .stdout(predicate::str::contains("ssh     SSH-related commands"))
+        .stdout(predicate::str::contains("tk ssh agent start"))
         .stdout(predicate::str::contains(
             "export SSH_AUTH_SOCK=~/.config/turnkey/tk/ssh-agent.sock",
         ));
 
     let mut agent_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
-    agent_cmd.arg("ssh-agent").arg("--help");
+    agent_cmd.arg("ssh").arg("--help");
 
     agent_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("agent"))
+        .stdout(predicate::str::contains("public-key"))
+        .stdout(predicate::str::contains("git-sign"))
+        .stdout(predicate::str::contains(
+            "Manage a background SSH agent over a Unix socket",
+        ))
+        .stdout(predicate::str::contains(
+            "Print the configured SSH public key",
+        ))
+        .stdout(predicate::str::contains(
+            "Sign a payload using the Git SSH signer interface",
+        ))
+        .stdout(predicate::str::contains("tk ssh <COMMAND>"));
+
+    let mut nested_agent_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    nested_agent_cmd.arg("ssh").arg("agent").arg("--help");
+
+    nested_agent_cmd
         .assert()
         .success()
         .stdout(predicate::str::contains("start"))
@@ -39,7 +55,7 @@ fn cli_help_lists_commands() {
         .stdout(predicate::str::contains("status"));
 
     let mut start_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
-    start_cmd.arg("ssh-agent").arg("start").arg("--help");
+    start_cmd.arg("ssh").arg("agent").arg("start").arg("--help");
 
     start_cmd
         .assert()
@@ -54,7 +70,8 @@ fn public_key_requires_turnkey_org_id() {
     let config_path = temp.path().join("tk.toml");
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
-    cmd.arg("public-key")
+    cmd.arg("ssh")
+        .arg("public-key")
         .env("TURNKEY_TK_CONFIG_PATH", &config_path)
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")

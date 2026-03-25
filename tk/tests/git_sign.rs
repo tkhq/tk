@@ -65,7 +65,8 @@ async fn git_sign_writes_verifiable_sshsig_file() {
 
     let api_key = TurnkeyP256ApiKey::generate();
     let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_tk"));
-    cmd.arg("git-sign")
+    cmd.arg("ssh")
+        .arg("git-sign")
         .arg("-Y")
         .arg("sign")
         .arg("-n")
@@ -279,7 +280,8 @@ async fn git_sign_rejects_public_key_that_does_not_match_configured_turnkey_key(
 
     let api_key = TurnkeyP256ApiKey::generate();
     let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_tk"));
-    cmd.arg("git-sign")
+    cmd.arg("ssh")
+        .arg("git-sign")
         .arg("-Y")
         .arg("sign")
         .arg("-n")

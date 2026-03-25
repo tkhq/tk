@@ -29,7 +29,8 @@ async fn public_key_prints_openssh_line_from_turnkey_key() {
 
     let api_key = TurnkeyP256ApiKey::generate();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
-    cmd.arg("public-key")
+    cmd.arg("ssh")
+        .arg("public-key")
         .env("TURNKEY_ORGANIZATION_ID", "org-id")
         .env(
             "TURNKEY_API_PUBLIC_KEY",

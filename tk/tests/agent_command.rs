@@ -33,7 +33,8 @@ async fn ssh_agent_start_reports_running_status() {
 
     let api_key = TurnkeyP256ApiKey::generate();
     let output = Command::new(env!("CARGO_BIN_EXE_tk"))
-        .arg("ssh-agent")
+        .arg("ssh")
+        .arg("agent")
         .arg("start")
         .arg("--socket")
         .arg(&socket_path)
@@ -59,7 +60,8 @@ async fn ssh_agent_start_reports_running_status() {
     wait_for_path(&pid_file_path).await;
 
     let status = Command::new(env!("CARGO_BIN_EXE_tk"))
-        .arg("ssh-agent")
+        .arg("ssh")
+        .arg("agent")
         .arg("status")
         .arg("--socket")
         .arg(&socket_path)
@@ -72,7 +74,8 @@ async fn ssh_agent_start_reports_running_status() {
     assert!(String::from_utf8_lossy(&status.stdout).contains("running"));
 
     let stop = Command::new(env!("CARGO_BIN_EXE_tk"))
-        .arg("ssh-agent")
+        .arg("ssh")
+        .arg("agent")
         .arg("stop")
         .arg("--socket")
         .arg(&socket_path)
@@ -96,7 +99,8 @@ async fn ssh_agent_start_uses_default_socket_path_when_socket_is_omitted() {
 
     let api_key = TurnkeyP256ApiKey::generate();
     let output = Command::new(env!("CARGO_BIN_EXE_tk"))
-        .arg("ssh-agent")
+        .arg("ssh")
+        .arg("agent")
         .arg("start")
         .env("HOME", home)
         .env("TURNKEY_ORGANIZATION_ID", "org-id")
@@ -123,7 +127,8 @@ async fn ssh_agent_start_uses_default_socket_path_when_socket_is_omitted() {
     wait_for_path(&pid_file_path).await;
 
     let status = Command::new(env!("CARGO_BIN_EXE_tk"))
-        .arg("ssh-agent")
+        .arg("ssh")
+        .arg("agent")
         .arg("status")
         .env("HOME", home)
         .env("TURNKEY_ORGANIZATION_ID", "org-id")
@@ -152,7 +157,8 @@ async fn ssh_agent_start_uses_default_socket_path_when_socket_is_omitted() {
     );
 
     let stop = Command::new(env!("CARGO_BIN_EXE_tk"))
-        .arg("ssh-agent")
+        .arg("ssh")
+        .arg("agent")
         .arg("stop")
         .env("HOME", home)
         .env("TURNKEY_ORGANIZATION_ID", "org-id")
@@ -286,7 +292,8 @@ async fn ssh_agent_start_does_not_report_ready_from_stale_socket() {
     // The command should only succeed if it incorrectly treats the stale socket
     // as proof that the agent is already ready.
     let output = Command::new(env!("CARGO_BIN_EXE_tk"))
-        .arg("ssh-agent")
+        .arg("ssh")
+        .arg("agent")
         .arg("start")
         .arg("--socket")
         .arg(&socket_path)
@@ -605,7 +612,8 @@ async fn spawn_tk_ssh_agent_with_pid_file(
     api_key: &TurnkeyP256ApiKey,
 ) -> ChildGuard {
     let output = Command::new(env!("CARGO_BIN_EXE_tk"))
-        .arg("ssh-agent")
+        .arg("ssh")
+        .arg("agent")
         .arg("start")
         .arg("--socket")
         .arg(socket_path)
@@ -641,7 +649,7 @@ async fn wait_for_socket(socket_path: &Path, child: &mut ChildGuard) {
 
         if !child.is_running().await {
             panic!(
-                "tk ssh-agent exited before binding socket: pid {} is not running",
+                "tk ssh agent exited before binding socket: pid {} is not running",
                 child.pid()
             );
         }
@@ -805,7 +813,8 @@ async fn run_agent_command(
     api_key: &TurnkeyP256ApiKey,
 ) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_tk"));
-    command.arg("ssh-agent");
+    command.arg("ssh");
+    command.arg("agent");
     command.args(args);
     command.env("TURNKEY_ORGANIZATION_ID", "org-id");
     command.env(
@@ -822,7 +831,5 @@ async fn run_agent_command(
 }
 
 fn default_socket_path(home: &Path) -> PathBuf {
-    default_config_dir_from_home(home)
-        .join("tk")
-        .join("ssh-agent.sock")
+    default_config_dir_from_home(home).join("ssh-agent.sock")
 }

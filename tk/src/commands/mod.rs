@@ -6,3 +6,5 @@ pub mod config;
 pub mod git_sign;
 /// Public key printing command implementation.
 pub mod public_key;
+/// SSH command namespace and dispatch.
+pub mod ssh;
