@@ -331,7 +331,7 @@ pub async fn save_init_config(
             api_private_key: Some(api_private_key.to_string()),
             signing_address: Some(signing_address.to_string()),
             signing_public_key: Some(signing_public_key.to_string()),
-            api_base_url: api_base_url.map(|s| s.to_string()),
+            api_base_url: api_base_url.map(ToString::to_string),
         },
     };
     save_persisted_config(&path, &config).await

@@ -2,3 +2,6 @@
 /.claude/
 /AGENTS.md
 docs/plans/*
+.env*
+*.pid
+*.sock

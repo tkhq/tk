@@ -25,6 +25,7 @@ pub struct InitResult {
 }
 
 /// Initializes a Turnkey configuration by finding or creating an Ed25519 wallet account.
+#[allow(clippy::too_many_lines)]
 pub async fn initialize(
     org_id: &str,
     api_public_key: &str,

@@ -251,7 +251,7 @@ async fn ssh_agent_start_recovers_from_stale_pid_file() {
     let mut child =
         spawn_tk_ssh_agent_with_pid_file(&socket_path, &pid_file_path, &config_path).await;
     wait_for_socket(&socket_path, &mut child).await;
-    assert_ne!(child.pid(), 999999);
+    assert_ne!(child.pid(), 999_999);
 }
 
 #[tokio::test]
@@ -617,12 +617,11 @@ async fn wait_for_socket(socket_path: &Path, child: &mut ChildGuard) {
             return;
         }
 
-        if !child.is_running().await {
-            panic!(
-                "tk ssh-agent exited before binding socket: pid {} is not running",
-                child.pid()
-            );
-        }
+        assert!(
+            child.is_running().await,
+            "tk ssh-agent exited before binding socket: pid {} is not running",
+            child.pid()
+        );
 
         sleep(Duration::from_millis(20)).await;
     }
@@ -694,9 +693,7 @@ struct ChildGuard {
 
 impl ChildGuard {
     async fn assert_running(&mut self) {
-        if !self.is_running().await {
-            panic!("pid {} is not running", self.pid);
-        }
+        assert!(self.is_running().await, "pid {} is not running", self.pid);
     }
 
     fn pid(&self) -> u32 {
@@ -730,7 +727,7 @@ impl ChildGuard {
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        let _ = unsafe { libc::kill(self.pid as i32, libc::SIGTERM) };
+        let _ = unsafe { libc::kill(self.pid.cast_signed(), libc::SIGTERM) };
     }
 }
 

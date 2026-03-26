@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Running pre-commit checks..."
+
+echo "  cargo fmt --check"
+cargo fmt --all -- --check
+
+echo "  cargo build (lints enforced via Cargo.toml)"
+cargo build --all-targets
+
+echo "  cargo test"
+cargo test --all --quiet
+
+echo "All checks passed."
