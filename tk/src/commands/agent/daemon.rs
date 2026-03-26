@@ -194,6 +194,7 @@ async fn wait_for_socket_removal(socket: &Path) -> anyhow::Result<()> {
     ))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn resolve_pid_file(socket: &Path, pid_file: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     match pid_file {
         Some(pid_file) => Ok(pid_file),
@@ -330,7 +331,7 @@ fn is_process_alive(pid: u32) -> bool {
 fn send_signal(pid: u32, signal: i32) -> std::io::Result<()> {
     // SAFETY: libc::kill is an FFI syscall wrapper and does not dereference
     // Rust pointers or access Rust managed memory
-    let rc = unsafe { libc::kill(pid as i32, signal) };
+    let rc = unsafe { libc::kill(pid.cast_signed(), signal) };
     if rc == 0 {
         Ok(())
     } else {

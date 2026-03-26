@@ -1,11 +1,10 @@
 # `tk`
 
-Experimental Turnkey auth workspace centered on the `tk` CLI.
+Turnkey auth CLI for SSH and Git workflows backed by Turnkey wallets.
 
-`tk` is focused on general agent authorization, attribution, and credential management with Turnkey backed keys.
-
-- Git SSH signing with a Turnkey private key
-- An SSH agent that signs SSH requests with a Turnkey private key
+- Git SSH signing with a Turnkey wallet key
+- SSH agent that signs requests with a Turnkey wallet key
+- Interactive setup with automatic wallet creation
 
 > Warning: `tk` is experimental and has not been audited.
 
@@ -19,18 +18,42 @@ Experimental Turnkey auth workspace centered on the `tk` CLI.
 From the root of this repo:
 
 ```bash
-cargo install -p tk
+cargo install --path tk
 ```
 
 The installed binary is named `tk`.
 
-## Commands
+## Quick start
 
 ```bash
-tk config
+export TURNKEY_API_PRIVATE_KEY="<hex-private-key>"
+tk init \
+  --organization-id <org-id> \
+  --api-public-key <hex-public-key>
+
+tk whoami
 tk public-key
-tk git-sign
-tk ssh-agent
+```
+
+`tk init` validates your credentials, finds (or creates) a wallet with an Ed25519 account, and saves the signing config to the config file.
+
+## Commands
+
+```
+tk init          Initialize credentials and wallet setup
+tk whoami        Display authenticated identity
+tk config        Inspect and update configuration
+tk public-key    Print the SSH public key
+tk git-sign      Git SSH signer interface
+tk ssh-agent     Manage the SSH agent daemon
+```
+
+### SSH agent
+
+```bash
+tk ssh-agent start
+tk ssh-agent status
+tk ssh-agent stop
 ```
 
 ## Configuration
@@ -39,41 +62,45 @@ tk ssh-agent
 
 1. Environment variables
 2. Global config file
-3. Built in defaults
-
-The default global config file path is:
-
-```bash
-~/.config/turnkey/tk.toml
-```
+3. Built-in defaults
 
 Set `TURNKEY_TK_CONFIG_PATH` to override the config file location.
-
-You can inspect or update config with:
 
 ```bash
 tk config list
 tk config get turnkey.organizationId
-tk config set turnkey.organizationId "<org-id>"
-tk config set turnkey.apiPublicKey "<api-public-key>"
-tk config set turnkey.apiPrivateKey "<api-private-key>"
-tk config set turnkey.privateKeyId "<ed25519-private-key-id>"
 tk config set turnkey.apiBaseUrl "https://api.turnkey.com"
 ```
 
-`tk config list` prints the fully resolved effective configuration, so environment-variable overrides appear in its output. Secret values such as `turnkey.apiPrivateKey` are redacted in both `config list` and `config get`.
+Secret values such as `turnkey.apiPrivateKey` are redacted in `config list` and `config get`. The `signingAddress` and `signingPublicKey` fields are set automatically by `tk init`.
 
-### Environment Overrides
+### Environment variables
 
 ```bash
 export TURNKEY_ORGANIZATION_ID="<org-id>"
 export TURNKEY_API_PUBLIC_KEY="<api-public-key>"
 export TURNKEY_API_PRIVATE_KEY="<api-private-key>"
-export TURNKEY_PRIVATE_KEY_ID="<ed25519-private-key-id>"
-export TURNKEY_API_BASE_URL="https://api.turnkey.com" # optional
+export TURNKEY_API_BASE_URL="https://api.turnkey.com"  # optional
 ```
 
-These environment variables override values stored in the global config file. This can be helpful for CI.
+These override values stored in the config file. Useful for CI.
+
+## Development
+
+### Pre-commit hooks
+
+```bash
+git config core.hooksPath .github/hooks
+```
+
+### CI
+
+The GitHub Actions workflow runs on every push and PR to main:
+
+- `cargo fmt --check`
+- `cargo build` (lint rules enforced via `[workspace.lints]` in Cargo.toml)
+- `cargo test`
+- Security audit via `cargo-audit`
 
 ## Guides
 

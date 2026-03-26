@@ -20,5 +20,8 @@ toml = { workspace = true }
 turnkey_api_key_stamper = { workspace = true }
 turnkey_client = { workspace = true }
 
+[lints]
+workspace = true
+
 [dev-dependencies]
 wiremock = { workspace = true }

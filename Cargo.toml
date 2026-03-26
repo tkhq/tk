@@ -22,3 +22,23 @@ toml = { version = "0.8", default-features = false, features = ["parse", "displa
 turnkey_api_key_stamper = { git = "https://github.com/tkhq/rust-sdk.git", rev = "a64ca2b0d3178089221b648f3365eb67def95219" }
 turnkey_client = { git = "https://github.com/tkhq/rust-sdk.git", rev = "a64ca2b0d3178089221b648f3365eb67def95219" }
 wiremock = { version = "0.6", default-features = false }
+
+[workspace.lints.rust]
+dead_code = "warn"
+unused_imports = "deny"
+unused_variables = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+struct_excessive_bools = "allow"
+wildcard_imports = "allow"
+needless_pass_by_value = "allow"
