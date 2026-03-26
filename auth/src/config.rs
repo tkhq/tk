@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 
 const DEFAULT_API_BASE_URL: &str = "https://api.turnkey.com";
 const CONFIG_PATH_ENV: &str = "TURNKEY_TK_CONFIG_PATH";
@@ -297,8 +299,42 @@ async fn save_persisted_config(path: &Path, config: &PersistedConfigFile) -> Res
         tokio::fs::create_dir_all(parent).await?;
     }
     let serialized = toml::to_string_pretty(config).context("failed to serialize config file")?;
-    tokio::fs::write(path, serialized).await?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("config path has no parent directory"))?;
+    let temp = NamedTempFile::new_in(parent).context("failed to create temporary config file")?;
+    tokio::fs::write(temp.path(), &serialized)
+        .await
+        .context("failed to write temporary config file")?;
+    tokio::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o600))
+        .await
+        .context("failed to set config file permissions")?;
+    temp.persist(path)
+        .context("failed to persist config file")?;
     Ok(())
+}
+
+/// Atomically writes all init config values to the global config file.
+pub async fn save_init_config(
+    organization_id: &str,
+    api_public_key: &str,
+    api_private_key: &str,
+    signing_address: &str,
+    signing_public_key: &str,
+    api_base_url: Option<&str>,
+) -> Result<()> {
+    let path = global_config_path()?;
+    let config = PersistedConfigFile {
+        turnkey: PersistedTurnkeyConfig {
+            organization_id: Some(organization_id.to_string()),
+            api_public_key: Some(api_public_key.to_string()),
+            api_private_key: Some(api_private_key.to_string()),
+            signing_address: Some(signing_address.to_string()),
+            signing_public_key: Some(signing_public_key.to_string()),
+            api_base_url: api_base_url.map(|s| s.to_string()),
+        },
+    };
+    save_persisted_config(&path, &config).await
 }
 
 fn read_value(env: &BTreeMap<String, String>, key: &str) -> Option<String> {

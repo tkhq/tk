@@ -5,6 +5,7 @@ use turnkey_auth::config::DEFAULT_CONFIG_DIR_DISPLAY;
 /// Top-level CLI arguments for the `tk` binary.
 #[derive(Debug, Parser)]
 #[command(
+    version,
     about = "CLI for Turnkey backed auth workflows",
     long_about = None,
     after_help = after_help()
@@ -20,6 +21,8 @@ impl Cli {
         let args = Self::parse();
 
         match args.command {
+            Commands::Init(args) => commands::init::run(args).await,
+            Commands::Whoami(args) => commands::whoami::run(args).await,
             Commands::Config(args) => commands::config::run(args).await,
             Commands::SshAgent(args) => commands::agent::run(args).await,
             Commands::GitSign(args) => commands::git_sign::run(args).await,
@@ -30,6 +33,10 @@ impl Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Initialize Turnkey credentials and wallet configuration.
+    Init(commands::init::Args),
+    /// Display the authenticated Turnkey identity.
+    Whoami(commands::whoami::Args),
     /// Inspect and update persistent auth configuration.
     Config(commands::config::Args),
     /// Manage a background SSH agent over a Unix socket.
@@ -43,6 +50,11 @@ enum Commands {
 fn after_help() -> String {
     format!(
         "\
+Quick start:
+  export TURNKEY_API_PRIVATE_KEY=\"<your-api-private-key>\"
+  tk init --org-id <org-id> --api-public-key <api-public-key>
+  tk whoami
+
 Environment:
   TURNKEY_ORGANIZATION_ID
   TURNKEY_API_PUBLIC_KEY

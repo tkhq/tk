@@ -5,9 +5,13 @@
 pub mod config;
 /// Git SSH signing helpers backed by Turnkey.
 pub mod git_sign;
+/// Organization initialization and wallet setup helpers.
+pub mod init;
 /// Public-key helpers backed by Turnkey.
 pub mod public_key;
 /// SSH wire-format helpers for public keys and signatures.
 pub mod ssh;
 /// Turnkey-backed signing client helpers.
 pub mod turnkey;
+/// Authenticated identity lookup helpers.
+pub mod whoami;
