@@ -19,6 +19,7 @@ async fn git_sign_writes_verifiable_sshsig_file() {
     let public_key_path = temp.path().join("id_ed25519.pub");
     let payload_path = temp.path().join("payload.txt");
     let allowed_signers_path = temp.path().join("allowed_signers");
+    let config_path = temp.path().join("tk.toml");
 
     let status = Command::new("ssh-keygen")
         .args(["-q", "-t", "ed25519", "-N", "", "-f"])
@@ -40,7 +41,6 @@ async fn git_sign_writes_verifiable_sshsig_file() {
         ssh::parse_public_key_line(&public_key_line).expect("public key should parse");
 
     let server = MockServer::start().await;
-    mount_get_private_key_mock(&server, &hex::encode(&parsed_public_key.public_key)).await;
     Mock::given(method("POST"))
         .and(path("/public/v1/submit/sign_raw_payload"))
         .and(header_exists("X-Stamp"))
@@ -64,6 +64,13 @@ async fn git_sign_writes_verifiable_sshsig_file() {
         .await;
 
     let api_key = TurnkeyP256ApiKey::generate();
+    write_test_config(
+        &config_path,
+        &api_key,
+        &server.uri(),
+        &hex::encode(&parsed_public_key.public_key),
+    );
+
     let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_tk"));
     cmd.arg("git-sign")
         .arg("-Y")
@@ -73,17 +80,7 @@ async fn git_sign_writes_verifiable_sshsig_file() {
         .arg("-f")
         .arg(&public_key_path)
         .arg(&payload_path)
-        .env("TURNKEY_ORGANIZATION_ID", "org-id")
-        .env(
-            "TURNKEY_API_PUBLIC_KEY",
-            hex::encode(api_key.compressed_public_key()),
-        )
-        .env(
-            "TURNKEY_API_PRIVATE_KEY",
-            hex::encode(api_key.private_key()),
-        )
-        .env("TURNKEY_PRIVATE_KEY_ID", "pk-id")
-        .env("TURNKEY_API_BASE_URL", server.uri());
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path);
 
     cmd.assert().success();
 
@@ -132,6 +129,7 @@ async fn direct_ssh_signer_invocation_writes_verifiable_sshsig_file() {
     let public_key_path = temp.path().join("id_ed25519.pub");
     let payload_path = temp.path().join("payload.txt");
     let allowed_signers_path = temp.path().join("allowed_signers");
+    let config_path = temp.path().join("tk.toml");
 
     let status = Command::new("ssh-keygen")
         .args(["-q", "-t", "ed25519", "-N", "", "-f"])
@@ -153,7 +151,6 @@ async fn direct_ssh_signer_invocation_writes_verifiable_sshsig_file() {
         ssh::parse_public_key_line(&public_key_line).expect("public key should parse");
 
     let server = MockServer::start().await;
-    mount_get_private_key_mock(&server, &hex::encode(&parsed_public_key.public_key)).await;
     Mock::given(method("POST"))
         .and(path("/public/v1/submit/sign_raw_payload"))
         .and(header_exists("X-Stamp"))
@@ -177,6 +174,13 @@ async fn direct_ssh_signer_invocation_writes_verifiable_sshsig_file() {
         .await;
 
     let api_key = TurnkeyP256ApiKey::generate();
+    write_test_config(
+        &config_path,
+        &api_key,
+        &server.uri(),
+        &hex::encode(&parsed_public_key.public_key),
+    );
+
     let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_tk"));
     cmd.arg("-Y")
         .arg("sign")
@@ -185,17 +189,7 @@ async fn direct_ssh_signer_invocation_writes_verifiable_sshsig_file() {
         .arg("-f")
         .arg(&public_key_path)
         .arg(&payload_path)
-        .env("TURNKEY_ORGANIZATION_ID", "org-id")
-        .env(
-            "TURNKEY_API_PUBLIC_KEY",
-            hex::encode(api_key.compressed_public_key()),
-        )
-        .env(
-            "TURNKEY_API_PRIVATE_KEY",
-            hex::encode(api_key.private_key()),
-        )
-        .env("TURNKEY_PRIVATE_KEY_ID", "pk-id")
-        .env("TURNKEY_API_BASE_URL", server.uri());
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path);
 
     cmd.assert().success();
 
@@ -243,6 +237,7 @@ async fn git_sign_rejects_public_key_that_does_not_match_configured_turnkey_key(
     let key_path = temp.path().join("id_ed25519");
     let public_key_path = temp.path().join("id_ed25519.pub");
     let payload_path = temp.path().join("payload.txt");
+    let config_path = temp.path().join("tk.toml");
 
     let status = Command::new("ssh-keygen")
         .args(["-q", "-t", "ed25519", "-N", "", "-f"])
@@ -257,27 +252,15 @@ async fn git_sign_rejects_public_key_that_does_not_match_configured_turnkey_key(
         .expect("payload should be written");
 
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/public/v1/query/get_private_key"))
-        .and(header_exists("X-Stamp"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "privateKey": {
-                "privateKeyId": "pk-id",
-                "publicKey": "1111111111111111111111111111111111111111111111111111111111111111",
-                "privateKeyName": "git signer",
-                "curve": "CURVE_ED25519",
-                "addresses": [],
-                "privateKeyTags": [],
-                "createdAt": null,
-                "updatedAt": null,
-                "exported": false,
-                "imported": false
-            }
-        })))
-        .mount(&server)
-        .await;
-
     let api_key = TurnkeyP256ApiKey::generate();
+    // Use a DIFFERENT public key so it does not match the generated ssh key
+    write_test_config(
+        &config_path,
+        &api_key,
+        &server.uri(),
+        "1111111111111111111111111111111111111111111111111111111111111111",
+    );
+
     let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_tk"));
     cmd.arg("git-sign")
         .arg("-Y")
@@ -287,17 +270,7 @@ async fn git_sign_rejects_public_key_that_does_not_match_configured_turnkey_key(
         .arg("-f")
         .arg(&public_key_path)
         .arg(&payload_path)
-        .env("TURNKEY_ORGANIZATION_ID", "org-id")
-        .env(
-            "TURNKEY_API_PUBLIC_KEY",
-            hex::encode(api_key.compressed_public_key()),
-        )
-        .env(
-            "TURNKEY_API_PRIVATE_KEY",
-            hex::encode(api_key.private_key()),
-        )
-        .env("TURNKEY_PRIVATE_KEY_ID", "pk-id")
-        .env("TURNKEY_API_BASE_URL", server.uri());
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path);
 
     cmd.assert().failure().stderr(predicate::str::contains(
         "does not match the configured Turnkey key",
@@ -312,26 +285,30 @@ async fn git_sign_rejects_public_key_that_does_not_match_configured_turnkey_key(
     );
 }
 
-async fn mount_get_private_key_mock(server: &MockServer, public_key: &str) {
-    Mock::given(method("POST"))
-        .and(path("/public/v1/query/get_private_key"))
-        .and(header_exists("X-Stamp"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "privateKey": {
-                "privateKeyId": "pk-id",
-                "publicKey": public_key,
-                "privateKeyName": "git signer",
-                "curve": "CURVE_ED25519",
-                "addresses": [],
-                "privateKeyTags": [],
-                "createdAt": null,
-                "updatedAt": null,
-                "exported": false,
-                "imported": false
-            }
-        })))
-        .mount(server)
-        .await;
+fn write_test_config(
+    config_path: &std::path::Path,
+    api_key: &TurnkeyP256ApiKey,
+    api_base_url: &str,
+    signing_public_key: &str,
+) {
+    std::fs::write(
+        config_path,
+        format!(
+            r#"[turnkey]
+organizationId = "org-id"
+apiPublicKey = "{}"
+apiPrivateKey = "{}"
+signingAddress = "signing-addr"
+signingPublicKey = "{}"
+apiBaseUrl = "{}"
+"#,
+            hex::encode(api_key.compressed_public_key()),
+            hex::encode(api_key.private_key()),
+            signing_public_key,
+            api_base_url,
+        ),
+    )
+    .unwrap();
 }
 
 async fn extract_raw_signature(

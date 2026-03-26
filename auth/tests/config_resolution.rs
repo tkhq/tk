@@ -32,7 +32,8 @@ fn config_resolution_prefers_env_over_global_over_default() {
 organizationId = "file-org"
 apiPublicKey = "file-pub"
 apiPrivateKey = "file-priv"
-privateKeyId = "file-key"
+signingAddress = "file-addr"
+signingPublicKey = "file-spk"
     "#,
     )
     .unwrap();
@@ -44,7 +45,6 @@ privateKeyId = "file-key"
             "TURNKEY_API_PRIVATE_KEY".to_string(),
             "env-priv".to_string(),
         ),
-        ("TURNKEY_PRIVATE_KEY_ID".to_string(), "env-key".to_string()),
     ]);
 
     let config = Config::resolve_from_map(&config_path, &env).unwrap();
@@ -52,6 +52,7 @@ privateKeyId = "file-key"
     assert_eq!(config.organization_id, "env-org");
     assert_eq!(config.api_public_key, "env-pub");
     assert_eq!(config.api_private_key, "env-priv");
-    assert_eq!(config.private_key_id, "env-key");
+    assert_eq!(config.signing_address, "file-addr");
+    assert_eq!(config.signing_public_key, "file-spk");
     assert_eq!(config.api_base_url, "https://api.turnkey.com");
 }

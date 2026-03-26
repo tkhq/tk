@@ -11,7 +11,7 @@ pub async fn run_git_sign(ssh_keygen_args: &[String]) -> anyhow::Result<()> {
     let payload = tokio::fs::read(&invocation.payload_path).await?;
     let public_key = tokio::fs::read_to_string(&invocation.public_key_path).await?;
     let parsed_public_key = ssh::parse_public_key_line(&public_key)?;
-    let configured_public_key = signer.get_public_key().await?;
+    let configured_public_key = signer.get_public_key()?;
     if parsed_public_key.public_key != configured_public_key {
         return Err(anyhow!(
             "requested SSH public key does not match the configured Turnkey key"

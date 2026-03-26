@@ -16,7 +16,6 @@ fn cli_help_lists_commands() {
         .stdout(predicate::str::contains("TURNKEY_ORGANIZATION_ID"))
         .stdout(predicate::str::contains("TURNKEY_API_PUBLIC_KEY"))
         .stdout(predicate::str::contains("TURNKEY_API_PRIVATE_KEY"))
-        .stdout(predicate::str::contains("TURNKEY_PRIVATE_KEY_ID"))
         .stdout(predicate::str::contains("TURNKEY_API_BASE_URL"))
         .stdout(predicate::str::contains("TURNKEY_TK_CONFIG_PATH"))
         .stdout(predicate::str::contains("~/.config/turnkey/tk/tk.toml"))
@@ -59,7 +58,6 @@ fn public_key_requires_turnkey_org_id() {
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
-        .env_remove("TURNKEY_PRIVATE_KEY_ID")
         .env_remove("TURNKEY_API_BASE_URL");
 
     cmd.assert()
