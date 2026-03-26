@@ -30,7 +30,7 @@ impl Cli {
 enum Commands {
     /// Inspect and update persistent auth configuration.
     Config(commands::config::Args),
-    /// SSH-related commands.
+    /// SSH related commands.
     Ssh(commands::ssh::Args),
 }
 

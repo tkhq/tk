@@ -4,7 +4,7 @@ use crate::commands::{agent, git_sign, public_key};
 
 /// Top-level arguments for `tk ssh`.
 #[derive(Debug, ClapArgs)]
-#[command(about = "SSH-related commands.", long_about = None)]
+#[command(about = "SSH related commands.", long_about = None)]
 pub struct Args {
     #[command(subcommand)]
     command: Command,

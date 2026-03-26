@@ -5,7 +5,7 @@ Run `tk` as a background SSH agent when you want plain `ssh` to authenticate wit
 Ensure you have followed the [configuration section of the repository readme](../README.md#configuration).
 
 ```bash
-tk ssh-agent start
+tk ssh agent start
 ```
 
 ```bash
@@ -13,13 +13,13 @@ export SSH_AUTH_SOCK=~/.config/turnkey/tk/ssh-agent.sock
 
 ssh-add -L
 ssh user@host
-tk ssh-agent status
+tk ssh agent status
 ```
 
 To kill the background agent:
 
 ```bash
-tk ssh-agent stop
+tk ssh agent stop
 ```
 
-`ssh-add -L` should print the Turnkey-backed OpenSSH public key while `ssh user@host` uses the agent socket for signing.
+`ssh-add -L` should print the Turnkey backed OpenSSH public key while `ssh user@host` uses the agent socket for signing.
