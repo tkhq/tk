@@ -29,7 +29,6 @@ fn config_round_trip() {
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
-        .env_remove("TURNKEY_PRIVATE_KEY_ID")
         .env_remove("TURNKEY_API_BASE_URL");
     set_cmd.assert().success();
 
@@ -43,7 +42,6 @@ fn config_round_trip() {
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
-        .env_remove("TURNKEY_PRIVATE_KEY_ID")
         .env_remove("TURNKEY_API_BASE_URL");
     get_cmd
         .assert()
@@ -57,7 +55,6 @@ fn config_round_trip() {
         .env("TURNKEY_ORGANIZATION_ID", "env-org")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
-        .env_remove("TURNKEY_PRIVATE_KEY_ID")
         .env_remove("TURNKEY_API_BASE_URL");
     let output = list_cmd.assert().success().get_output().stdout.clone();
     let value: Value = serde_json::from_slice(&output).expect("config list should output json");
@@ -81,7 +78,6 @@ fn config_list_and_get_redact_private_key() {
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
-        .env_remove("TURNKEY_PRIVATE_KEY_ID")
         .env_remove("TURNKEY_API_BASE_URL");
     set_cmd.assert().success();
 
@@ -92,7 +88,6 @@ fn config_list_and_get_redact_private_key() {
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
-        .env_remove("TURNKEY_PRIVATE_KEY_ID")
         .env_remove("TURNKEY_API_BASE_URL");
     let output = list_cmd.assert().success().get_output().stdout.clone();
     let value: Value = serde_json::from_slice(&output).expect("config list should output json");
@@ -106,7 +101,6 @@ fn config_list_and_get_redact_private_key() {
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
-        .env_remove("TURNKEY_PRIVATE_KEY_ID")
         .env_remove("TURNKEY_API_BASE_URL");
     get_cmd
         .assert()

@@ -12,7 +12,6 @@ pub const DEFAULT_CONFIG_DIR_DISPLAY: &str = "~/.config/turnkey/tk";
 const ORGANIZATION_ID_ENV: &str = "TURNKEY_ORGANIZATION_ID";
 const API_PUBLIC_KEY_ENV: &str = "TURNKEY_API_PUBLIC_KEY";
 const API_PRIVATE_KEY_ENV: &str = "TURNKEY_API_PRIVATE_KEY";
-const PRIVATE_KEY_ID_ENV: &str = "TURNKEY_PRIVATE_KEY_ID";
 const API_BASE_URL_ENV: &str = "TURNKEY_API_BASE_URL";
 const REDACTED_VALUE: &str = "<redacted>";
 
@@ -25,8 +24,10 @@ pub struct Config {
     pub api_public_key: String,
     /// Turnkey API private key used for request stamping.
     pub api_private_key: String,
-    /// Turnkey Ed25519 private key identifier.
-    pub private_key_id: String,
+    /// Turnkey wallet signing address.
+    pub signing_address: String,
+    /// Turnkey wallet signing public key (hex-encoded Ed25519).
+    pub signing_public_key: String,
     /// Base URL for the Turnkey API.
     pub api_base_url: String,
 }
@@ -40,8 +41,10 @@ pub struct ResolvedConfig {
     pub api_public_key: Option<String>,
     /// Resolved Turnkey API private key, if present.
     pub api_private_key: Option<String>,
-    /// Resolved Turnkey private key identifier, if present.
-    pub private_key_id: Option<String>,
+    /// Resolved Turnkey wallet signing address, if present.
+    pub signing_address: Option<String>,
+    /// Resolved Turnkey wallet signing public key (hex), if present.
+    pub signing_public_key: Option<String>,
     /// Resolved API base URL, including defaulting.
     pub api_base_url: String,
 }
@@ -55,8 +58,10 @@ pub enum ConfigKey {
     ApiPublicKey,
     /// `turnkey.apiPrivateKey`
     ApiPrivateKey,
-    /// `turnkey.privateKeyId`
-    PrivateKeyId,
+    /// `turnkey.signingAddress`
+    SigningAddress,
+    /// `turnkey.signingPublicKey`
+    SigningPublicKey,
     /// `turnkey.apiBaseUrl`
     ApiBaseUrl,
 }
@@ -102,11 +107,16 @@ impl ResolvedConfig {
                 API_PRIVATE_KEY_ENV,
                 persisted.turnkey.api_private_key.as_deref(),
             ),
-            private_key_id: resolve_value(
-                env,
-                PRIVATE_KEY_ID_ENV,
-                persisted.turnkey.private_key_id.as_deref(),
-            ),
+            signing_address: persisted
+                .turnkey
+                .signing_address
+                .as_deref()
+                .and_then(normalize_value),
+            signing_public_key: persisted
+                .turnkey
+                .signing_public_key
+                .as_deref()
+                .and_then(normalize_value),
             api_base_url: resolve_value(
                 env,
                 API_BASE_URL_ENV,
@@ -138,11 +148,16 @@ impl ResolvedConfig {
                 API_PRIVATE_KEY_ENV,
                 persisted.turnkey.api_private_key.as_deref(),
             ),
-            private_key_id: resolve_value(
-                env,
-                PRIVATE_KEY_ID_ENV,
-                persisted.turnkey.private_key_id.as_deref(),
-            ),
+            signing_address: persisted
+                .turnkey
+                .signing_address
+                .as_deref()
+                .and_then(normalize_value),
+            signing_public_key: persisted
+                .turnkey
+                .signing_public_key
+                .as_deref()
+                .and_then(normalize_value),
             api_base_url: resolve_value(
                 env,
                 API_BASE_URL_ENV,
@@ -158,7 +173,8 @@ impl ResolvedConfig {
             ConfigKey::OrganizationId => self.organization_id.as_deref(),
             ConfigKey::ApiPublicKey => self.api_public_key.as_deref(),
             ConfigKey::ApiPrivateKey => self.api_private_key.as_deref(),
-            ConfigKey::PrivateKeyId => self.private_key_id.as_deref(),
+            ConfigKey::SigningAddress => self.signing_address.as_deref(),
+            ConfigKey::SigningPublicKey => self.signing_public_key.as_deref(),
             ConfigKey::ApiBaseUrl => Some(&self.api_base_url),
         }
     }
@@ -170,7 +186,8 @@ impl ResolvedConfig {
                 organization_id: self.organization_id.clone().unwrap_or_default(),
                 api_public_key: self.api_public_key.clone().unwrap_or_default(),
                 api_private_key: redact_if_present(self.api_private_key.as_deref()),
-                private_key_id: self.private_key_id.clone().unwrap_or_default(),
+                signing_address: self.signing_address.clone().unwrap_or_default(),
+                signing_public_key: self.signing_public_key.clone().unwrap_or_default(),
                 api_base_url: self.api_base_url.clone(),
             },
         })
@@ -182,7 +199,11 @@ impl ResolvedConfig {
             organization_id: required_value("turnkey.organizationId", self.organization_id)?,
             api_public_key: required_value("turnkey.apiPublicKey", self.api_public_key)?,
             api_private_key: required_value("turnkey.apiPrivateKey", self.api_private_key)?,
-            private_key_id: required_value("turnkey.privateKeyId", self.private_key_id)?,
+            signing_address: required_value("turnkey.signingAddress", self.signing_address)?,
+            signing_public_key: required_value(
+                "turnkey.signingPublicKey",
+                self.signing_public_key,
+            )?,
             api_base_url: self.api_base_url,
         })
     }
@@ -195,7 +216,8 @@ impl ConfigKey {
             "turnkey.organizationId" => Ok(Self::OrganizationId),
             "turnkey.apiPublicKey" => Ok(Self::ApiPublicKey),
             "turnkey.apiPrivateKey" => Ok(Self::ApiPrivateKey),
-            "turnkey.privateKeyId" => Ok(Self::PrivateKeyId),
+            "turnkey.signingAddress" => Ok(Self::SigningAddress),
+            "turnkey.signingPublicKey" => Ok(Self::SigningPublicKey),
             "turnkey.apiBaseUrl" => Ok(Self::ApiBaseUrl),
             _ => Err(anyhow!("unsupported config key: {value}")),
         }
@@ -333,7 +355,9 @@ struct PersistedTurnkeyConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     api_private_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    private_key_id: Option<String>,
+    signing_address: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signing_public_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     api_base_url: Option<String>,
 }
@@ -344,7 +368,8 @@ impl PersistedTurnkeyConfig {
             ConfigKey::OrganizationId => self.organization_id = Some(value),
             ConfigKey::ApiPublicKey => self.api_public_key = Some(value),
             ConfigKey::ApiPrivateKey => self.api_private_key = Some(value),
-            ConfigKey::PrivateKeyId => self.private_key_id = Some(value),
+            ConfigKey::SigningAddress => self.signing_address = Some(value),
+            ConfigKey::SigningPublicKey => self.signing_public_key = Some(value),
             ConfigKey::ApiBaseUrl => self.api_base_url = Some(value),
         }
     }
@@ -361,6 +386,7 @@ struct DisplayTurnkeyConfig {
     organization_id: String,
     api_public_key: String,
     api_private_key: String,
-    private_key_id: String,
+    signing_address: String,
+    signing_public_key: String,
     api_base_url: String,
 }

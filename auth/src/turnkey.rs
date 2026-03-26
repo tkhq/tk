@@ -1,8 +1,8 @@
 use anyhow::{Context, Result, anyhow};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
+use turnkey_client::generated::SignRawPayloadIntentV2;
 use turnkey_client::generated::immutable::common::v1::HashFunction;
 use turnkey_client::generated::immutable::common::v1::PayloadEncoding;
-use turnkey_client::generated::{GetPrivateKeyRequest, SignRawPayloadIntentV2};
 use turnkey_client::{TurnkeyClient, TurnkeyClientError};
 
 use crate::config::Config;
@@ -29,42 +29,20 @@ impl TurnkeySigner {
         Ok(Self { client, config })
     }
 
-    /// Fetches the configured Ed25519 public key bytes from Turnkey.
-    pub async fn get_public_key(&self) -> Result<Vec<u8>> {
-        let response = self
-            .client
-            .get_private_key(GetPrivateKeyRequest {
-                organization_id: self.config.organization_id.clone(),
-                private_key_id: self.config.private_key_id.clone(),
-            })
-            .await
-            .map_err(map_turnkey_error)?;
-
-        let private_key = response
-            .private_key
-            .ok_or_else(|| anyhow!("Turnkey did not return a private key object"))?;
-
-        decode_public_key(&private_key.public_key)
+    /// Decodes the configured Ed25519 public key bytes from the config.
+    pub fn get_public_key(&self) -> Result<Vec<u8>> {
+        decode_public_key(&self.config.signing_public_key)
     }
 
     /// Signs a raw Ed25519 payload through Turnkey and returns the 64-byte signature.
     pub async fn sign_ed25519(&self, payload: &[u8]) -> Result<Vec<u8>> {
-        self.sign_raw_ed25519_payload(payload).await
-    }
-
-    /// Signs a raw SSH authentication payload through Turnkey and returns the 64-byte signature.
-    pub async fn sign_ssh_auth_payload(&self, payload: &[u8]) -> Result<Vec<u8>> {
-        self.sign_raw_ed25519_payload(payload).await
-    }
-
-    async fn sign_raw_ed25519_payload(&self, payload: &[u8]) -> Result<Vec<u8>> {
         let response = self
             .client
             .sign_raw_payload(
                 self.config.organization_id.clone(),
                 self.client.current_timestamp(),
                 SignRawPayloadIntentV2 {
-                    sign_with: self.config.private_key_id.clone(),
+                    sign_with: self.config.signing_address.clone(),
                     payload: hex::encode(payload),
                     encoding: PayloadEncoding::Hexadecimal,
                     hash_function: HashFunction::NotApplicable,
@@ -81,7 +59,7 @@ fn map_turnkey_error(error: TurnkeyClientError) -> anyhow::Error {
     anyhow!("Turnkey API request failed: {error}")
 }
 
-fn decode_public_key(encoded: &str) -> Result<Vec<u8>> {
+pub(crate) fn decode_public_key(encoded: &str) -> Result<Vec<u8>> {
     let trimmed = encoded.trim().trim_start_matches("0x");
     hex::decode(trimmed).map_err(|_| anyhow!("expected hex-encoded Turnkey public key"))
 }
@@ -142,7 +120,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn decode_signature_parts_signs_raw_ssh_auth_payload() {
+    async fn sign_ed25519_sends_correct_request() {
         let server = MockServer::start().await;
         let payload = b"ssh-agent-challenge";
         let signature = [0x55; 64];
@@ -178,15 +156,17 @@ mod tests {
             organization_id: "org-id".to_string(),
             api_public_key: hex::encode(api_key.compressed_public_key()),
             api_private_key: hex::encode(api_key.private_key()),
-            private_key_id: "pk-id".to_string(),
+            signing_address: "signing-addr".to_string(),
+            signing_public_key: "6666666666666666666666666666666666666666666666666666666666666666"
+                .to_string(),
             api_base_url: server.uri(),
         })
         .expect("signer should build");
 
         let result = signer
-            .sign_ssh_auth_payload(payload)
+            .sign_ed25519(payload)
             .await
-            .expect("ssh auth payload should sign");
+            .expect("ed25519 payload should sign");
 
         let requests = server
             .received_requests()
@@ -198,7 +178,7 @@ mod tests {
             .expect("request body should be valid JSON");
         assert_eq!(body["type"], "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2");
         assert_eq!(body["organizationId"], "org-id");
-        assert_eq!(body["parameters"]["signWith"], "pk-id");
+        assert_eq!(body["parameters"]["signWith"], "signing-addr");
         assert_eq!(body["parameters"]["payload"], hex::encode(payload));
         assert_eq!(
             body["parameters"]["encoding"],
