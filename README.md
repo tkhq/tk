@@ -4,8 +4,8 @@ Experimental Turnkey auth workspace centered on the `tk` CLI.
 
 `tk` is focused on general agent authorization, attribution, and credential management with Turnkey backed keys.
 
-- Git SSH signing with a Turnkey private key
-- An SSH agent that signs SSH requests with a Turnkey private key
+- [Git signing](./docs/git-signing.md)
+- [SSH agent](./docs/ssh-agent.md)
 
 > Warning: `tk` is experimental and has not been audited.
 
@@ -28,9 +28,9 @@ The installed binary is named `tk`.
 
 ```bash
 tk config
-tk public-key
-tk git-sign
-tk ssh-agent
+tk ssh public-key
+tk ssh git-sign
+tk ssh agent
 ```
 
 ## Configuration
@@ -74,8 +74,3 @@ export TURNKEY_API_BASE_URL="https://api.turnkey.com" # optional
 ```
 
 These environment variables override values stored in the global config file. This can be helpful for CI.
-
-## Guides
-
-- [Git signing](./docs/git-signing.md)
-- [SSH agent](./docs/ssh-agent.md)

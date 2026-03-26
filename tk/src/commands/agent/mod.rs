@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, Subcommand};
 
-/// Top-level arguments for `tk ssh-agent`.
+/// Top-level arguments for `tk ssh agent`.
 #[derive(Debug, ClapArgs)]
 #[command(
     about = "Manage a background SSH agent over a Unix socket.",
@@ -16,7 +16,7 @@ pub struct Args {
     command: Command,
 }
 
-/// Runs the `tk ssh-agent` subcommand.
+/// Runs the `tk ssh agent` subcommand.
 pub async fn run(args: Args) -> anyhow::Result<()> {
     match args.command {
         Command::Start(args) => daemon::start(args).await,

@@ -40,7 +40,8 @@ pub async fn start(args: StartArgs) -> anyhow::Result<()> {
     remove_file_if_present(&pid_file).await?;
 
     let mut child = tokio::process::Command::new(std::env::current_exe()?)
-        .arg("ssh-agent")
+        .arg("ssh")
+        .arg("agent")
         .arg("internal-run")
         .arg("--socket")
         .arg(&socket)
