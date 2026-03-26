@@ -11,7 +11,10 @@ pub mod protocol;
 /// Git signing invocation parsing.
 pub mod git;
 
-const SSH_ED25519_ALGORITHM: &str = "ssh-ed25519";
+/// Shared SSH wire-format encoding and decoding primitives.
+pub(crate) mod wire;
+
+use wire::SSH_ED25519_ALGORITHM;
 const SSHSIG_PREAMBLE: &[u8] = b"SSHSIG";
 /// Default hash algorithm name encoded into SSHSIG payloads.
 pub const DEFAULT_HASH_ALGORITHM: &str = "sha512";
@@ -37,11 +40,7 @@ pub fn encode_public_key_line(public_key: &[u8], comment: Option<&str>) -> Resul
     })
 }
 
-fn encode_string(bytes: &[u8], mut output: Vec<u8>) -> Vec<u8> {
-    output.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
-    output.extend_from_slice(bytes);
-    output
-}
+use wire::encode_string;
 
 /// Parsed components of an OpenSSH Ed25519 public key line.
 pub struct ParsedPublicKey {
@@ -160,20 +159,4 @@ fn parse_public_key_blob(blob: &[u8]) -> Result<(String, Vec<u8>)> {
     Ok((algorithm, key))
 }
 
-fn read_ssh_bytes(cursor: &mut &[u8]) -> Result<Vec<u8>> {
-    if cursor.len() < 4 {
-        return Err(anyhow!("truncated SSH string length"));
-    }
-
-    let length = u32::from_be_bytes(cursor[..4].try_into().expect("length slice should be 4"));
-    *cursor = &cursor[4..];
-
-    let length = length as usize;
-    if cursor.len() < length {
-        return Err(anyhow!("truncated SSH string body"));
-    }
-
-    let value = cursor[..length].to_vec();
-    *cursor = &cursor[length..];
-    Ok(value)
-}
+use wire::read_ssh_bytes;

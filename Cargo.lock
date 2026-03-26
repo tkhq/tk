@@ -1756,6 +1756,7 @@ dependencies = [
  "base64",
  "clap",
  "hex",
+ "libc",
  "predicates",
  "serde_json",
  "tempfile",
@@ -1932,6 +1933,8 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "turnkey_api_key_stamper"
 version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "621735f1649d8b25ea40394525fb3eefa41911550dbccb64f5d75dfe1abdeecf"
 dependencies = [
  "base64",
  "hex",
@@ -1964,6 +1967,8 @@ dependencies = [
 [[package]]
 name = "turnkey_client"
 version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f216ea270ec4a37daa491679b716962cda7819cac982b49088979b2edf6067df"
 dependencies = [
  "mime",
  "prost",

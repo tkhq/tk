@@ -33,7 +33,7 @@ impl GitSignInvocation {
                     namespace = Some(
                         iter.next()
                             .ok_or_else(|| anyhow!("missing value after -n"))?
-                            .to_string(),
+                            .clone(),
                     );
                 }
                 "-f" => {

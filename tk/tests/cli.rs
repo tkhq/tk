@@ -9,6 +9,8 @@ fn cli_help_lists_commands() {
 
     cmd.assert()
         .success()
+        .stdout(predicate::str::contains("init"))
+        .stdout(predicate::str::contains("whoami"))
         .stdout(predicate::str::contains("config"))
         .stdout(predicate::str::contains("git-sign"))
         .stdout(predicate::str::contains("ssh-agent"))
@@ -16,16 +18,13 @@ fn cli_help_lists_commands() {
         .stdout(predicate::str::contains("TURNKEY_ORGANIZATION_ID"))
         .stdout(predicate::str::contains("TURNKEY_API_PUBLIC_KEY"))
         .stdout(predicate::str::contains("TURNKEY_API_PRIVATE_KEY"))
-        .stdout(predicate::str::contains("TURNKEY_PRIVATE_KEY_ID"))
         .stdout(predicate::str::contains("TURNKEY_API_BASE_URL"))
         .stdout(predicate::str::contains("TURNKEY_TK_CONFIG_PATH"))
         .stdout(predicate::str::contains("~/.config/turnkey/tk.toml"))
         .stdout(predicate::str::contains(
-            "ssh-agent   Run a foreground SSH agent over a Unix socket",
+            "ssh-agent   Manage the Turnkey SSH agent",
         ))
-        .stdout(predicate::str::contains(
-            "export SSH_AUTH_SOCK=/tmp/auth.sock",
-        ));
+        .stdout(predicate::str::contains("tk ssh-agent start"));
 
     let mut agent_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
     agent_cmd.arg("ssh-agent").arg("--help");
@@ -33,7 +32,10 @@ fn cli_help_lists_commands() {
     agent_cmd
         .assert()
         .success()
-        .stdout(predicate::str::contains("--socket"));
+        .stdout(predicate::str::contains("--socket"))
+        .stdout(predicate::str::contains("start"))
+        .stdout(predicate::str::contains("stop"))
+        .stdout(predicate::str::contains("status"));
 }
 
 #[test]
@@ -47,7 +49,6 @@ fn public_key_requires_turnkey_org_id() {
         .env_remove("TURNKEY_ORGANIZATION_ID")
         .env_remove("TURNKEY_API_PUBLIC_KEY")
         .env_remove("TURNKEY_API_PRIVATE_KEY")
-        .env_remove("TURNKEY_PRIVATE_KEY_ID")
         .env_remove("TURNKEY_API_BASE_URL");
 
     cmd.assert()

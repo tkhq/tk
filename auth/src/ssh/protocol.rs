@@ -9,8 +9,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::{Duration, timeout};
 
-const SSH_ED25519_ALGORITHM: &str = "ssh-ed25519";
-const CONNECTION_IO_TIMEOUT: Duration = Duration::from_millis(250);
+use super::wire::SSH_ED25519_ALGORITHM;
+const CONNECTION_IO_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_AGENT_FRAME_SIZE: usize = 1 << 20;
 
 /// Generic SSH agent failure response message code.
@@ -138,11 +138,7 @@ async fn read_exact_with_deadline(stream: &mut UnixStream, buf: &mut [u8]) -> st
     }
 }
 
-fn encode_string(bytes: &[u8], mut output: Vec<u8>) -> Vec<u8> {
-    output.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
-    output.extend_from_slice(bytes);
-    output
-}
+use super::wire::encode_string;
 
 fn parse_agent_frame(frame: &[u8]) -> Result<(u8, &[u8])> {
     if frame.len() < 4 {
@@ -164,23 +160,7 @@ fn parse_agent_frame(frame: &[u8]) -> Result<(u8, &[u8])> {
     Ok((frame[4], &frame[5..]))
 }
 
-fn read_ssh_bytes(cursor: &mut &[u8]) -> Result<Vec<u8>> {
-    if cursor.len() < 4 {
-        return Err(anyhow!("truncated SSH string length"));
-    }
-
-    let length = u32::from_be_bytes(cursor[..4].try_into().expect("length slice should be 4"));
-    *cursor = &cursor[4..];
-
-    let length = length as usize;
-    if cursor.len() < length {
-        return Err(anyhow!("truncated SSH string body"));
-    }
-
-    let value = cursor[..length].to_vec();
-    *cursor = &cursor[length..];
-    Ok(value)
-}
+use super::wire::read_ssh_bytes;
 
 fn read_u32(cursor: &mut &[u8]) -> Result<u32> {
     if cursor.len() < 4 {

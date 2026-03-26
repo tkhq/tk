@@ -28,11 +28,11 @@ async fn ssh_agent_lists_identity_and_signs_for_configured_key() {
     let public_key_blob = public_key_blob(&TURNKEY_TEST_PUBLIC_KEY);
 
     let server = MockServer::start().await;
-    mount_get_private_key_mock(&server, &hex::encode(TURNKEY_TEST_PUBLIC_KEY)).await;
     mount_sign_raw_payload_mock(&server, &TURNKEY_TEST_SIGNATURE).await;
 
     let api_key = TurnkeyP256ApiKey::generate();
-    let mut child = spawn_tk_ssh_agent(&socket_path, &server, &api_key);
+    let config_path = write_test_config(temp.path(), &api_key, &server);
+    let mut child = spawn_tk_ssh_agent(&socket_path, &config_path);
     wait_for_socket(&socket_path, &mut child).await;
 
     let identities = exchange_frame(
@@ -59,8 +59,8 @@ async fn ssh_agent_lists_identity_and_signs_for_configured_key() {
         .received_requests()
         .await
         .expect("request recording should be enabled");
-    assert_eq!(requests.len(), 2);
-    let sign_request_body: serde_json::Value = requests[1]
+    assert_eq!(requests.len(), 1);
+    let sign_request_body: serde_json::Value = requests[0]
         .body_json()
         .expect("sign request body should be valid JSON");
     assert_eq!(
@@ -84,10 +84,10 @@ async fn ssh_agent_rejects_other_keys_and_unsupported_messages() {
     let other_public_key_blob = public_key_blob(&[0x11; 32]);
 
     let server = MockServer::start().await;
-    mount_get_private_key_mock(&server, &hex::encode(TURNKEY_TEST_PUBLIC_KEY)).await;
 
     let api_key = TurnkeyP256ApiKey::generate();
-    let mut child = spawn_tk_ssh_agent(&socket_path, &server, &api_key);
+    let config_path = write_test_config(temp.path(), &api_key, &server);
+    let mut child = spawn_tk_ssh_agent(&socket_path, &config_path);
     wait_for_socket(&socket_path, &mut child).await;
 
     let sign_failure = exchange_frame(
@@ -110,7 +110,7 @@ async fn ssh_agent_rejects_other_keys_and_unsupported_messages() {
         .received_requests()
         .await
         .expect("request recording should be enabled");
-    assert_eq!(requests.len(), 1);
+    assert_eq!(requests.len(), 0);
 }
 
 #[tokio::test]
@@ -120,10 +120,10 @@ async fn ssh_agent_contains_malformed_clients_and_keeps_serving() {
     let public_key_blob = public_key_blob(&TURNKEY_TEST_PUBLIC_KEY);
 
     let server = MockServer::start().await;
-    mount_get_private_key_mock(&server, &hex::encode(TURNKEY_TEST_PUBLIC_KEY)).await;
 
     let api_key = TurnkeyP256ApiKey::generate();
-    let mut child = spawn_tk_ssh_agent(&socket_path, &server, &api_key);
+    let config_path = write_test_config(temp.path(), &api_key, &server);
+    let mut child = spawn_tk_ssh_agent(&socket_path, &config_path);
     wait_for_socket(&socket_path, &mut child).await;
 
     send_partial_frame_then_disconnect(&socket_path).await;
@@ -146,7 +146,7 @@ async fn ssh_agent_contains_malformed_clients_and_keeps_serving() {
         .received_requests()
         .await
         .expect("request recording should be enabled");
-    assert_eq!(requests.len(), 1);
+    assert_eq!(requests.len(), 0);
 }
 
 #[tokio::test]
@@ -156,10 +156,10 @@ async fn ssh_agent_rejects_oversized_frames_and_keeps_serving() {
     let public_key_blob = public_key_blob(&TURNKEY_TEST_PUBLIC_KEY);
 
     let server = MockServer::start().await;
-    mount_get_private_key_mock(&server, &hex::encode(TURNKEY_TEST_PUBLIC_KEY)).await;
 
     let api_key = TurnkeyP256ApiKey::generate();
-    let mut child = spawn_tk_ssh_agent(&socket_path, &server, &api_key);
+    let config_path = write_test_config(temp.path(), &api_key, &server);
+    let mut child = spawn_tk_ssh_agent(&socket_path, &config_path);
     wait_for_socket(&socket_path, &mut child).await;
 
     let oversized_socket_path = socket_path.clone();
@@ -193,7 +193,7 @@ async fn ssh_agent_rejects_oversized_frames_and_keeps_serving() {
         .received_requests()
         .await
         .expect("request recording should be enabled");
-    assert_eq!(requests.len(), 1);
+    assert_eq!(requests.len(), 0);
 
     oversized_client
         .await
@@ -207,10 +207,10 @@ async fn ssh_agent_times_out_stalled_clients_and_keeps_serving() {
     let public_key_blob = public_key_blob(&TURNKEY_TEST_PUBLIC_KEY);
 
     let server = MockServer::start().await;
-    mount_get_private_key_mock(&server, &hex::encode(TURNKEY_TEST_PUBLIC_KEY)).await;
 
     let api_key = TurnkeyP256ApiKey::generate();
-    let mut child = spawn_tk_ssh_agent(&socket_path, &server, &api_key);
+    let config_path = write_test_config(temp.path(), &api_key, &server);
+    let mut child = spawn_tk_ssh_agent(&socket_path, &config_path);
     wait_for_socket(&socket_path, &mut child).await;
 
     let stalled_socket_path = socket_path.clone();
@@ -244,7 +244,7 @@ async fn ssh_agent_times_out_stalled_clients_and_keeps_serving() {
         .received_requests()
         .await
         .expect("request recording should be enabled");
-    assert_eq!(requests.len(), 1);
+    assert_eq!(requests.len(), 0);
 
     stalled_client
         .await
@@ -257,10 +257,10 @@ async fn ssh_agent_exits_on_sigterm_and_removes_socket() {
     let socket_path = temp.path().join("auth.sock");
 
     let server = MockServer::start().await;
-    mount_get_private_key_mock(&server, &hex::encode(TURNKEY_TEST_PUBLIC_KEY)).await;
 
     let api_key = TurnkeyP256ApiKey::generate();
-    let mut child = spawn_tk_ssh_agent(&socket_path, &server, &api_key);
+    let config_path = write_test_config(temp.path(), &api_key, &server);
+    let mut child = spawn_tk_ssh_agent(&socket_path, &config_path);
     wait_for_socket(&socket_path, &mut child).await;
 
     let status = Command::new("kill")
@@ -302,26 +302,35 @@ fn encode_ssh_string(bytes: &[u8], output: &mut Vec<u8>) {
     output.extend_from_slice(bytes);
 }
 
-fn spawn_tk_ssh_agent(
-    socket_path: &Path,
-    server: &MockServer,
-    api_key: &TurnkeyP256ApiKey,
-) -> ChildGuard {
+fn write_test_config(dir: &Path, api_key: &TurnkeyP256ApiKey, server: &MockServer) -> PathBuf {
+    let config_path = dir.join("tk.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            r#"[turnkey]
+organizationId = "org-id"
+apiPublicKey = "{}"
+apiPrivateKey = "{}"
+signingAddress = "test-address"
+signingPublicKey = "{}"
+apiBaseUrl = "{}"
+"#,
+            hex::encode(api_key.compressed_public_key()),
+            hex::encode(api_key.private_key()),
+            hex::encode(TURNKEY_TEST_PUBLIC_KEY),
+            server.uri(),
+        ),
+    )
+    .expect("config file should be written");
+    config_path
+}
+
+fn spawn_tk_ssh_agent(socket_path: &Path, config_path: &Path) -> ChildGuard {
     let child = Command::new(env!("CARGO_BIN_EXE_tk"))
         .arg("ssh-agent")
         .arg("--socket")
         .arg(socket_path)
-        .env("TURNKEY_ORGANIZATION_ID", "org-id")
-        .env(
-            "TURNKEY_API_PUBLIC_KEY",
-            hex::encode(api_key.compressed_public_key()),
-        )
-        .env(
-            "TURNKEY_API_PRIVATE_KEY",
-            hex::encode(api_key.private_key()),
-        )
-        .env("TURNKEY_PRIVATE_KEY_ID", "pk-id")
-        .env("TURNKEY_API_BASE_URL", server.uri())
+        .env("TURNKEY_TK_CONFIG_PATH", config_path)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -400,28 +409,6 @@ async fn send_partial_frame_then_disconnect(socket_path: &Path) {
         .write_all(&[0, 0, 0, 8, protocol::SSH_AGENTC_SIGN_REQUEST, 0, 0])
         .await
         .expect("partial frame should write");
-}
-
-async fn mount_get_private_key_mock(server: &MockServer, public_key: &str) {
-    Mock::given(method("POST"))
-        .and(path("/public/v1/query/get_private_key"))
-        .and(header_exists("X-Stamp"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "privateKey": {
-                "privateKeyId": "pk-id",
-                "publicKey": public_key,
-                "privateKeyName": "ssh agent signer",
-                "curve": "CURVE_ED25519",
-                "addresses": [],
-                "privateKeyTags": [],
-                "createdAt": null,
-                "updatedAt": null,
-                "exported": false,
-                "imported": false
-            }
-        })))
-        .mount(server)
-        .await;
 }
 
 async fn mount_sign_raw_payload_mock(server: &MockServer, signature: &[u8]) {

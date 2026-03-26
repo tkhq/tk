@@ -39,6 +39,12 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         }
         Command::Set(args) => {
             let key = ConfigKey::parse(&args.key)?;
+            if key == ConfigKey::ApiPrivateKey {
+                anyhow::bail!(
+                    "cannot set turnkey.apiPrivateKey via the command line.\n\
+                     Use the TURNKEY_API_PRIVATE_KEY environment variable or `tk init` instead."
+                );
+            }
             config::set_config_value(key, &args.value).await?;
         }
         Command::List => {

@@ -6,20 +6,25 @@ Environment:
   TURNKEY_ORGANIZATION_ID
   TURNKEY_API_PUBLIC_KEY
   TURNKEY_API_PRIVATE_KEY
-  TURNKEY_PRIVATE_KEY_ID
   TURNKEY_API_BASE_URL
 
 Config file:
   Set TURNKEY_TK_CONFIG_PATH to override the config file location.
   Otherwise tk uses ~/.config/turnkey/tk.toml.
 
+Quick start:
+  TURNKEY_API_PRIVATE_KEY=<priv> tk init --organization-id <org> --api-public-key <pub>
+  tk whoami
+  tk public-key
+
 SSH agent:
-  tk ssh-agent --socket /tmp/auth.sock
-  export SSH_AUTH_SOCK=/tmp/auth.sock
+  tk ssh-agent start
+  eval $(tk ssh-agent status)
 ";
 
 #[derive(Debug, Parser)]
 #[command(
+    version,
     about = "CLI for Turnkey backed auth workflows",
     long_about = None,
     after_help = AFTER_HELP
@@ -36,6 +41,8 @@ impl Cli {
         let args = Self::parse();
 
         match args.command {
+            Commands::Init(args) => commands::init::run(args).await,
+            Commands::Whoami(args) => commands::whoami::run(args).await,
             Commands::Config(args) => commands::config::run(args).await,
             Commands::SshAgent(args) => commands::agent::run(args).await,
             Commands::GitSign(args) => commands::git_sign::run(args).await,
@@ -46,9 +53,13 @@ impl Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Initialize tk with Turnkey credentials and wallet setup.
+    Init(commands::init::Args),
+    /// Display the authenticated Turnkey identity.
+    Whoami(commands::whoami::Args),
     /// Inspect and update persistent auth configuration.
     Config(commands::config::Args),
-    /// Run a foreground SSH agent over a Unix socket.
+    /// Manage the Turnkey SSH agent.
     SshAgent(commands::agent::Args),
     /// Sign a payload using the Git SSH signer interface.
     GitSign(commands::git_sign::Args),

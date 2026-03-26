@@ -20,7 +20,7 @@ pub async fn run(socket: PathBuf) -> anyhow::Result<()> {
 
     let result = async {
         let signer = Arc::new(TurnkeySigner::new(Config::resolve().await?)?);
-        let public_key = signer.get_public_key().await?;
+        let public_key = signer.get_public_key()?;
         let public_key_blob = Arc::new(
             ssh::parse_public_key_line(&ssh::encode_public_key_line(&public_key, None)?)
                 .context("failed to build SSH public key blob")?
@@ -68,10 +68,10 @@ pub async fn run(socket: PathBuf) -> anyhow::Result<()> {
 
         connections.abort_all();
         while let Some(join_result) = connections.join_next().await {
-            if let Err(error) = join_result {
-                if error.is_panic() {
-                    return Err(anyhow!("ssh-agent connection task panicked: {error}"));
-                }
+            if let Err(error) = join_result
+                && error.is_panic()
+            {
+                return Err(anyhow!("ssh-agent connection task panicked: {error}"));
             }
         }
 
@@ -111,7 +111,7 @@ async fn handle_connection(
             Some(protocol::SSH_AGENTC_SIGN_REQUEST) => {
                 match protocol::parse_sign_request_frame(&frame) {
                     Ok(request) if request.public_key_blob == *configured_public_key_blob => {
-                        match signer.sign_ssh_auth_payload(&request.data).await {
+                        match signer.sign_ed25519(&request.data).await {
                             Ok(signature) => protocol::encode_sign_response(&signature)
                                 .unwrap_or_else(|_| {
                                     protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[])
