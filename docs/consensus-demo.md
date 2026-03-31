@@ -32,7 +32,7 @@ cargo run -p tk --example consensus_demo -- sign
 The example writes a payload and SSH public key into `target/consensus-demo/`, then attempts a Git-signing operation with the demo agent credentials. The expected result is:
 
 ```text
-signing requires consensus approval (activity: <activity-id>)
+signing requires consensus approval (fingerprint: <activity-fingerprint>)
 ```
 
 At that point, approve the pending activity in the dashboard.
