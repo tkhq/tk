@@ -39,7 +39,7 @@ pub struct RejectArgs {
 }
 
 async fn approve(args: ApproveArgs) -> anyhow::Result<()> {
-    let config = turnkey_auth::config::Config::resolve_api_credentials().await?;
+    let config = turnkey_auth::config::Config::resolve().await?;
     let signer = turnkey_auth::turnkey::TurnkeySigner::new(config)?;
     signer.approve_activity(&args.fingerprint).await?;
     println!("Activity approved.");
@@ -47,7 +47,7 @@ async fn approve(args: ApproveArgs) -> anyhow::Result<()> {
 }
 
 async fn reject(args: RejectArgs) -> anyhow::Result<()> {
-    let config = turnkey_auth::config::Config::resolve_api_credentials().await?;
+    let config = turnkey_auth::config::Config::resolve().await?;
     let signer = turnkey_auth::turnkey::TurnkeySigner::new(config)?;
     signer.reject_activity(&args.fingerprint).await?;
     println!("Activity rejected.");

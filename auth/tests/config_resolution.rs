@@ -57,7 +57,7 @@ privateKeyId = "file-key"
 }
 
 #[test]
-fn api_credentials_resolution_does_not_require_private_key_id() {
+fn config_resolution_does_not_require_private_key_id() {
     let temp = tempdir().unwrap();
     let config_path = temp.path().join("tk.toml");
     fs::write(
@@ -71,7 +71,7 @@ apiPrivateKey = "file-priv"
     .unwrap();
 
     let env = BTreeMap::new();
-    let config = Config::resolve_api_credentials_from_map(&config_path, &env).unwrap();
+    let config = Config::resolve_from_map(&config_path, &env).unwrap();
 
     assert_eq!(config.organization_id, "file-org");
     assert_eq!(config.api_public_key, "file-pub");

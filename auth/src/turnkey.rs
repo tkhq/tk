@@ -3,7 +3,9 @@ use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::generated::immutable::activity::v1 as immutable_activity;
 use turnkey_client::generated::immutable::common::v1::HashFunction;
 use turnkey_client::generated::immutable::common::v1::PayloadEncoding;
-use turnkey_client::generated::{GetActivityRequest, GetPrivateKeyRequest, SignRawPayloadIntentV2};
+use turnkey_client::generated::{
+    ActivityStatus, GetActivityRequest, GetPrivateKeyRequest, SignRawPayloadIntentV2,
+};
 use turnkey_client::{TurnkeyClient, TurnkeyClientError};
 
 use crate::config::Config;
@@ -32,11 +34,12 @@ impl TurnkeySigner {
 
     /// Fetches the configured Ed25519 public key bytes from Turnkey.
     pub async fn get_public_key(&self) -> Result<Vec<u8>> {
+        let private_key_id = self.required_private_key_id()?;
         let response = self
             .client
             .get_private_key(GetPrivateKeyRequest {
                 organization_id: self.config.organization_id.clone(),
-                private_key_id: self.config.private_key_id.clone(),
+                private_key_id: private_key_id.to_string(),
             })
             .await
             .map_err(map_turnkey_error)?;
@@ -88,7 +91,7 @@ impl TurnkeySigner {
         {
             Ok(_) => Ok(()),
             Err(TurnkeyClientError::UnexpectedActivityStatus(status))
-                if status == "ACTIVITY_STATUS_REJECTED" =>
+                if status == ActivityStatus::Rejected.as_str_name() =>
             {
                 Ok(())
             }
@@ -97,13 +100,14 @@ impl TurnkeySigner {
     }
 
     async fn sign_raw_ed25519_payload(&self, payload: &[u8]) -> Result<Vec<u8>> {
+        let private_key_id = self.required_private_key_id()?;
         match self
             .client
             .sign_raw_payload(
                 self.config.organization_id.clone(),
                 self.client.current_timestamp(),
                 SignRawPayloadIntentV2 {
-                    sign_with: self.config.private_key_id.clone(),
+                    sign_with: private_key_id.to_string(),
                     payload: hex::encode(payload),
                     encoding: PayloadEncoding::Hexadecimal,
                     hash_function: HashFunction::NotApplicable,
@@ -121,11 +125,12 @@ impl TurnkeySigner {
         }
     }
 
+    /// Builds a consensus-needed error and enriches it with the activity fingerprint when available.
     async fn consensus_required_error(&self, activity_id: &str) -> anyhow::Error {
         match self.get_activity_fingerprint(activity_id).await {
-            Ok(fingerprint) => {
-                anyhow!("signing requires consensus approval (fingerprint: {fingerprint})")
-            }
+            Ok(fingerprint) => anyhow!(
+                "signing requires consensus approval (fingerprint: {fingerprint}, activity id: {activity_id})"
+            ),
             Err(_) => anyhow!("signing requires consensus approval (activity id: {activity_id})"),
         }
     }
@@ -149,6 +154,14 @@ impl TurnkeySigner {
         }
 
         Ok(activity.fingerprint)
+    }
+
+    fn required_private_key_id(&self) -> Result<&str> {
+        if self.config.private_key_id.is_empty() {
+            return Err(anyhow!("missing required config value: turnkey.privateKeyId"));
+        }
+
+        Ok(&self.config.private_key_id)
     }
 }
 
@@ -341,8 +354,10 @@ mod tests {
 
         let message = error.to_string();
         assert!(
-            message.contains("consensus") && message.contains("consensus-fingerprint"),
-            "error should mention consensus and contain the activity fingerprint: {message}"
+            message.contains("consensus")
+                && message.contains("consensus-fingerprint")
+                && message.contains("consensus-activity-id"),
+            "error should mention consensus and contain both activity fingerprint and id: {message}"
         );
     }
 
@@ -381,6 +396,30 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "signing requires consensus approval (activity id: consensus-activity-id)"
+        );
+    }
+
+    #[tokio::test]
+    async fn sign_requires_private_key_id() {
+        let server = MockServer::start().await;
+        let api_key = TurnkeyP256ApiKey::generate();
+        let signer = TurnkeySigner::new(Config {
+            organization_id: "org-id".to_string(),
+            api_public_key: hex::encode(api_key.compressed_public_key()),
+            api_private_key: hex::encode(api_key.private_key()),
+            private_key_id: String::new(),
+            api_base_url: server.uri(),
+        })
+        .expect("signer should build");
+
+        let error = signer
+            .sign_ed25519(b"test-payload")
+            .await
+            .expect_err("sign should require a private key id");
+
+        assert_eq!(
+            error.to_string(),
+            "missing required config value: turnkey.privateKeyId"
         );
     }
 
