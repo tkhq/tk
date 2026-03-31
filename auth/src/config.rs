@@ -182,7 +182,7 @@ impl ResolvedConfig {
             organization_id: required_value("turnkey.organizationId", self.organization_id)?,
             api_public_key: required_value("turnkey.apiPublicKey", self.api_public_key)?,
             api_private_key: required_value("turnkey.apiPrivateKey", self.api_private_key)?,
-            private_key_id: required_value("turnkey.privateKeyId", self.private_key_id)?,
+            private_key_id: self.private_key_id.unwrap_or_default(),
             api_base_url: self.api_base_url,
         })
     }

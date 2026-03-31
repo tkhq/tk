@@ -1,3 +1,5 @@
+/// Activity approval and rejection command namespace.
+pub mod activity;
 /// Background SSH agent lifecycle commands.
 pub mod agent;
 /// Persistent configuration inspection and mutation commands.
