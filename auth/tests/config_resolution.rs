@@ -55,3 +55,27 @@ privateKeyId = "file-key"
     assert_eq!(config.private_key_id, "env-key");
     assert_eq!(config.api_base_url, "https://api.turnkey.com");
 }
+
+#[test]
+fn api_credentials_resolution_does_not_require_private_key_id() {
+    let temp = tempdir().unwrap();
+    let config_path = temp.path().join("tk.toml");
+    fs::write(
+        &config_path,
+        r#"[turnkey]
+organizationId = "file-org"
+apiPublicKey = "file-pub"
+apiPrivateKey = "file-priv"
+    "#,
+    )
+    .unwrap();
+
+    let env = BTreeMap::new();
+    let config = Config::resolve_api_credentials_from_map(&config_path, &env).unwrap();
+
+    assert_eq!(config.organization_id, "file-org");
+    assert_eq!(config.api_public_key, "file-pub");
+    assert_eq!(config.api_private_key, "file-priv");
+    assert_eq!(config.private_key_id, "");
+    assert_eq!(config.api_base_url, "https://api.turnkey.com");
+}

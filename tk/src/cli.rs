@@ -20,6 +20,7 @@ impl Cli {
         let args = Self::parse();
 
         match args.command {
+            Commands::Activity(args) => commands::activity::run(args).await,
             Commands::Config(args) => commands::config::run(args).await,
             Commands::Ssh(args) => commands::ssh::run(args).await,
         }
@@ -28,6 +29,8 @@ impl Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Activity approval and rejection commands.
+    Activity(commands::activity::Args),
     /// Inspect and update persistent auth configuration.
     Config(commands::config::Args),
     /// SSH related commands.

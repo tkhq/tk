@@ -69,9 +69,24 @@ impl Config {
             .and_then(ResolvedConfig::into_complete)
     }
 
+    /// Resolves the auth configuration for commands that only need API credentials and organization context.
+    pub async fn resolve_api_credentials() -> Result<Self> {
+        ResolvedConfig::resolve()
+            .await
+            .and_then(ResolvedConfig::into_api_credentials)
+    }
+
     /// Resolves the complete auth configuration from an explicit config path and environment map.
     pub fn resolve_from_map(path: &Path, env: &BTreeMap<String, String>) -> Result<Self> {
         ResolvedConfig::resolve_from_map(path, env).and_then(ResolvedConfig::into_complete)
+    }
+
+    /// Resolves the auth configuration for commands that only need API credentials and organization context.
+    pub fn resolve_api_credentials_from_map(
+        path: &Path,
+        env: &BTreeMap<String, String>,
+    ) -> Result<Self> {
+        ResolvedConfig::resolve_from_map(path, env).and_then(ResolvedConfig::into_api_credentials)
     }
 }
 
@@ -183,6 +198,16 @@ impl ResolvedConfig {
             api_public_key: required_value("turnkey.apiPublicKey", self.api_public_key)?,
             api_private_key: required_value("turnkey.apiPrivateKey", self.api_private_key)?,
             private_key_id: required_value("turnkey.privateKeyId", self.private_key_id)?,
+            api_base_url: self.api_base_url,
+        })
+    }
+
+    fn into_api_credentials(self) -> Result<Config> {
+        Ok(Config {
+            organization_id: required_value("turnkey.organizationId", self.organization_id)?,
+            api_public_key: required_value("turnkey.apiPublicKey", self.api_public_key)?,
+            api_private_key: required_value("turnkey.apiPrivateKey", self.api_private_key)?,
+            private_key_id: self.private_key_id.unwrap_or_default(),
             api_base_url: self.api_base_url,
         })
     }

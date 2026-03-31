@@ -9,6 +9,7 @@ fn cli_help_lists_commands() {
 
     cmd.assert()
         .success()
+        .stdout(predicate::str::contains("activity"))
         .stdout(predicate::str::contains("config"))
         .stdout(predicate::str::contains("ssh"))
         .stdout(predicate::str::contains("TURNKEY_ORGANIZATION_ID"))
@@ -18,7 +19,7 @@ fn cli_help_lists_commands() {
         .stdout(predicate::str::contains("TURNKEY_API_BASE_URL"))
         .stdout(predicate::str::contains("TURNKEY_TK_CONFIG_PATH"))
         .stdout(predicate::str::contains("~/.config/turnkey/tk/tk.toml"))
-        .stdout(predicate::str::contains("ssh     SSH-related commands"))
+        .stdout(predicate::str::contains("ssh       SSH related commands"))
         .stdout(predicate::str::contains("tk ssh agent start"))
         .stdout(predicate::str::contains(
             "export SSH_AUTH_SOCK=~/.config/turnkey/tk/ssh-agent.sock",
