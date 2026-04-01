@@ -8,7 +8,7 @@ set -euo pipefail
 #   ./sign.sh [--payload "custom message"]
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DEMO_DIR="$REPO_ROOT/target/consensus-demo"
 PAYLOAD="hello world"
 

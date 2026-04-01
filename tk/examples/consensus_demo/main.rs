@@ -171,7 +171,7 @@ async fn setup(output_dir: PathBuf) -> Result<()> {
 
     println!("Setup complete. Artifacts written to {}", output_dir.display());
     println!("\nNext step:");
-    println!("  ./scripts/consensus-demo/sign.sh");
+    println!("  ./tk/examples/consensus_demo/sign.sh");
 
     Ok(())
 }

@@ -41,7 +41,7 @@ This writes artifacts to `target/consensus-demo/`:
 Attempt a signing operation using the `tk` CLI with agent credentials:
 
 ```bash
-./scripts/consensus-demo/sign.sh
+./tk/examples/consensus_demo/sign.sh
 ```
 
 The script sources the agent credentials, fetches the agent's public key via `tk ssh public-key`, then attempts `tk ssh git-sign`. Because the consensus policy requires a second approver, the expected output is:
