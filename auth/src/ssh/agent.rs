@@ -111,7 +111,7 @@ async fn handle_connection(
             Some(protocol::SSH_AGENTC_SIGN_REQUEST) => {
                 match protocol::parse_sign_request_frame(&frame) {
                     Ok(request) if request.public_key_blob == *configured_public_key_blob => {
-                        match signer.sign_ssh_auth_payload(&request.data).await {
+                        match signer.sign_raw_payload(&request.data).await {
                             Ok(signature) => protocol::encode_sign_response(&signature)
                                 .unwrap_or_else(|_| {
                                     protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[])
