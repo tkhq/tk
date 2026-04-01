@@ -1,6 +1,8 @@
 use anyhow::{Result, anyhow};
 use clap::{Args as ClapArgs, Subcommand};
 use turnkey_client::generated::immutable::activity::v1 as activity;
+use turnkey_client::generated::ActivityStatus;
+use turnkey_client::TurnkeyClientError;
 
 /// Top-level arguments for `tk activity`.
 #[derive(Debug, ClapArgs)]
@@ -67,7 +69,7 @@ async fn reject(args: RejectArgs) -> Result<()> {
     let client = signer.client();
     let org_id = signer.organization_id().to_string();
 
-    client
+    match client
         .reject_activity(
             org_id,
             client.current_timestamp(),
@@ -76,7 +78,13 @@ async fn reject(args: RejectArgs) -> Result<()> {
             },
         )
         .await
-        .map_err(|e| anyhow!("failed to reject activity: {e}"))?;
+    {
+        Ok(_) => {}
+        // Treat already-rejected as success for retry safety.
+        Err(TurnkeyClientError::UnexpectedActivityStatus(status))
+            if status == ActivityStatus::Rejected.as_str_name() => {}
+        Err(e) => return Err(anyhow!("failed to reject activity: {e}")),
+    }
 
     println!("Activity rejected.");
     Ok(())
