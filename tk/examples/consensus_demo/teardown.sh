@@ -28,21 +28,27 @@ STATE_FILE="$OUTPUT_DIR/state.json"
 
 if [[ ! -f "$STATE_FILE" ]]; then
     echo "state.json not found at $OUTPUT_DIR. Nothing to tear down."
-    exit 1
+    exit 0
 fi
 
-POLICY_ID=$(jq -r .policy_id "$STATE_FILE")
-USER_ID=$(jq -r .agent_user_id "$STATE_FILE")
-KEY_ID=$(jq -r .private_key_id "$STATE_FILE")
+POLICY_ID=$(jq -r '.policy_id // empty' "$STATE_FILE")
+USER_ID=$(jq -r '.agent_user_id // empty' "$STATE_FILE")
+KEY_ID=$(jq -r '.private_key_id // empty' "$STATE_FILE")
 
-echo "==> Deleting policy $POLICY_ID..."
-$TK policies delete --policy-id "$POLICY_ID"
+if [[ -n "$POLICY_ID" ]]; then
+    echo "==> Deleting policy $POLICY_ID..."
+    $TK policies delete --policy-id "$POLICY_ID"
+fi
 
-echo "==> Deleting user $USER_ID..."
-$TK users delete --user-id "$USER_ID"
+if [[ -n "$USER_ID" ]]; then
+    echo "==> Deleting user $USER_ID..."
+    $TK users delete --user-id "$USER_ID"
+fi
 
-echo "==> Deleting private key $KEY_ID..."
-$TK keys delete --key-id "$KEY_ID"
+if [[ -n "$KEY_ID" ]]; then
+    echo "==> Deleting private key $KEY_ID..."
+    $TK keys delete --key-id "$KEY_ID" --delete-without-export
+fi
 
 rm -rf "$OUTPUT_DIR"
 

@@ -47,7 +47,7 @@ struct DeleteArgs {
     #[arg(long = "key-id", required = true)]
     key_ids: Vec<String>,
     /// Allow deletion without requiring a prior export.
-    #[arg(long, default_value_t = true)]
+    #[arg(long, default_value_t = false)]
     delete_without_export: bool,
 }
 

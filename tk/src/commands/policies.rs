@@ -67,6 +67,15 @@ impl From<EffectArg> for Effect {
 }
 
 async fn create(args: CreateArgs) -> Result<()> {
+    if matches!(args.effect, EffectArg::Allow)
+        && args.condition.is_none()
+        && args.consensus.is_none()
+    {
+        return Err(anyhow!(
+            "allow policies must include at least one constraint: --condition or --consensus"
+        ));
+    }
+
     let config = turnkey_auth::config::Config::resolve().await?;
     let signer = turnkey_auth::turnkey::TurnkeySigner::new(config)?;
     let client = signer.client();
