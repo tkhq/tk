@@ -1,11 +1,10 @@
 # Consensus Demo
 
-This demo walks through a consensus-signing setup using the Turnkey Rust SDK. It creates a private key, an agent user, and a policy that requires two approvers before signing is allowed.
+This demo walks through a consensus-signing setup using the Turnkey Rust SDK. It creates a private key, an agent user, and a policy that requires two approvers before signing is allowed. The signing step uses the `tk` CLI directly to demonstrate the end-to-end flow.
 
 ## Prerequisites
 
-- A Turnkey organization with root API credentials
-- For local development: a local Turnkey stack reachable at a known URL (e.g. `http://localhost:8081`)
+- A [Turnkey](https://app.turnkey.com) organization with root API credentials
 
 ## Environment
 
@@ -17,16 +16,16 @@ export TURNKEY_API_PUBLIC_KEY="<ROOT_PUBLIC_KEY>"
 export TURNKEY_API_PRIVATE_KEY="<ROOT_PRIVATE_KEY>"
 ```
 
-When running against a local stack, also set the base URL (defaults to `https://api.turnkey.com`):
+To override the API base URL (defaults to `https://api.turnkey.com`):
 
 ```bash
-export TURNKEY_API_BASE_URL="http://localhost:8081"
+export TURNKEY_API_BASE_URL="<CUSTOM_URL>"
 ```
 
 ## Setup
 
 ```bash
-cargo run -p tk --example consensus_demo -- setup
+./scripts/consensus-demo/setup.sh
 ```
 
 This creates:
@@ -38,18 +37,18 @@ This creates:
 Artifacts are written to `target/consensus-demo/`:
 
 - `state.json`: resource IDs and agent credentials used by the sign and teardown steps
-- `agent.env`: the same agent credentials as shell exports, useful if you want to drive the `tk` CLI directly with agent credentials
+- `agent.env`: agent credentials as shell exports, sourced by the sign script
 
 ## Trigger a signing request
 
 ```bash
-cargo run -p tk --example consensus_demo -- sign
+./scripts/consensus-demo/sign.sh
 ```
 
-This attempts a raw-payload signing request using the demo agent credentials from `state.json`. Because the consensus policy requires a second approver, the expected output is:
+This sources the agent credentials, fetches the agent's public key via `tk ssh public-key`, then attempts a Git-signing operation via `tk ssh git-sign`. Because the consensus policy requires a second approver, the expected output is:
 
 ```text
-Signing requires consensus approval (fingerprint: <activity-fingerprint>)
+signing requires consensus approval (fingerprint: <activity-fingerprint>)
 ```
 
 ## Approve the pending activity
@@ -65,7 +64,7 @@ cargo run -p tk -- activity approve <fingerprint>
 Make sure root credentials are exported (not the agent credentials), then:
 
 ```bash
-cargo run -p tk --example consensus_demo -- teardown
+./scripts/consensus-demo/teardown.sh
 ```
 
 This removes the demo policy, user, private key, and artifact directory.

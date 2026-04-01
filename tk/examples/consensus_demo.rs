@@ -13,7 +13,7 @@ use turnkey_client::generated::{GetActivityRequest, SignRawPayloadIntentV2};
 use turnkey_client::{TurnkeyClient, TurnkeyClientError};
 
 #[derive(Debug, Parser)]
-#[command(about = "Consensus signing demo for local Turnkey stacks.")]
+#[command(about = "Consensus signing demo using the Turnkey Rust SDK.")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -128,7 +128,7 @@ async fn setup(output_dir: PathBuf) -> Result<()> {
             activity::CreateUsersIntentV4 {
                 users: vec![activity::UserParamsV4 {
                     user_name: format!("demo-agent-{suffix}"),
-                    user_email: Some(format!("agent-{suffix}@demo.local")),
+                    user_email: Some(format!("agent-{suffix}@demo.turnkey.com")),
                     user_phone_number: None,
                     api_keys: vec![activity::ApiKeyParamsV2 {
                         api_key_name: format!("agent-key-{suffix}"),
