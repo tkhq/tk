@@ -32,6 +32,16 @@ impl TurnkeySigner {
         Ok(Self { client, config })
     }
 
+    /// Returns a reference to the underlying Turnkey API client.
+    pub fn client(&self) -> &TurnkeyClient<TurnkeyP256ApiKey> {
+        &self.client
+    }
+
+    /// Returns the organization ID from the resolved config.
+    pub fn organization_id(&self) -> &str {
+        &self.config.organization_id
+    }
+
     /// Fetches the configured Ed25519 public key bytes from Turnkey.
     pub async fn get_public_key(&self) -> Result<Vec<u8>> {
         let private_key_id = self.required_private_key_id()?;
