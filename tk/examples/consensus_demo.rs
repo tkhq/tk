@@ -6,11 +6,8 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::generated::immutable::activity::v1 as activity;
-use turnkey_client::generated::immutable::common::v1::{
-    AddressFormat, ApiKeyCurve, Curve, Effect, HashFunction, PayloadEncoding,
-};
-use turnkey_client::generated::{GetActivityRequest, SignRawPayloadIntentV2};
-use turnkey_client::{TurnkeyClient, TurnkeyClientError};
+use turnkey_client::generated::immutable::common::v1::{AddressFormat, ApiKeyCurve, Curve, Effect};
+use turnkey_client::TurnkeyClient;
 
 #[derive(Debug, Parser)]
 #[command(about = "Consensus signing demo using the Turnkey Rust SDK.")]
@@ -21,18 +18,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Create demo resources (private key, user, tag, policy) and write artifacts.
+    /// Create demo resources (private key, user, consensus policy) and write artifacts.
     Setup {
         /// Directory for generated state and helper files.
-        #[arg(long, default_value = "target/consensus-demo")]
-        output_dir: PathBuf,
-    },
-    /// Attempt a raw-payload signing request with the demo agent credentials.
-    Sign {
-        /// Plain-text payload to sign.
-        #[arg(long, default_value = "hello world")]
-        payload: String,
-        /// Directory containing the generated setup state.
         #[arg(long, default_value = "target/consensus-demo")]
         output_dir: PathBuf,
     },
@@ -60,12 +48,9 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Setup { output_dir } => setup(output_dir).await,
-        Command::Sign { payload, output_dir } => sign(payload, output_dir).await,
         Command::Teardown { output_dir } => teardown(output_dir).await,
     }
 }
-
-// Credential helpers following the rust-sdk/examples pattern.
 
 fn load_api_key_from_env() -> Result<TurnkeyP256ApiKey> {
     let public_key =
@@ -79,8 +64,6 @@ fn load_api_key_from_env() -> Result<TurnkeyP256ApiKey> {
 fn load_base_url_from_env() -> String {
     env::var("TURNKEY_API_BASE_URL").unwrap_or_else(|_| "https://api.turnkey.com".to_string())
 }
-
-// --- Setup ---
 
 async fn setup(output_dir: PathBuf) -> Result<()> {
     let api_key = load_api_key_from_env()?;
@@ -188,97 +171,10 @@ async fn setup(output_dir: PathBuf) -> Result<()> {
 
     println!("Setup complete. Artifacts written to {}", output_dir.display());
     println!("\nNext step:");
-    println!(
-        "  cargo run -p tk --example consensus_demo -- sign --output-dir {}",
-        output_dir.display()
-    );
+    println!("  ./scripts/consensus-demo/sign.sh");
 
     Ok(())
 }
-
-// --- Sign ---
-
-async fn sign(payload: String, output_dir: PathBuf) -> Result<()> {
-    let state = read_state(&output_dir).await?;
-
-    let api_key = TurnkeyP256ApiKey::from_strings(
-        &state.agent_api_private_key,
-        Some(&state.agent_api_public_key),
-    )
-    .context("failed to parse agent API key")?;
-
-    let client = TurnkeyClient::builder()
-        .api_key(api_key)
-        .base_url(&state.api_url)
-        .build()
-        .context("failed to build Turnkey client")?;
-
-    match client
-        .sign_raw_payload(
-            state.organization_id.clone(),
-            client.current_timestamp(),
-            SignRawPayloadIntentV2 {
-                sign_with: state.private_key_id.clone(),
-                payload: hex::encode(payload.as_bytes()),
-                encoding: PayloadEncoding::Hexadecimal,
-                hash_function: HashFunction::NotApplicable,
-            },
-        )
-        .await
-    {
-        Ok(result) => {
-            println!(
-                "Signing succeeded (r={}, s={})",
-                result.result.r, result.result.s
-            );
-        }
-        Err(TurnkeyClientError::ActivityRequiresApproval(activity_id)) => {
-            let fingerprint =
-                get_activity_fingerprint(&client, &state.organization_id, &activity_id).await;
-            match fingerprint {
-                Ok(fp) => {
-                    println!("Signing requires consensus approval (fingerprint: {fp})");
-                    println!("\nApprove with:");
-                    println!("  cargo run -p tk -- activity approve {fp}");
-                }
-                Err(_) => {
-                    println!(
-                        "Signing requires consensus approval (activity id: {activity_id})"
-                    );
-                }
-            }
-        }
-        Err(e) => return Err(anyhow!("signing failed: {e}")),
-    }
-
-    Ok(())
-}
-
-async fn get_activity_fingerprint(
-    client: &TurnkeyClient<TurnkeyP256ApiKey>,
-    organization_id: &str,
-    activity_id: &str,
-) -> Result<String> {
-    let response = client
-        .get_activity(GetActivityRequest {
-            organization_id: organization_id.to_string(),
-            activity_id: activity_id.to_string(),
-        })
-        .await
-        .map_err(|e| anyhow!("failed to fetch activity: {e}"))?;
-
-    let activity = response
-        .activity
-        .ok_or_else(|| anyhow!("Turnkey did not return an activity object"))?;
-
-    if activity.fingerprint.is_empty() {
-        return Err(anyhow!("activity fingerprint was empty"));
-    }
-
-    Ok(activity.fingerprint)
-}
-
-// --- Teardown ---
 
 async fn teardown(output_dir: PathBuf) -> Result<()> {
     let state = read_state(&output_dir).await?;
@@ -333,8 +229,6 @@ async fn teardown(output_dir: PathBuf) -> Result<()> {
     println!("Teardown complete.");
     Ok(())
 }
-
-// --- State helpers ---
 
 async fn write_state(output_dir: &Path, state: &DemoState) -> Result<()> {
     let rendered = serde_json::to_vec_pretty(state).context("failed to serialize state")?;

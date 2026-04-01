@@ -20,7 +20,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ! -f "$DEMO_DIR/agent.env" ]]; then
-    echo "agent.env not found at $DEMO_DIR. Run setup.sh first."
+    echo "agent.env not found at $DEMO_DIR. Run 'cargo run -p tk --example consensus_demo -- setup' first."
     exit 1
 fi
 
@@ -36,6 +36,17 @@ echo "==> Writing payload: \"$PAYLOAD\""
 echo -n "$PAYLOAD" > "$DEMO_DIR/demo-payload.txt"
 
 echo "==> Signing payload with tk CLI..."
-cargo run -p tk --quiet -- ssh git-sign -Y sign -n git \
+SIGN_OUTPUT=$(cargo run -p tk --quiet -- ssh git-sign -Y sign -n git \
     -f "$DEMO_DIR/demo-key.pub" \
-    "$DEMO_DIR/demo-payload.txt"
+    "$DEMO_DIR/demo-payload.txt" 2>&1) && {
+    echo "Signing succeeded."
+    echo "$SIGN_OUTPUT"
+} || {
+    echo "$SIGN_OUTPUT"
+    FINGERPRINT=$(echo "$SIGN_OUTPUT" | grep -o 'fingerprint: [^,)]*' | head -1 | sed 's/fingerprint: //')
+    if [[ -n "${FINGERPRINT:-}" ]]; then
+        echo ""
+        echo "Approve with:"
+        echo "  cargo run -p tk -- activity approve $FINGERPRINT"
+    fi
+}
