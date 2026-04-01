@@ -18,7 +18,7 @@ pub async fn run_git_sign(ssh_keygen_args: &[String]) -> anyhow::Result<()> {
         ));
     }
     let signed_data = ssh::build_signed_data("git", &payload);
-    let signature = signer.sign_ed25519(&signed_data).await?;
+    let signature = signer.sign_raw_payload(&signed_data).await?;
     let armored = ssh::encode_armored_signature(
         &parsed_public_key.public_key_blob,
         "git",
