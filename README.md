@@ -6,6 +6,7 @@ Experimental Turnkey auth workspace centered on the `tk` CLI.
 
 - [Git signing](./docs/git-signing.md)
 - [SSH agent](./docs/ssh-agent.md)
+- [Consensus demo](./tk/examples/consensus_demo/README.md)
 
 > Warning: `tk` is experimental and has not been audited.
 
