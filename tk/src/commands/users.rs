@@ -1,5 +1,8 @@
 use anyhow::{Result, anyhow};
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::generated::immutable::activity::v1 as activity;
 use turnkey_client::generated::immutable::common::v1::ApiKeyCurve;
@@ -52,6 +55,9 @@ struct CreateArgs {
     /// Expiration for the API key in seconds.
     #[arg(long)]
     api_key_expiration_seconds: Option<String>,
+    /// Write generated API private key material to this file (only used when key is auto-generated).
+    #[arg(long)]
+    api_key_private_key_out: Option<PathBuf>,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -139,10 +145,46 @@ async fn create(args: CreateArgs) -> Result<()> {
         output["apiPublicKey"] = serde_json::Value::String(pk);
     }
     if let Some(sk) = api_private_key {
-        output["apiPrivateKey"] = serde_json::Value::String(sk);
+        if let Some(out_path) = args.api_key_private_key_out {
+            write_private_key_file(&out_path, &sk)?;
+            output["apiPrivateKeyPath"] = serde_json::Value::String(out_path.display().to_string());
+        }
     }
 
     println!("{output}");
+    Ok(())
+}
+
+fn write_private_key_file(path: &PathBuf, private_key_hex: &str) -> Result<()> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let mut file = options.open(path).map_err(|e| {
+        anyhow!(
+            "failed to create private key output file {}: {e}",
+            path.display()
+        )
+    })?;
+
+    file.write_all(private_key_hex.as_bytes()).map_err(|e| {
+        anyhow!(
+            "failed to write private key output file {}: {e}",
+            path.display()
+        )
+    })?;
+    file.write_all(b"\n").map_err(|e| {
+        anyhow!(
+            "failed to finalize private key output file {}: {e}",
+            path.display()
+        )
+    })?;
+
     Ok(())
 }
 

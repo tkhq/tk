@@ -152,6 +152,70 @@ impl From<AddressFormatArg> for AddressFormat {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sdk_to_cli_address_format(format: AddressFormat) -> Option<AddressFormatArg> {
+        match format {
+            AddressFormat::Unspecified => None,
+            AddressFormat::Uncompressed => Some(AddressFormatArg::Uncompressed),
+            AddressFormat::Compressed => Some(AddressFormatArg::Compressed),
+            AddressFormat::Ethereum => Some(AddressFormatArg::Ethereum),
+            AddressFormat::Solana => Some(AddressFormatArg::Solana),
+            AddressFormat::Cosmos => Some(AddressFormatArg::Cosmos),
+            AddressFormat::Tron => Some(AddressFormatArg::Tron),
+            AddressFormat::Sui => Some(AddressFormatArg::Sui),
+            AddressFormat::Aptos => Some(AddressFormatArg::Aptos),
+            AddressFormat::BitcoinMainnetP2pkh => Some(AddressFormatArg::BitcoinMainnetP2pkh),
+            AddressFormat::BitcoinMainnetP2sh => Some(AddressFormatArg::BitcoinMainnetP2sh),
+            AddressFormat::BitcoinMainnetP2wpkh => Some(AddressFormatArg::BitcoinMainnetP2wpkh),
+            AddressFormat::BitcoinMainnetP2wsh => Some(AddressFormatArg::BitcoinMainnetP2wsh),
+            AddressFormat::BitcoinMainnetP2tr => Some(AddressFormatArg::BitcoinMainnetP2tr),
+            AddressFormat::BitcoinTestnetP2pkh => Some(AddressFormatArg::BitcoinTestnetP2pkh),
+            AddressFormat::BitcoinTestnetP2sh => Some(AddressFormatArg::BitcoinTestnetP2sh),
+            AddressFormat::BitcoinTestnetP2wpkh => Some(AddressFormatArg::BitcoinTestnetP2wpkh),
+            AddressFormat::BitcoinTestnetP2wsh => Some(AddressFormatArg::BitcoinTestnetP2wsh),
+            AddressFormat::BitcoinTestnetP2tr => Some(AddressFormatArg::BitcoinTestnetP2tr),
+            AddressFormat::BitcoinSignetP2pkh => Some(AddressFormatArg::BitcoinSignetP2pkh),
+            AddressFormat::BitcoinSignetP2sh => Some(AddressFormatArg::BitcoinSignetP2sh),
+            AddressFormat::BitcoinSignetP2wpkh => Some(AddressFormatArg::BitcoinSignetP2wpkh),
+            AddressFormat::BitcoinSignetP2wsh => Some(AddressFormatArg::BitcoinSignetP2wsh),
+            AddressFormat::BitcoinSignetP2tr => Some(AddressFormatArg::BitcoinSignetP2tr),
+            AddressFormat::BitcoinRegtestP2pkh => Some(AddressFormatArg::BitcoinRegtestP2pkh),
+            AddressFormat::BitcoinRegtestP2sh => Some(AddressFormatArg::BitcoinRegtestP2sh),
+            AddressFormat::BitcoinRegtestP2wpkh => Some(AddressFormatArg::BitcoinRegtestP2wpkh),
+            AddressFormat::BitcoinRegtestP2wsh => Some(AddressFormatArg::BitcoinRegtestP2wsh),
+            AddressFormat::BitcoinRegtestP2tr => Some(AddressFormatArg::BitcoinRegtestP2tr),
+            AddressFormat::Sei => Some(AddressFormatArg::Sei),
+            AddressFormat::Xlm => Some(AddressFormatArg::Xlm),
+            AddressFormat::DogeMainnet => Some(AddressFormatArg::DogeMainnet),
+            AddressFormat::DogeTestnet => Some(AddressFormatArg::DogeTestnet),
+            AddressFormat::TonV3r2 => Some(AddressFormatArg::TonV3r2),
+            AddressFormat::TonV4r2 => Some(AddressFormatArg::TonV4r2),
+            AddressFormat::Xrp => Some(AddressFormatArg::Xrp),
+            AddressFormat::TonV5r1 => Some(AddressFormatArg::TonV5r1),
+        }
+    }
+
+    #[test]
+    fn address_format_arg_roundtrips_for_all_cli_variants() {
+        for cli_variant in AddressFormatArg::value_variants().iter().cloned() {
+            let sdk_variant = AddressFormat::from(cli_variant.clone());
+            let back_to_cli = sdk_to_cli_address_format(sdk_variant)
+                .expect("CLI variant mapped to SDK Unspecified");
+            assert_eq!(
+                cli_variant
+                    .to_possible_value()
+                    .map(|v| v.get_name().to_string()),
+                back_to_cli
+                    .to_possible_value()
+                    .map(|v| v.get_name().to_string())
+            );
+        }
+    }
+}
+
 async fn create(args: CreateArgs) -> Result<()> {
     let config = turnkey_auth::config::Config::resolve().await?;
     let signer = turnkey_auth::turnkey::TurnkeySigner::new(config)?;
@@ -159,7 +223,8 @@ async fn create(args: CreateArgs) -> Result<()> {
     let org_id = signer.organization_id().to_string();
 
     let curve: Curve = args.curve.into();
-    let address_formats: Vec<AddressFormat> = args.address_formats.into_iter().map(Into::into).collect();
+    let address_formats: Vec<AddressFormat> =
+        args.address_formats.into_iter().map(Into::into).collect();
 
     let response = client
         .create_private_keys(
