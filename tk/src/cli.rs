@@ -22,7 +22,10 @@ impl Cli {
         match args.command {
             Commands::Activity(args) => commands::activity::run(args).await,
             Commands::Config(args) => commands::config::run(args).await,
+            Commands::Keys(args) => commands::keys::run(args).await,
+            Commands::Policies(args) => commands::policies::run(args).await,
             Commands::Ssh(args) => commands::ssh::run(args).await,
+            Commands::Users(args) => commands::users::run(args).await,
         }
     }
 }
@@ -33,8 +36,14 @@ enum Commands {
     Activity(commands::activity::Args),
     /// Inspect and update persistent auth configuration.
     Config(commands::config::Args),
+    /// Private key management commands.
+    Keys(commands::keys::Args),
+    /// Policy management commands.
+    Policies(commands::policies::Args),
     /// SSH related commands.
     Ssh(commands::ssh::Args),
+    /// User management commands.
+    Users(commands::users::Args),
 }
 
 fn after_help() -> String {

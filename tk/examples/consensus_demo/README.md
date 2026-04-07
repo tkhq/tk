@@ -6,10 +6,11 @@ Demonstrates consensus-based signing with the `tk` CLI. The demo creates a priva
 
 - A [Turnkey](https://app.turnkey.com) organization with root API credentials
 - Rust toolchain (`cargo`)
+- `jq` (used by the setup and teardown scripts)
 
 ## 1. Export root credentials
 
-These are used by the setup, approve, and teardown steps:
+These are used by all steps except signing (which uses agent credentials automatically):
 
 ```bash
 export TURNKEY_ORGANIZATION_ID="<ORG_ID>"
@@ -28,13 +29,13 @@ export TURNKEY_API_BASE_URL="<CUSTOM_URL>"
 Create demo resources (private key, agent user, consensus policy):
 
 ```bash
-cargo run -p tk --example consensus_demo -- setup
+./tk/examples/consensus_demo/setup.sh
 ```
 
-This writes artifacts to `target/consensus-demo/`:
+This uses `tk keys create`, `tk users create`, and `tk policies create` to provision resources, then writes artifacts to `target/consensus-demo/`:
 
-- `state.json` contains resource IDs and agent credentials (used by sign and teardown)
-- `agent.env` contains agent credentials as shell exports (sourced by the sign script)
+- `state.json` contains resource IDs (used by teardown)
+- `agent.env` contains agent credentials (sourced by the sign script)
 
 ## 3. Sign
 
@@ -66,7 +67,7 @@ cargo run -p tk -- activity approve <fingerprint>
 Clean up all demo resources (make sure root credentials are exported, not agent credentials):
 
 ```bash
-cargo run -p tk --example consensus_demo -- teardown
+./tk/examples/consensus_demo/teardown.sh
 ```
 
-This deletes the demo policy, user, private key, and removes the `target/consensus-demo/` directory.
+This uses `tk policies delete`, `tk users delete`, and `tk keys delete` to remove all demo resources, then deletes the `target/consensus-demo/` directory.

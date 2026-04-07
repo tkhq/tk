@@ -6,7 +6,13 @@ pub mod agent;
 pub mod config;
 /// Git SSH signing command implementation.
 pub mod git_sign;
+/// Private key management commands.
+pub mod keys;
+/// Policy management commands.
+pub mod policies;
 /// Public key printing command implementation.
 pub mod public_key;
 /// SSH command namespace and dispatch.
 pub mod ssh;
+/// User management commands.
+pub mod users;
