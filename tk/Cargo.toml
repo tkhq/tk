@@ -17,8 +17,12 @@ assert_cmd = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
 predicates = { workspace = true }
+regex = "1"
+serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+toml = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "time"] }
 turnkey_api_key_stamper = { workspace = true }
+turnkey_client = { workspace = true }
 wiremock = { workspace = true }

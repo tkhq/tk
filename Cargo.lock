@@ -1758,11 +1758,15 @@ dependencies = [
  "hex",
  "libc",
  "predicates",
+ "regex",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "toml",
  "turnkey_api_key_stamper",
  "turnkey_auth",
+ "turnkey_client",
  "wiremock",
 ]
 
