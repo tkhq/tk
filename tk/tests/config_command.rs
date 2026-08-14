@@ -114,3 +114,36 @@ fn config_list_and_get_redact_private_key() {
         .stdout(predicate::str::contains("<redacted>"))
         .stdout(predicate::str::contains("persisted-private-key").not());
 }
+
+#[test]
+fn config_set_writes_owner_only_file() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempdir().expect("temp dir should exist");
+    let config_path = temp.path().join("tk.toml");
+
+    let mode = |path: &std::path::Path| {
+        fs::metadata(path)
+            .expect("config file should exist")
+            .permissions()
+            .mode()
+            & 0o777
+    };
+
+    let mut set_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    set_cmd
+        .args(["config", "set", "turnkey.apiPrivateKey", "persisted-key"])
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path);
+    set_cmd.assert().success();
+    assert_eq!(mode(&config_path), 0o600);
+
+    fs::set_permissions(&config_path, fs::Permissions::from_mode(0o644))
+        .expect("permissions should update");
+
+    let mut set_cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    set_cmd
+        .args(["config", "set", "turnkey.organizationId", "persisted-org"])
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path);
+    set_cmd.assert().success();
+    assert_eq!(mode(&config_path), 0o600);
+}

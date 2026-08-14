@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncWriteExt;
 
 const DEFAULT_API_BASE_URL: &str = "https://api.turnkey.com";
 const CONFIG_PATH_ENV: &str = "TURNKEY_TK_CONFIG_PATH";
@@ -275,7 +277,17 @@ async fn save_persisted_config(path: &Path, config: &PersistedConfigFile) -> Res
         tokio::fs::create_dir_all(parent).await?;
     }
     let serialized = toml::to_string_pretty(config).context("failed to serialize config file")?;
-    tokio::fs::write(path, serialized).await?;
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .await?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))
+        .await?;
+    file.write_all(serialized.as_bytes()).await?;
+    file.flush().await?;
     Ok(())
 }
 
