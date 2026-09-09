@@ -1,0 +1,27 @@
+# NOTE: install this file as .github/workflows/live-tests.yml. It ships under
+# docs/ci/ because the automation credential that opened this PR does not have
+# the `workflows` permission required to create workflow files.
+name: live-tests
+
+# Live smoke tests against the Turnkey dev environment. Runs only on demand:
+# it needs the TURNKEY_DEV_* repository secrets and talks to a real backend,
+# so it is not part of the per-commit checks.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run live smoke tests
+        env:
+          TURNKEY_ORGANIZATION_ID: ${{ secrets.TURNKEY_DEV_ORGANIZATION_ID }}
+          TURNKEY_API_PUBLIC_KEY: ${{ secrets.TURNKEY_DEV_API_PUBLIC_KEY }}
+          TURNKEY_API_PRIVATE_KEY: ${{ secrets.TURNKEY_DEV_API_PRIVATE_KEY }}
+          TURNKEY_API_BASE_URL: https://api.dev.turnkey.engineering
+        run: ./scripts/live-tests.sh
