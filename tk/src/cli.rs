@@ -6,6 +6,7 @@ use crate::keygen::GenerateArgs;
 use crate::operations::{ActivityCommand, OperationOutput, RequestArgs, run_activity};
 use crate::output::{ColorChoice, Ctx, ErrorMessage, MessageFormat, Shell, StdCtx};
 use crate::resources::{ApiKeyCommand, PolicyCommand, PreparedResource, UserCommand};
+use crate::secrets::{PreparedSecret, SecretCommand};
 use crate::wallets::{PreparedWalletCommand, SignCommand, WalletCommand};
 use clap::{ArgAction, Args, Parser, Subcommand, builder::FalseyValueParser, error::ErrorKind};
 use serde::Serialize;
@@ -30,9 +31,9 @@ Output format:
     --non-interactive, so commands never prompt and fail fast on missing input.
 
     Errors emit reason "command_error" (or "missing_required_input") plus a
-    "code" classifying the failure, an optional numeric "httpStatus", an
-    optional "activity" identity for activity failures, and a "message"
-    carrying the full error chain. The "code" taxonomy is:
+    "code" classifying the failure, an optional numeric "httpStatus", optional
+    "details" for recovery (such as the last observed activity identity), and
+    a "message" carrying the full error chain. The "code" taxonomy is:
         missing_required_input  a required value was absent (non-interactive)
         usage_error             bad flags/args (argument parsing failed)
         invalid_input           semantic validation failed in the command
@@ -168,6 +169,10 @@ impl Cli {
             Commands::Sign { command } => {
                 let result =
                     run_prepared(command.prepare(), options, PreparedWalletCommand::run).await;
+                emit(&mut ctx, result)
+            }
+            Commands::Secret { command } => {
+                let result = run_prepared(command.prepare(), options, PreparedSecret::run).await;
                 emit(&mut ctx, result)
             }
             Commands::Login(login) => {
@@ -326,6 +331,11 @@ enum Commands {
         #[command(subcommand)]
         command: SignCommand,
     },
+    /// Import, list, and securely export Secrets.
+    Secret {
+        #[command(subcommand)]
+        command: SecretCommand,
+    },
     /// Save an existing API credential as a named profile and select it.
     Login(LoginArgs),
     /// Verify the selected identity remotely.
@@ -362,6 +372,7 @@ impl Commands {
             Commands::ApiKey { .. } => "api-key",
             Commands::Wallet { .. } => "wallet",
             Commands::Sign { .. } => "sign",
+            Commands::Secret { .. } => "secret",
             Commands::Login(_) => "login",
             Commands::Whoami => "whoami",
             Commands::Auth { .. } => "auth",

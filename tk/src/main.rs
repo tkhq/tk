@@ -6,6 +6,7 @@
 mod auth;
 mod cli;
 mod commands;
+mod enclave;
 mod errors;
 mod keygen;
 mod logging;
@@ -13,6 +14,7 @@ mod operations;
 mod outcome;
 mod output;
 mod resources;
+mod secrets;
 mod wallets;
 
 use crate::cli::Cli;

@@ -11,6 +11,7 @@
 
 use serde::Serialize;
 use serde_json::Value;
+use std::fmt::{self, Display, Formatter};
 pub use turnkey_auth::errors::MissingResource;
 use turnkey_client::TurnkeyClientError;
 
@@ -92,12 +93,49 @@ impl ActivityError {
     }
 }
 
-/// The activity identity attached to the first [`ActivityError`] in the chain.
-pub fn activity_identity(error: &anyhow::Error) -> Option<&Value> {
-    error
-        .chain()
-        .find_map(|cause| cause.downcast_ref::<ActivityError>())
-        .and_then(ActivityError::activity)
+/// Machine-readable recovery details attached to an error as anyhow context:
+/// the human chain shows `summary`, and the JSON envelope carries `data`
+/// (state file paths, phases, fingerprints) so an agent can recover.
+#[derive(Debug)]
+pub struct Details {
+    summary: String,
+    data: Value,
+}
+
+impl Details {
+    /// Builds details whose `data` must be a JSON object.
+    pub fn new(summary: impl Into<String>, data: Value) -> Self {
+        debug_assert!(data.is_object(), "error details must be a JSON object");
+        Self {
+            summary: summary.into(),
+            data,
+        }
+    }
+}
+
+impl Display for Details {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.summary)
+    }
+}
+
+/// The recovery details for an error: [`Details`] data merged with the
+/// activity identity of an [`ActivityError`] under `"activity"`.
+pub fn error_details(error: &anyhow::Error) -> Option<Value> {
+    let mut details = error
+        .downcast_ref::<Details>()
+        .map(|details| details.data.clone())
+        .unwrap_or(Value::Null);
+    let activity = error
+        .downcast_ref::<ActivityError>()
+        .and_then(ActivityError::activity);
+    if let Some(activity) = activity {
+        if !details.is_object() {
+            details = Value::Object(Default::default());
+        }
+        details["activity"] = activity.clone();
+    }
+    details.is_object().then_some(details)
 }
 
 /// Cap on rendered error messages, in bytes. Large enough for any real API

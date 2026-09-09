@@ -97,6 +97,12 @@ impl OperationOutput {
         }
     }
 
+    /// The response payload.
+    #[cfg(test)]
+    pub(crate) fn data(&self) -> &Value {
+        &self.data
+    }
+
     /// The activity identity this record observed, or a null identity.
     fn identity(&self) -> Value {
         self.activity
@@ -226,19 +232,40 @@ fn encode<T: Serialize>(value: &T) -> Result<String> {
 }
 
 /// Wraps typed, locally validated parameters in the versioned activity
-/// envelope used by every mutation.
+/// envelope used by every mutation, stamped with the current time.
 pub fn envelope<T: Serialize>(kind: &str, organization_id: &str, parameters: &T) -> Result<Value> {
-    Ok(json!({
+    Ok(envelope_at(
+        kind,
+        organization_id,
+        &timestamp_ms()?,
+        parameters,
+    ))
+}
+
+/// The activity envelope with an explicit timestamp, so a persisted proposal
+/// can be reconstructed byte for byte.
+pub(crate) fn envelope_at<T: Serialize>(
+    kind: &str,
+    organization_id: &str,
+    timestamp_ms: &str,
+    parameters: &T,
+) -> Value {
+    json!({
         "type": kind,
-        "timestampMs": SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("system clock precedes Unix epoch")?
-            .as_millis()
-            .to_string(),
+        "timestampMs": timestamp_ms,
         "organizationId": organization_id,
         "parameters": parameters,
         "generateAppProofs": null,
-    }))
+    })
+}
+
+/// The current time as the millisecond string the activity envelope carries.
+pub(crate) fn timestamp_ms() -> Result<String> {
+    Ok(SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock precedes Unix epoch")?
+        .as_millis()
+        .to_string())
 }
 
 fn validate_body(body: &str, org: &str) -> Result<(), InvalidInput> {
@@ -580,10 +607,37 @@ pub async fn submit<T: Serialize>(
     api_base_url: &str,
     stamper: &TurnkeyP256ApiKey,
 ) -> Result<OperationOutput> {
-    let body = encode(request)?;
-    let endpoint = url(api_base_url, path)?;
-    let value = post(&client()?, endpoint, body, stamper, true).await?;
+    let value = submit_bytes(path, encode(request)?, api_base_url, stamper).await?;
     submission_result(command, value)
+}
+
+/// Submit previously serialized bytes (so an activity fingerprint is
+/// unchanged) and return the raw response; the caller interprets the activity.
+pub(crate) async fn submit_bytes(
+    path: &str,
+    body: String,
+    api_base_url: &str,
+    stamper: &TurnkeyP256ApiKey,
+) -> Result<Value> {
+    post(&client()?, url(api_base_url, path)?, body, stamper, true).await
+}
+
+/// Query with the same bounded, redirect-refusing transport and return the raw
+/// response.
+pub(crate) async fn query<T: Serialize>(
+    path: &str,
+    request: &T,
+    api_base_url: &str,
+    stamper: &TurnkeyP256ApiKey,
+) -> Result<Value> {
+    post(
+        &client()?,
+        url(api_base_url, path)?,
+        encode(request)?,
+        stamper,
+        false,
+    )
+    .await
 }
 
 #[cfg(test)]
