@@ -9,6 +9,7 @@ use turnkey_client::generated::{
 use turnkey_client::{TurnkeyClient, TurnkeyClientError};
 
 use crate::config::Config;
+use crate::errors::MissingResource;
 
 /// Turnkey-backed signer for fetching public keys and producing Ed25519 signatures.
 pub struct TurnkeySigner {
@@ -46,7 +47,7 @@ impl TurnkeySigner {
 
         let private_key = response
             .private_key
-            .ok_or_else(|| anyhow!("Turnkey did not return a private key object"))?;
+            .ok_or_else(|| MissingResource::new("private key", private_key_id))?;
 
         decode_public_key(&private_key.public_key)
     }
@@ -126,13 +127,20 @@ impl TurnkeySigner {
     }
 
     /// Builds a consensus-needed error and enriches it with the activity fingerprint when available.
+    ///
+    /// The typed `ActivityRequiresApproval` error stays in the chain so the CLI
+    /// can classify it as `approval_required`.
     async fn consensus_required_error(&self, activity_id: &str) -> anyhow::Error {
-        match self.get_activity_fingerprint(activity_id).await {
-            Ok(fingerprint) => anyhow!(
+        let context = match self.get_activity_fingerprint(activity_id).await {
+            Ok(fingerprint) => format!(
                 "signing requires consensus approval (fingerprint: {fingerprint}, activity id: {activity_id})"
             ),
-            Err(_) => anyhow!("signing requires consensus approval (activity id: {activity_id})"),
-        }
+            Err(_) => format!("signing requires consensus approval (activity id: {activity_id})"),
+        };
+        anyhow::Error::new(TurnkeyClientError::ActivityRequiresApproval(
+            activity_id.to_string(),
+        ))
+        .context(context)
     }
 
     async fn get_activity_fingerprint(&self, activity_id: &str) -> Result<String> {
@@ -158,15 +166,19 @@ impl TurnkeySigner {
 
     fn required_private_key_id(&self) -> Result<&str> {
         if self.config.private_key_id.is_empty() {
-            return Err(anyhow!("missing required config value: turnkey.privateKeyId"));
+            return Err(anyhow!(
+                "missing required config value: turnkey.privateKeyId"
+            ));
         }
 
         Ok(&self.config.private_key_id)
     }
 }
 
+// Keep the typed client error in the chain so the CLI's error classification
+// can downcast it; the context line preserves the historical message prefix.
 fn map_turnkey_error(error: TurnkeyClientError) -> anyhow::Error {
-    anyhow!("Turnkey API request failed: {error}")
+    anyhow::Error::new(error).context("Turnkey API request failed")
 }
 
 fn decode_public_key(encoded: &str) -> Result<Vec<u8>> {
@@ -203,7 +215,7 @@ fn decode_hex(value: &str) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TurnkeySigner, decode_public_key, decode_signature_parts};
+    use super::{TurnkeyClientError, TurnkeySigner, decode_public_key, decode_signature_parts};
     use crate::config::Config;
     use turnkey_api_key_stamper::TurnkeyP256ApiKey;
     use wiremock::matchers::{header_exists, method, path};
@@ -359,6 +371,10 @@ mod tests {
                 && message.contains("consensus-activity-id"),
             "error should mention consensus and contain both activity fingerprint and id: {message}"
         );
+        assert!(matches!(
+            error.downcast_ref::<TurnkeyClientError>(),
+            Some(TurnkeyClientError::ActivityRequiresApproval(id)) if id == "consensus-activity-id"
+        ));
     }
 
     #[tokio::test]

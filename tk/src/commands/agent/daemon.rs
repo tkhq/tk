@@ -12,14 +12,17 @@ use turnkey_auth::config::default_config_dir_from_home;
 use turnkey_auth::ssh::protocol;
 
 use super::lock::{AgentLock, is_lock_held_by_other, resolve_lock_file};
-use super::{InternalRunArgs, StartArgs, StatusArgs, StopArgs};
+use super::{
+    AgentNotRunning, AgentRunning, AgentStopped, InternalRunArgs, StartArgs, StatusArgs, StopArgs,
+};
+use crate::outcome::{MachineOnly, Outcome};
 
 const START_TIMEOUT: Duration = Duration::from_secs(4);
 const STOP_TIMEOUT: Duration = Duration::from_secs(4);
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// Starts the background SSH agent.
-pub async fn start(args: StartArgs) -> anyhow::Result<()> {
+pub async fn start(args: StartArgs) -> anyhow::Result<Outcome> {
     let socket = resolve_socket_path(args.socket)?;
     let pid_file = resolve_pid_file(&socket, args.pid_file)?;
     let lock_file = resolve_lock_file(&pid_file);
@@ -58,10 +61,10 @@ pub async fn start(args: StartArgs) -> anyhow::Result<()> {
         .context("background ssh-agent pid was not available")?;
 
     match wait_for_startup(&socket, &mut child).await {
-        Ok(()) => {
-            println!("ssh-agent running with pid {pid} on {}", socket.display());
-            Ok(())
-        }
+        Ok(()) => Ok(Outcome::AgentStarted(AgentRunning {
+            pid,
+            socket: socket.display().to_string(),
+        })),
         Err(error) => {
             let _ = fs::remove_file(&pid_file).await;
             let _ = child.start_kill();
@@ -71,7 +74,7 @@ pub async fn start(args: StartArgs) -> anyhow::Result<()> {
 }
 
 /// Stops the background SSH agent.
-pub async fn stop(args: StopArgs) -> anyhow::Result<()> {
+pub async fn stop(args: StopArgs) -> anyhow::Result<Outcome> {
     let socket = resolve_socket_path(args.socket)?;
     let pid_file = resolve_pid_file(&socket, args.pid_file)?;
     let lock_file = resolve_lock_file(&pid_file);
@@ -79,8 +82,7 @@ pub async fn stop(args: StopArgs) -> anyhow::Result<()> {
     if !is_lock_held_by_other(&lock_file).await? {
         let _ = fs::remove_file(&pid_file).await;
         let _ = remove_socket_if_present(&socket).await;
-        println!("ssh-agent was not running");
-        return Ok(());
+        return Ok(Outcome::AgentNotRunning(AgentNotRunning {}));
     }
 
     let pid = read_pid_file(&pid_file)
@@ -92,12 +94,11 @@ pub async fn stop(args: StopArgs) -> anyhow::Result<()> {
     wait_for_process_exit(pid).await?;
     let _ = fs::remove_file(&pid_file).await;
     wait_for_socket_removal(&socket).await?;
-    println!("ssh-agent stopped");
-    Ok(())
+    Ok(Outcome::AgentStopped(AgentStopped {}))
 }
 
 /// Reports the background SSH agent status.
-pub async fn status(args: StatusArgs) -> anyhow::Result<()> {
+pub async fn status(args: StatusArgs) -> anyhow::Result<Outcome> {
     let socket = resolve_socket_path(args.socket)?;
     let pid_file = resolve_pid_file(&socket, args.pid_file)?;
     let lock_file = resolve_lock_file(&pid_file);
@@ -121,13 +122,14 @@ pub async fn status(args: StatusArgs) -> anyhow::Result<()> {
         ));
     }
 
-    println!("ssh-agent running with pid {pid} on {}", socket.display());
-
-    Ok(())
+    Ok(Outcome::AgentStatusReport(AgentRunning {
+        pid,
+        socket: socket.display().to_string(),
+    }))
 }
 
 /// Runs the hidden in-process SSH agent daemon.
-pub async fn internal_run(args: InternalRunArgs) -> anyhow::Result<()> {
+pub async fn internal_run(args: InternalRunArgs) -> anyhow::Result<Outcome> {
     let lock_file = resolve_lock_file(&args.pid_file);
     let _lock = AgentLock::acquire(&lock_file)
         .await?
@@ -137,7 +139,7 @@ pub async fn internal_run(args: InternalRunArgs) -> anyhow::Result<()> {
     let result = turnkey_auth::ssh::agent::run(args.socket).await;
 
     let _ = fs::remove_file(&args.pid_file).await;
-    result
+    result.map(|()| Outcome::AgentDaemonExited(MachineOnly {}))
 }
 
 async fn wait_for_startup(socket: &Path, child: &mut tokio::process::Child) -> anyhow::Result<()> {

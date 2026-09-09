@@ -1,9 +1,14 @@
 mod daemon;
 mod lock;
 
+use std::fmt::{self, Display, Formatter};
 use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, Subcommand};
+use serde::Serialize;
+
+use crate::outcome::Outcome;
+use crate::output::StdCtx;
 
 /// Top-level arguments for `tk ssh agent`.
 #[derive(Debug, ClapArgs)]
@@ -17,12 +22,58 @@ pub struct Args {
 }
 
 /// Runs the `tk ssh agent` subcommand.
-pub async fn run(args: Args) -> anyhow::Result<()> {
+pub async fn run(_ctx: &mut StdCtx, args: Args) -> anyhow::Result<Outcome> {
     match args.command {
         Command::Start(args) => daemon::start(args).await,
         Command::Stop(args) => daemon::stop(args).await,
         Command::Status(args) => daemon::status(args).await,
         Command::InternalRun(args) => daemon::internal_run(args).await,
+    }
+}
+
+/// Terminal payload of `tk ssh agent start` and `tk ssh agent status`: a
+/// serving agent's identity.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(Default))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRunning {
+    /// The background agent's process ID.
+    pub pid: u32,
+    /// The Unix socket serving SSH agent requests.
+    pub socket: String,
+}
+
+impl Display for AgentRunning {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ssh-agent running with pid {} on {}",
+            self.pid, self.socket
+        )
+    }
+}
+
+/// Terminal outcome of `tk ssh agent stop` when an agent was stopped.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(Default))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentStopped {}
+
+impl Display for AgentStopped {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("ssh-agent stopped")
+    }
+}
+
+/// Terminal outcome of `tk ssh agent stop` when no agent was running.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(Default))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentNotRunning {}
+
+impl Display for AgentNotRunning {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("ssh-agent was not running")
     }
 }
 

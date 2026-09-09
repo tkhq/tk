@@ -68,10 +68,10 @@ pub async fn run(socket: PathBuf) -> anyhow::Result<()> {
 
         connections.abort_all();
         while let Some(join_result) = connections.join_next().await {
-            if let Err(error) = join_result {
-                if error.is_panic() {
-                    return Err(anyhow!("ssh-agent connection task panicked: {error}"));
-                }
+            if let Err(error) = join_result
+                && error.is_panic()
+            {
+                return Err(anyhow!("ssh-agent connection task panicked: {error}"));
             }
         }
 

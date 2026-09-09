@@ -165,18 +165,17 @@ impl ResolvedConfig {
         }
     }
 
-    /// Serializes the effective config as JSON with sensitive values redacted.
-    pub fn render_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(&DisplayConfigFile {
-            turnkey: DisplayTurnkeyConfig {
+    /// The effective config with sensitive values redacted, ready to display.
+    pub fn redacted(&self) -> RedactedConfig {
+        RedactedConfig {
+            turnkey: RedactedTurnkeyConfig {
                 organization_id: self.organization_id.clone().unwrap_or_default(),
                 api_public_key: self.api_public_key.clone().unwrap_or_default(),
                 api_private_key: redact_if_present(self.api_private_key.as_deref()),
                 private_key_id: self.private_key_id.clone().unwrap_or_default(),
                 api_base_url: self.api_base_url.clone(),
             },
-        })
-        .context("failed to render resolved config")
+        }
     }
 
     fn into_complete(self) -> Result<Config> {
@@ -239,9 +238,9 @@ pub async fn get_resolved_config_value(key: ConfigKey) -> Result<String> {
     })
 }
 
-/// Renders the effective config as redacted JSON.
-pub async fn render_config() -> Result<String> {
-    ResolvedConfig::resolve().await?.render_json()
+/// Resolves the effective config with sensitive values redacted.
+pub async fn redacted_config() -> Result<RedactedConfig> {
+    Ok(ResolvedConfig::resolve().await?.redacted())
 }
 
 /// Persists one config value to the global config file.
@@ -362,14 +361,15 @@ impl PersistedTurnkeyConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct DisplayConfigFile {
-    turnkey: DisplayTurnkeyConfig,
+/// The effective config with sensitive values redacted.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct RedactedConfig {
+    turnkey: RedactedTurnkeyConfig,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DisplayTurnkeyConfig {
+struct RedactedTurnkeyConfig {
     organization_id: String,
     api_public_key: String,
     api_private_key: String,
