@@ -9,23 +9,27 @@ publish = false
 anstyle = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
+hex = { workspace = true }
 libc = "0.2"
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "macros", "process", "rt-multi-thread", "time"] }
+toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+turnkey_api_key_stamper = { workspace = true }
 turnkey_auth = { path = "../auth" }
 turnkey_client = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }
 base64 = { workspace = true }
-hex = { workspace = true }
 predicates = { workspace = true }
 strum = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "time"] }
-turnkey_api_key_stamper = { workspace = true }
 wiremock = { workspace = true }

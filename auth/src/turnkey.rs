@@ -1,11 +1,8 @@
 use anyhow::{Context, Result, anyhow};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
-use turnkey_client::generated::immutable::activity::v1 as immutable_activity;
 use turnkey_client::generated::immutable::common::v1::HashFunction;
 use turnkey_client::generated::immutable::common::v1::PayloadEncoding;
-use turnkey_client::generated::{
-    ActivityStatus, GetActivityRequest, GetPrivateKeyRequest, SignRawPayloadIntentV2,
-};
+use turnkey_client::generated::{GetActivityRequest, GetPrivateKeyRequest, SignRawPayloadIntentV2};
 use turnkey_client::{TurnkeyClient, TurnkeyClientError};
 
 use crate::config::Config;
@@ -60,44 +57,6 @@ impl TurnkeySigner {
     /// Signs a raw SSH authentication payload through Turnkey and returns the 64-byte signature.
     pub async fn sign_ssh_auth_payload(&self, payload: &[u8]) -> Result<Vec<u8>> {
         self.sign_raw_ed25519_payload(payload).await
-    }
-
-    /// Approves a pending activity by its fingerprint.
-    pub async fn approve_activity(&self, fingerprint: &str) -> Result<()> {
-        self.client
-            .approve_activity(
-                self.config.organization_id.clone(),
-                self.client.current_timestamp(),
-                immutable_activity::ApproveActivityIntent {
-                    fingerprint: fingerprint.to_string(),
-                },
-            )
-            .await
-            .map_err(map_turnkey_error)?;
-        Ok(())
-    }
-
-    /// Rejects a pending activity by its fingerprint.
-    pub async fn reject_activity(&self, fingerprint: &str) -> Result<()> {
-        match self
-            .client
-            .reject_activity(
-                self.config.organization_id.clone(),
-                self.client.current_timestamp(),
-                immutable_activity::RejectActivityIntent {
-                    fingerprint: fingerprint.to_string(),
-                },
-            )
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(TurnkeyClientError::UnexpectedActivityStatus(status))
-                if status == ActivityStatus::Rejected.as_str_name() =>
-            {
-                Ok(())
-            }
-            Err(e) => Err(map_turnkey_error(e)),
-        }
     }
 
     async fn sign_raw_ed25519_payload(&self, payload: &[u8]) -> Result<Vec<u8>> {
@@ -437,105 +396,5 @@ mod tests {
             error.to_string(),
             "missing required config value: turnkey.privateKeyId"
         );
-    }
-
-    #[tokio::test]
-    async fn approve_activity_sends_fingerprint() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/public/v1/submit/approve_activity"))
-            .and(header_exists("X-Stamp"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "activity": {
-                    "id": "approve-act-id",
-                    "organizationId": "org-id",
-                    "fingerprint": "approve-fp",
-                    "status": "ACTIVITY_STATUS_COMPLETED",
-                    "type": "ACTIVITY_TYPE_APPROVE_ACTIVITY"
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let signer = test_signer(&server);
-        signer
-            .approve_activity("test-fingerprint")
-            .await
-            .expect("approve should succeed");
-
-        let requests = server
-            .received_requests()
-            .await
-            .expect("request recording should be enabled");
-        assert_eq!(requests.len(), 1);
-        let body: serde_json::Value = requests[0]
-            .body_json()
-            .expect("request body should be valid JSON");
-        assert_eq!(body["type"], "ACTIVITY_TYPE_APPROVE_ACTIVITY");
-        assert_eq!(body["parameters"]["fingerprint"], "test-fingerprint");
-    }
-
-    #[tokio::test]
-    async fn reject_activity_sends_fingerprint() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/public/v1/submit/reject_activity"))
-            .and(header_exists("X-Stamp"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "activity": {
-                    "id": "reject-act-id",
-                    "organizationId": "org-id",
-                    "fingerprint": "reject-fp",
-                    "status": "ACTIVITY_STATUS_COMPLETED",
-                    "type": "ACTIVITY_TYPE_REJECT_ACTIVITY"
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let signer = test_signer(&server);
-        signer
-            .reject_activity("test-fingerprint")
-            .await
-            .expect("reject should succeed");
-
-        let requests = server
-            .received_requests()
-            .await
-            .expect("request recording should be enabled");
-        assert_eq!(requests.len(), 1);
-        let body: serde_json::Value = requests[0]
-            .body_json()
-            .expect("request body should be valid JSON");
-        assert_eq!(body["type"], "ACTIVITY_TYPE_REJECT_ACTIVITY");
-        assert_eq!(body["parameters"]["fingerprint"], "test-fingerprint");
-    }
-
-    #[tokio::test]
-    async fn reject_activity_handles_rejected_status() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/public/v1/submit/reject_activity"))
-            .and(header_exists("X-Stamp"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "activity": {
-                    "id": "reject-act-id",
-                    "organizationId": "org-id",
-                    "fingerprint": "reject-fp",
-                    "status": "ACTIVITY_STATUS_REJECTED",
-                    "type": "ACTIVITY_TYPE_REJECT_ACTIVITY"
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let signer = test_signer(&server);
-        signer
-            .reject_activity("test-fingerprint")
-            .await
-            .expect("reject should succeed even when status is REJECTED");
     }
 }

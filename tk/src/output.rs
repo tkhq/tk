@@ -1,6 +1,6 @@
 //! User-facing output primitives for tk.
 
-use crate::errors::{Classification, ErrorCode, classify, render_error_chain};
+use crate::errors::{Classification, ErrorCode, activity_identity, classify, render_error_chain};
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::Result;
 use clap::ValueEnum;
@@ -204,6 +204,10 @@ pub struct ErrorMessage {
     code: ErrorCode,
     #[serde(rename = "httpStatus", skip_serializing_if = "Option::is_none")]
     http_status: Option<u16>,
+    /// The last observed activity identity for activity failures, so machine
+    /// consumers can inspect or resume it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    activity: Option<serde_json::Value>,
     message: String,
 }
 
@@ -226,6 +230,7 @@ impl ErrorMessage {
                 reason: Self::MISSING_INPUT_REASON,
                 code: ErrorCode::MissingRequiredInput,
                 http_status: None,
+                activity: None,
                 message: render_error_chain(error),
             };
         }
@@ -235,6 +240,7 @@ impl ErrorMessage {
             reason: Self::RUNTIME_REASON,
             code,
             http_status,
+            activity: activity_identity(error).cloned(),
             message: render_error_chain(error),
         }
     }
@@ -245,6 +251,7 @@ impl ErrorMessage {
             reason: Self::RUNTIME_REASON,
             code: ErrorCode::UsageError,
             http_status: None,
+            activity: None,
             message,
         }
     }

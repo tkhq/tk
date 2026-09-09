@@ -3,12 +3,17 @@
 // diagnostics.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
+mod auth;
 mod cli;
 mod commands;
 mod errors;
+mod keygen;
 mod logging;
+mod operations;
 mod outcome;
 mod output;
+mod resources;
+mod wallets;
 
 use crate::cli::Cli;
 use std::io::Write;

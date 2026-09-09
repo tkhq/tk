@@ -10,8 +10,95 @@
 //! boundary.
 
 use serde::Serialize;
+use serde_json::Value;
 pub use turnkey_auth::errors::MissingResource;
 use turnkey_client::TurnkeyClientError;
+
+/// A locally detectable input problem that clap cannot express: semantic
+/// validation of values, files, and environment that failed before any request.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct InvalidInput(pub String);
+
+/// A raw API request that returned a non-success HTTP status. The response
+/// body is kept because Turnkey's error `message` is the user's only diagnostic.
+#[derive(Debug, thiserror::Error)]
+#[error("HTTP response was not successful: {status} ({body})")]
+pub struct UnexpectedHttpStatus {
+    /// The HTTP status code.
+    pub status: u16,
+    /// The response body, or a placeholder when it could not be read.
+    pub body: String,
+}
+
+/// How a submitted or awaited activity failed to reach a usable terminal state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActivityErrorKind {
+    /// A mutation was sent but its outcome could not be observed. Callers must
+    /// inspect activities before resubmitting.
+    SubmissionUnknown,
+    /// `activity wait` ran out of time while the activity was still pending.
+    WaitTimeout,
+    /// The activity reached a terminal state other than completed.
+    NotCompleted,
+    /// The server responded, but the response did not carry the expected
+    /// activity fields.
+    MalformedResponse,
+}
+
+/// A failure concerning one activity. Carries the last observed activity
+/// identity so machine consumers can resume or inspect it.
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub struct ActivityError {
+    kind: ActivityErrorKind,
+    activity: Option<Value>,
+    message: String,
+    #[source]
+    source: Option<reqwest::Error>,
+}
+
+impl ActivityError {
+    /// Builds the error for `kind` with a human message.
+    pub fn new(kind: ActivityErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            activity: None,
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    /// Attaches the last observed activity identity (`{"id", "status"}`).
+    pub fn with_activity(mut self, activity: Value) -> Self {
+        self.activity = Some(activity);
+        self
+    }
+
+    /// Keeps the transport error that made the outcome unknown.
+    pub fn with_source(mut self, source: reqwest::Error) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    /// The failure kind.
+    pub fn kind(&self) -> ActivityErrorKind {
+        self.kind
+    }
+
+    /// The last observed activity identity, when known.
+    pub fn activity(&self) -> Option<&Value> {
+        self.activity.as_ref()
+    }
+}
+
+/// The activity identity attached to the first [`ActivityError`] in the chain.
+pub fn activity_identity(error: &anyhow::Error) -> Option<&Value> {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<ActivityError>())
+        .and_then(ActivityError::activity)
+}
 
 /// Cap on rendered error messages, in bytes. Large enough for any real API
 /// error body (typical Turnkey error JSON is < 1 KB); small enough that a
@@ -33,7 +120,6 @@ pub enum ErrorCode {
     /// Bad flags/args, a clap parse failure.
     UsageError,
     /// Semantic validation failure in command code.
-    #[allow(dead_code, reason = "no command produces this code yet")]
     InvalidInput,
     /// HTTP 401/403.
     Unauthorized,
@@ -45,6 +131,10 @@ pub enum ErrorCode {
     ApprovalRequired,
     /// A connect/timeout/DNS failure — the request never reached the server.
     NetworkError,
+    /// A mutation was sent but its outcome is unknown; inspect before retrying.
+    SubmissionUnknown,
+    /// `activity wait` timed out while the activity was still pending.
+    WaitTimeout,
     /// Fallback for everything else.
     CommandError,
 }
@@ -60,7 +150,7 @@ pub struct Classification {
 }
 
 impl Classification {
-    fn new(code: ErrorCode, http_status: Option<u16>) -> Self {
+    pub(crate) fn new(code: ErrorCode, http_status: Option<u16>) -> Self {
         Self { code, http_status }
     }
 }
@@ -72,14 +162,52 @@ impl Classification {
 /// status; callers still render the complete original chain.
 pub fn classify(error: &anyhow::Error) -> Classification {
     for cause in error.chain() {
+        if cause.downcast_ref::<InvalidInput>().is_some() {
+            return Classification::new(ErrorCode::InvalidInput, None);
+        }
         if cause.downcast_ref::<MissingResource>().is_some() {
             return Classification::new(ErrorCode::NotFound, None);
+        }
+        if let Some(http) = cause.downcast_ref::<UnexpectedHttpStatus>() {
+            return classify_http_status(http.status);
+        }
+        if let Some(activity) = cause.downcast_ref::<ActivityError>() {
+            let code = match activity.kind() {
+                ActivityErrorKind::SubmissionUnknown => ErrorCode::SubmissionUnknown,
+                ActivityErrorKind::WaitTimeout => ErrorCode::WaitTimeout,
+                ActivityErrorKind::NotCompleted | ActivityErrorKind::MalformedResponse => {
+                    ErrorCode::ApiError
+                }
+            };
+            return Classification::new(code, None);
+        }
+        if let Some(reqwest_error) = cause.downcast_ref::<reqwest::Error>() {
+            return classify_reqwest_error(reqwest_error);
         }
         if let Some(client_error) = cause.downcast_ref::<TurnkeyClientError>() {
             return classify_turnkey_client_error(client_error);
         }
     }
     Classification::new(ErrorCode::CommandError, None)
+}
+
+fn classify_http_status(status: u16) -> Classification {
+    let code = match status {
+        401 | 403 => ErrorCode::Unauthorized,
+        404 => ErrorCode::NotFound,
+        _ => ErrorCode::ApiError,
+    };
+    Classification::new(code, Some(status))
+}
+
+/// A connect/timeout/DNS failure means the request never reached the server.
+/// Any other reqwest failure is a local command failure.
+fn classify_reqwest_error(error: &reqwest::Error) -> Classification {
+    if error.is_connect() || error.is_timeout() || error.is_request() {
+        Classification::new(ErrorCode::NetworkError, None)
+    } else {
+        Classification::new(ErrorCode::CommandError, None)
+    }
 }
 
 /// Render an error's complete cause chain (anyhow's alternate `{error:#}`
@@ -112,24 +240,8 @@ fn truncate_message(message: String) -> String {
 /// We should explicitly decide what kind of error it is here.
 fn classify_turnkey_client_error(error: &TurnkeyClientError) -> Classification {
     match error {
-        TurnkeyClientError::UnexpectedHttpStatus(status, _) => {
-            let code = match status {
-                401 | 403 => ErrorCode::Unauthorized,
-                404 => ErrorCode::NotFound,
-                _ => ErrorCode::ApiError,
-            };
-
-            Classification::new(code, Some(*status))
-        }
-        // A connect/timeout/DNS failure means the request never reached the
-        // server — classify as a network error rather than an API error.
-        TurnkeyClientError::Http(reqwest_error)
-            if reqwest_error.is_connect()
-                || reqwest_error.is_timeout()
-                || reqwest_error.is_request() =>
-        {
-            Classification::new(ErrorCode::NetworkError, None)
-        }
+        TurnkeyClientError::UnexpectedHttpStatus(status, _) => classify_http_status(*status),
+        TurnkeyClientError::Http(reqwest_error) => classify_reqwest_error(reqwest_error),
         TurnkeyClientError::ActivityRequiresApproval(_) => {
             Classification::new(ErrorCode::ApprovalRequired, None)
         }
@@ -149,11 +261,8 @@ fn classify_turnkey_client_error(error: &TurnkeyClientError) -> Classification {
         | TurnkeyClientError::ExceededRetries(_) => Classification::new(ErrorCode::ApiError, None),
         // These failures happen while configuring the client or constructing
         // and signing the request, before a usable API response is available.
-        // A reqwest error that is not request/connect/timeout-related also
-        // falls back to a generic command failure.
         TurnkeyClientError::BuilderMissingApiKey
         | TurnkeyClientError::ReqwestBuilder(_)
-        | TurnkeyClientError::Http(_)
         | TurnkeyClientError::SerdeJsonFailure(_)
         | TurnkeyClientError::StamperError(_) => Classification::new(ErrorCode::CommandError, None),
     }

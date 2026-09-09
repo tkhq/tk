@@ -1,10 +1,16 @@
 //! CLI parsing and dispatch.
 
+use crate::auth::{self, AuthCommand, AuthOptions, LoginArgs, ProfileCommand, ResolvedAuth};
 use crate::commands;
-use crate::outcome::Outcome;
+use crate::keygen::GenerateArgs;
+use crate::operations::{ActivityCommand, OperationOutput, RequestArgs, run_activity};
 use crate::output::{ColorChoice, Ctx, ErrorMessage, MessageFormat, Shell, StdCtx};
+use crate::resources::{ApiKeyCommand, PolicyCommand, PreparedResource, UserCommand};
+use crate::wallets::{PreparedWalletCommand, SignCommand, WalletCommand};
 use clap::{ArgAction, Args, Parser, Subcommand, builder::FalseyValueParser, error::ErrorKind};
+use serde::Serialize;
 use std::ffi::OsString;
+use std::fmt::Display;
 use std::io::Write;
 use std::process::ExitCode;
 use tracing::debug;
@@ -24,18 +30,23 @@ Output format:
     --non-interactive, so commands never prompt and fail fast on missing input.
 
     Errors emit reason "command_error" (or "missing_required_input") plus a
-    "code" classifying the failure, an optional numeric "httpStatus", and a
-    "message" carrying the full error chain. The "code" taxonomy is:
+    "code" classifying the failure, an optional numeric "httpStatus", an
+    optional "activity" identity for activity failures, and a "message"
+    carrying the full error chain. The "code" taxonomy is:
         missing_required_input  a required value was absent (non-interactive)
         usage_error             bad flags/args (argument parsing failed)
         invalid_input           semantic validation failed in the command
         unauthorized            HTTP 401/403
         not_found               HTTP 404, or a resource that resolved to empty
-        api_error               other non-success HTTP status, or a failed or
-                                unexpected activity
+        api_error               other non-success HTTP status, or a failed,
+                                rejected, or unexpected activity
         approval_required       the activity needs more approvals
         network_error           connect/timeout/DNS: request never reached the
                                 server
+        submission_unknown      a mutation was sent but its outcome could not
+                                be observed; inspect before resubmitting
+        wait_timeout            activity wait ran out of time; resume with the
+                                same ID
         command_error           fallback for everything else
     Exit codes: 0 success, 1 runtime error, 2 usage error."#;
 
@@ -47,6 +58,9 @@ Output format:
     after_help = after_help()
 )]
 pub struct Cli {
+    #[command(flatten)]
+    auth: AuthOptions,
+
     #[command(flatten)]
     output: OutputOptions,
 
@@ -100,35 +114,124 @@ impl Cli {
 
         let shell = Shell::standard(self.output.message_format, self.output.color);
         let mut ctx = Ctx::new(shell, self.output.non_interactive);
-        let result = self.command.run(&mut ctx).await;
-        match result {
-            Ok(outcome) => {
-                // Fail open: the command itself already succeeded, so a failure
-                // to deliver the outcome message should not flip the exit code.
-                // Make a best-effort warning on stderr and still exit successfully.
-                if let Err(emit_error) = ctx.shell().emit(&outcome) {
-                    let mut stderr = std::io::stderr();
-                    let _ = writeln!(stderr, "warning: failed to write CLI output: {emit_error}");
-                }
-                ExitCode::SUCCESS
+        let options = &self.auth;
+        match self.command {
+            Commands::Config(args) => {
+                let result = commands::config::run(&mut ctx, args).await;
+                emit(&mut ctx, result)
             }
-            Err(error) => {
-                // Log the full cause chain before rendering, so
-                // `RUST_LOG=tk=debug` recovers it in both output modes.
-                debug!(?error, "command failed");
+            Commands::Ssh(args) => {
+                let result = commands::ssh::run(&mut ctx, args).await;
+                emit(&mut ctx, result)
+            }
+            Commands::Request(request) => {
+                let result = run_prepared(request.prepare(), options, async |prepared, auth| {
+                    prepared
+                        .run(&auth.org_id, &auth.api_base_url, &auth.stamper)
+                        .await
+                })
+                .await;
+                emit(&mut ctx, result)
+            }
+            Commands::Activity { command } => {
+                let result = run_prepared(Ok(command), options, async |command, auth| {
+                    run_activity(command, &auth.org_id, &auth.api_base_url, &auth.stamper).await
+                })
+                .await;
+                emit(&mut ctx, result)
+            }
+            Commands::User { command } => {
+                let result = run_prepared(command.prepare(), options, PreparedResource::run).await;
+                emit(&mut ctx, result)
+            }
+            Commands::Policy { command } => {
+                let result = run_prepared(command.prepare(), options, PreparedResource::run).await;
+                emit(&mut ctx, result)
+            }
+            Commands::ApiKey {
+                command: ApiKeyCommands::Generate(generate),
+            } => {
+                let result = generate.run().await;
+                emit(&mut ctx, result)
+            }
+            Commands::ApiKey {
+                command: ApiKeyCommands::Remote(command),
+            } => {
+                let result = run_prepared(command.prepare(), options, PreparedResource::run).await;
+                emit(&mut ctx, result)
+            }
+            Commands::Wallet { command } => {
+                let result =
+                    run_prepared(command.prepare(), options, PreparedWalletCommand::run).await;
+                emit(&mut ctx, result)
+            }
+            Commands::Sign { command } => {
+                let result =
+                    run_prepared(command.prepare(), options, PreparedWalletCommand::run).await;
+                emit(&mut ctx, result)
+            }
+            Commands::Login(login) => {
+                let result = auth::run_auth(AuthCommand::Login(login), options).await;
+                emit(&mut ctx, result)
+            }
+            Commands::Whoami => {
+                let result = auth::run_auth(AuthCommand::Whoami, options).await;
+                emit(&mut ctx, result)
+            }
+            Commands::Auth { command } => {
+                let result = auth::run_auth(command, options).await;
+                emit(&mut ctx, result)
+            }
+            Commands::Profile { command } => {
+                let result = auth::run_profile(command, options).await;
+                emit(&mut ctx, result)
+            }
+        }
+    }
+}
 
-                let shell = ctx.shell();
-                let emit_result = if shell.message_format().is_json() {
-                    shell.emit(&ErrorMessage::from_error(&error))
-                } else {
-                    shell.human().error(&error)
-                };
-                if let Err(emit_error) = emit_result {
-                    let mut stderr = std::io::stderr();
-                    let _ = writeln!(stderr, "error: failed to write CLI error: {emit_error}");
-                }
-                ExitCode::FAILURE
+/// Runs an API command in two phases: local inputs are parsed (and rejected)
+/// before any credential is read, then the prepared command runs against the
+/// resolved identity.
+async fn run_prepared<P>(
+    prepared: anyhow::Result<P>,
+    options: &AuthOptions,
+    run: impl AsyncFnOnce(P, ResolvedAuth) -> anyhow::Result<OperationOutput>,
+) -> anyhow::Result<OperationOutput> {
+    let prepared = prepared?;
+    let auth = auth::resolve(options).await?;
+    run(prepared, auth).await
+}
+
+/// Emits a command's terminal record or its error and maps it to an exit code.
+fn emit<M: Serialize + Display>(ctx: &mut StdCtx, result: anyhow::Result<M>) -> ExitCode {
+    match result {
+        Ok(message) => {
+            // Fail open: the command itself already succeeded, so a failure
+            // to deliver the record should not flip the exit code.
+            // Make a best-effort warning on stderr and still exit successfully.
+            if let Err(emit_error) = ctx.shell().emit(&message) {
+                let mut stderr = std::io::stderr();
+                let _ = writeln!(stderr, "warning: failed to write CLI output: {emit_error}");
             }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            // Log the full cause chain before rendering, so
+            // `RUST_LOG=tk=debug` recovers it in both output modes.
+            debug!(?error, "command failed");
+
+            let shell = ctx.shell();
+            let emit_result = if shell.message_format().is_json() {
+                shell.emit(&ErrorMessage::from_error(&error))
+            } else {
+                shell.human().error(&error)
+            };
+            if let Err(emit_error) = emit_result {
+                let mut stderr = std::io::stderr();
+                let _ = writeln!(stderr, "error: failed to write CLI error: {emit_error}");
+            }
+            ExitCode::FAILURE
         }
     }
 }
@@ -187,28 +290,82 @@ fn args_request_json_output(args: impl IntoIterator<Item = OsString>) -> bool {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Activity approval and rejection commands.
-    Activity(commands::activity::Args),
+    /// Inspect, approve, reject, and wait for activities.
+    Activity {
+        #[command(subcommand)]
+        command: ActivityCommand,
+    },
     /// Inspect and update persistent auth configuration.
     Config(commands::config::Args),
     /// SSH related commands.
     Ssh(commands::ssh::Args),
+    /// Send an arbitrary signed API request.
+    Request(RequestArgs),
+    /// Manage users and user tags.
+    User {
+        #[command(subcommand)]
+        command: UserCommand,
+    },
+    /// Manage policies and inspect evaluations.
+    Policy {
+        #[command(subcommand)]
+        command: PolicyCommand,
+    },
+    /// Manage registered API credentials.
+    ApiKey {
+        #[command(subcommand)]
+        command: ApiKeyCommands,
+    },
+    /// Manage wallets and accounts.
+    Wallet {
+        #[command(subcommand)]
+        command: WalletCommand,
+    },
+    /// Sign payloads and serialized transactions.
+    Sign {
+        #[command(subcommand)]
+        command: SignCommand,
+    },
+    /// Save an existing API credential as a named profile and select it.
+    Login(LoginArgs),
+    /// Verify the selected identity remotely.
+    Whoami,
+    /// Manage API authentication.
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommand,
+    },
+    /// Manage named API identities.
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ApiKeyCommands {
+    /// Generate a protected local credential file without registration.
+    Generate(GenerateArgs),
+    #[command(flatten)]
+    Remote(ApiKeyCommand),
 }
 
 impl Commands {
     fn name(&self) -> &'static str {
         match self {
-            Commands::Activity(_) => "activity",
+            Commands::Activity { .. } => "activity",
             Commands::Config(_) => "config",
             Commands::Ssh(_) => "ssh",
-        }
-    }
-
-    async fn run(self, ctx: &mut StdCtx) -> anyhow::Result<Outcome> {
-        match self {
-            Commands::Activity(args) => commands::activity::run(ctx, args).await,
-            Commands::Config(args) => commands::config::run(ctx, args).await,
-            Commands::Ssh(args) => commands::ssh::run(ctx, args).await,
+            Commands::Request(_) => "request",
+            Commands::User { .. } => "user",
+            Commands::Policy { .. } => "policy",
+            Commands::ApiKey { .. } => "api-key",
+            Commands::Wallet { .. } => "wallet",
+            Commands::Sign { .. } => "sign",
+            Commands::Login(_) => "login",
+            Commands::Whoami => "whoami",
+            Commands::Auth { .. } => "auth",
+            Commands::Profile { .. } => "profile",
         }
     }
 }
@@ -216,16 +373,18 @@ impl Commands {
 fn after_help() -> String {
     format!(
         "\
-Environment:
-  TURNKEY_ORGANIZATION_ID
-  TURNKEY_API_PUBLIC_KEY
-  TURNKEY_API_PRIVATE_KEY
-  TURNKEY_PRIVATE_KEY_ID
-  TURNKEY_API_BASE_URL
+API identity (login, whoami, request, activity, user, policy, api-key, wallet, sign):
+  Resolved from exactly one source: the TURNKEY_ORGANIZATION_ID,
+  TURNKEY_API_PUBLIC_KEY, TURNKEY_API_PRIVATE_KEY environment bundle; else the
+  profile named by --profile or TK_PROFILE (an explicit profile always wins);
+  else the registry's active profile.
+  The profile registry lives at ~/.config/turnkey/tk.config.toml (override
+  with --config or TK_CONFIG). TURNKEY_API_BASE_URL overrides the API endpoint.
 
-Config file:
+Config file (config, ssh):
   Set TURNKEY_TK_CONFIG_PATH to override the config file location.
   Otherwise tk uses {DEFAULT_CONFIG_DIR_DISPLAY}/tk.toml.
+  TURNKEY_PRIVATE_KEY_ID names the SSH signing key.
 
 SSH agent:
   tk ssh agent start
