@@ -1,61 +1,30 @@
-//! Error taxonomy and classification.
-//!
-//! This module is the single home for tk's machine-readable error taxonomy:
-//! the [`ErrorCode`] enum and its stable snake_case wire names and the
-//! [`classify`] logic that walks an [`anyhow::Error`] chain and maps
-//! recognized causes (the typed [`MissingResource`] and `TurnkeyClientError`)
-//! to a [`Classification`] `(code, http_status)`. It also owns
-//! [`render_error_chain`], the shared human/JSON renderer that preserves the
-//! full source chain and caps messages before they cross the CLI output
-//! boundary.
-
 use serde::Serialize;
 pub use turnkey_auth::errors::MissingResource;
 use turnkey_client::TurnkeyClientError;
 
-/// Cap on rendered error messages, in bytes. Large enough for any real API
-/// error body (typical Turnkey error JSON is < 1 KB); small enough that a
-/// runaway body (HTML error page, proxy dump) cannot bloat a single NDJSON line.
+// Bounds untrusted upstream bodies in one NDJSON record.
 const MAX_ERROR_MESSAGE_BYTES: usize = 8 * 1024;
 
-/// The stable, machine-readable classification of a runtime error, carried in
-/// the `code` field of a `command_error` (or `missing_required_input`) message.
-///
-/// `code` is the taxonomy axis; the message `reason` stays stable
-/// (`command_error` for all runtime errors) so the outcome registry is
-/// unaffected. Serde derives each variant's stable snake_case wire name
-/// directly from the enum.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(strum::EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
-    /// A required value was absent in non-interactive mode.
     MissingRequiredInput,
-    /// Bad flags/args, a clap parse failure.
     UsageError,
-    /// Semantic validation failure in command code.
     #[allow(dead_code, reason = "no command produces this code yet")]
     InvalidInput,
-    /// HTTP 401/403.
     Unauthorized,
-    /// HTTP 404, or an OK response with an empty resource.
     NotFound,
-    /// Any other non-success HTTP status, or a failed/unexpected activity.
     ApiError,
-    /// An activity needs more approvals.
     ApprovalRequired,
-    /// A connect/timeout/DNS failure — the request never reached the server.
     NetworkError,
-    /// Fallback for everything else.
+    NetworkUncertain,
     CommandError,
 }
 
-/// The result of classifying an error: its taxonomy [`ErrorCode`] and, when the
-/// cause is an HTTP failure, the numeric status.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Classification {
-    /// The taxonomy code.
     pub code: ErrorCode,
-    /// The HTTP status, when the cause is an HTTP failure.
     pub http_status: Option<u16>,
 }
 
@@ -65,11 +34,6 @@ impl Classification {
     }
 }
 
-/// Walk the cause chain and classify the first typed error we recognize.
-///
-/// Classification does not alter the original error or its rendered cause
-/// chain. Unrecognized errors use [`ErrorCode::CommandError`] with no HTTP
-/// status; callers still render the complete original chain.
 pub fn classify(error: &anyhow::Error) -> Classification {
     for cause in error.chain() {
         if cause.downcast_ref::<MissingResource>().is_some() {
@@ -82,9 +46,6 @@ pub fn classify(error: &anyhow::Error) -> Classification {
     Classification::new(ErrorCode::CommandError, None)
 }
 
-/// Render an error's complete cause chain (anyhow's alternate `{error:#}`
-/// display, links joined with `": "`), then truncate the result to
-/// [`MAX_ERROR_MESSAGE_BYTES`].
 pub(crate) fn render_error_chain(error: &anyhow::Error) -> String {
     truncate_message(format!("{error:#}"))
 }
@@ -106,13 +67,11 @@ fn truncate_message(message: String) -> String {
     )
 }
 
-/// Map a [`TurnkeyClientError`] to its taxonomy code and optional HTTP status.
-///
-/// NOTE: this may fail to compile when new errors are introduced in upstream Turnkey code, which is good.
-/// We should explicitly decide what kind of error it is here.
+// Exhaustive by design: new upstream variants require an explicit classification.
 fn classify_turnkey_client_error(error: &TurnkeyClientError) -> Classification {
     match error {
-        TurnkeyClientError::UnexpectedHttpStatus(status, _) => {
+        TurnkeyClientError::UnexpectedHttpStatus(status, _)
+        | TurnkeyClientError::RefusedRedirect(status, _) => {
             let code = match status {
                 401 | 403 => ErrorCode::Unauthorized,
                 404 => ErrorCode::NotFound,
@@ -121,20 +80,24 @@ fn classify_turnkey_client_error(error: &TurnkeyClientError) -> Classification {
 
             Classification::new(code, Some(*status))
         }
-        // A connect/timeout/DNS failure means the request never reached the
-        // server — classify as a network error rather than an API error.
-        TurnkeyClientError::Http(reqwest_error)
-            if reqwest_error.is_connect()
-                || reqwest_error.is_timeout()
-                || reqwest_error.is_request() =>
-        {
+        // A connect error proves non-delivery and must precede the broader
+        // request classification.
+        TurnkeyClientError::Http(reqwest_error) if reqwest_error.is_connect() => {
             Classification::new(ErrorCode::NetworkError, None)
+        }
+        // Other transport-window failures cannot prove non-delivery; classify
+        // conservatively to prevent unsafe mutation retries.
+        TurnkeyClientError::Http(reqwest_error)
+            if reqwest_error.is_timeout()
+                || reqwest_error.is_request()
+                || reqwest_error.is_body() =>
+        {
+            Classification::new(ErrorCode::NetworkUncertain, None)
         }
         TurnkeyClientError::ActivityRequiresApproval(_) => {
             Classification::new(ErrorCode::ApprovalRequired, None)
         }
-        // The server responded, but its response violated the expected API
-        // protocol or the activity did not complete successfully.
+        // Failures after an API response was available.
         TurnkeyClientError::MissingContentTypeHeader
         | TurnkeyClientError::HeaderToStrError(_)
         | TurnkeyClientError::HeaderFromStrError(_)
@@ -143,19 +106,21 @@ fn classify_turnkey_client_error(error: &TurnkeyClientError) -> Classification {
         | TurnkeyClientError::ActivityFailed(_)
         | TurnkeyClientError::UnexpectedActivityStatus(_)
         | TurnkeyClientError::UnexpectedInnerActivityResult(_)
+        | TurnkeyClientError::UnexpectedSingletonCount(_, _)
+        | TurnkeyClientError::UnexpectedResultCount(_, _, _)
         | TurnkeyClientError::MissingActivity
         | TurnkeyClientError::MissingResult
         | TurnkeyClientError::MissingInnerResult
         | TurnkeyClientError::ExceededRetries(_) => Classification::new(ErrorCode::ApiError, None),
-        // These failures happen while configuring the client or constructing
-        // and signing the request, before a usable API response is available.
-        // A reqwest error that is not request/connect/timeout-related also
-        // falls back to a generic command failure.
+        // Failures before a usable API response was available.
         TurnkeyClientError::BuilderMissingApiKey
         | TurnkeyClientError::ReqwestBuilder(_)
         | TurnkeyClientError::Http(_)
         | TurnkeyClientError::SerdeJsonFailure(_)
-        | TurnkeyClientError::StamperError(_) => Classification::new(ErrorCode::CommandError, None),
+        | TurnkeyClientError::StamperError(_)
+        | TurnkeyClientError::EnclaveEncrypt(_) => {
+            Classification::new(ErrorCode::CommandError, None)
+        }
     }
 }
 
@@ -163,6 +128,64 @@ fn classify_turnkey_client_error(error: &TurnkeyClientError) -> Classification {
 mod tests {
     use super::*;
     use anyhow::anyhow;
+    use std::collections::BTreeSet;
+    use strum::IntoEnumIterator;
+
+    fn wire_name(code: ErrorCode) -> String {
+        serde_json::to_value(code)
+            .expect("every error code must serialize")
+            .as_str()
+            .expect("every error code must serialize as a JSON string")
+            .to_string()
+    }
+
+    // More-indented taxonomy lines are continuations.
+    fn documented_codes() -> BTreeSet<String> {
+        crate::cli::LONG_ABOUT
+            .lines()
+            .filter_map(|line| {
+                let rest = line.strip_prefix("        ")?;
+                if rest.starts_with(' ') {
+                    return None;
+                }
+                let (token, _) = rest.split_once("  ")?;
+                token
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '_')
+                    .then(|| token.to_string())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn error_code_wire_names_are_unique() {
+        let mut seen = BTreeSet::new();
+        for code in ErrorCode::iter() {
+            let name = wire_name(code);
+            assert!(
+                seen.insert(name.clone()),
+                "wire name `{name}` is used by more than one ErrorCode variant"
+            );
+        }
+    }
+
+    #[test]
+    fn every_error_code_is_documented_in_help() {
+        let declared: BTreeSet<String> = ErrorCode::iter().map(wire_name).collect();
+        let documented = documented_codes();
+
+        let undocumented: Vec<_> = declared.difference(&documented).collect();
+        assert!(
+            undocumented.is_empty(),
+            "these ErrorCode variants are missing from the --help taxonomy in cli.rs: {undocumented:?}"
+        );
+
+        let stale: Vec<_> = documented.difference(&declared).collect();
+        assert!(
+            stale.is_empty(),
+            "the --help taxonomy in cli.rs documents codes that no longer exist: {stale:?}"
+        );
+    }
 
     fn client_error(error: TurnkeyClientError) -> anyhow::Error {
         anyhow::Error::new(error)

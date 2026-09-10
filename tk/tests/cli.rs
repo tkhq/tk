@@ -170,7 +170,6 @@ fn usage_errors_follow_the_json_protocol_when_requested() {
     assert!(record["message"].as_str().unwrap().contains("Usage:"));
     assert!(result.get_output().stderr.is_empty());
 
-    // Without JSON requested, clap's own rendering goes to stderr.
     let mut human = Command::new(env!("CARGO_BIN_EXE_tk"));
     human
         .arg("unknown-command")
@@ -198,7 +197,6 @@ fn non_interactive_env_accepts_boolean_spellings() {
     let temp = tempdir().unwrap();
     let config_path = temp.path().join("tk.toml");
 
-    // An exported but empty variable must not be a usage error.
     for value in ["", "false", "0", "no", "true", "1", "yes"] {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
         cmd.args(["config", "list"])

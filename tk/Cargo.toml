@@ -3,20 +3,21 @@ name = "tk"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 publish = false
 
 [dependencies]
 anstyle = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
-libc = "0.2"
+libc = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "macros", "process", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-turnkey_auth = { path = "../auth" }
+turnkey_auth = { workspace = true }
 turnkey_client = { workspace = true }
 
 [dev-dependencies]

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::fmt::{self, Display, Formatter};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -190,17 +192,59 @@ impl ResolvedConfig {
 }
 
 impl ConfigKey {
-    /// Parses a dotted config key name accepted by the CLI.
-    pub fn parse(value: &str) -> Result<Self> {
-        match value {
-            "turnkey.organizationId" => Ok(Self::OrganizationId),
-            "turnkey.apiPublicKey" => Ok(Self::ApiPublicKey),
-            "turnkey.apiPrivateKey" => Ok(Self::ApiPrivateKey),
-            "turnkey.privateKeyId" => Ok(Self::PrivateKeyId),
-            "turnkey.apiBaseUrl" => Ok(Self::ApiBaseUrl),
-            _ => Err(anyhow!("unsupported config key: {value}")),
+    /// Every supported config key, in declaration order.
+    pub const ALL: [Self; 5] = [
+        Self::OrganizationId,
+        Self::ApiPublicKey,
+        Self::ApiPrivateKey,
+        Self::PrivateKeyId,
+        Self::ApiBaseUrl,
+    ];
+
+    /// The dotted name this key is written as, both on the command line and in
+    /// the persisted config file.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::OrganizationId => "turnkey.organizationId",
+            Self::ApiPublicKey => "turnkey.apiPublicKey",
+            Self::ApiPrivateKey => "turnkey.apiPrivateKey",
+            Self::PrivateKeyId => "turnkey.privateKeyId",
+            Self::ApiBaseUrl => "turnkey.apiBaseUrl",
         }
     }
+}
+
+impl Display for ConfigKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+impl FromStr for ConfigKey {
+    type Err = UnsupportedConfigKey;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|key| key.name() == value)
+            .ok_or_else(|| UnsupportedConfigKey {
+                key: value.to_string(),
+            })
+    }
+}
+
+/// A config key name that matches no supported [`ConfigKey`].
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "unsupported config key: {key}; supported keys: {}",
+    supported_key_names()
+)]
+pub struct UnsupportedConfigKey {
+    key: String,
+}
+
+fn supported_key_names() -> String {
+    ConfigKey::ALL.map(ConfigKey::name).join(", ")
 }
 
 /// Returns the global tk config path, honoring `TURNKEY_TK_CONFIG_PATH` when set.

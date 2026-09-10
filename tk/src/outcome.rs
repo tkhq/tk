@@ -1,24 +1,9 @@
-//! The closed vocabulary of command outcomes.
-//!
-//! `Outcome` has exactly one variant per terminal shape, and the variant name
-//! IS the wire `reason`: serde's internal tagging stamps
-//! `"reason": "<variant_in_snake_case>"` onto every serialized outcome, so
-//! the vocabulary cannot drift from the type and two shapes cannot share a
-//! reason without rustc rejecting the duplicate variant name. Do not add
-//! per-variant `#[serde(rename)]` overrides — that equality is the guarantee.
-//!
-//! Payload structs live in their own command modules. A command with multiple
-//! terminal shapes (e.g. `ssh agent stop`) owns one variant per shape.
-//!
-//! `reason` strings are stable snake_case discriminators; renaming a variant
-//! is a breaking change to the JSON contract.
+// Variant names define stable snake_case JSON reasons.
 
 use crate::commands::{activity, agent, config, public_key};
 use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 
-/// A machine-only terminal payload: JSON mode emits its `reason` record and
-/// human mode prints nothing.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct MachineOnly {}
@@ -29,7 +14,6 @@ impl Display for MachineOnly {
     }
 }
 
-/// One wide terminal outcome per command invocation (the wide-event model).
 #[derive(Serialize)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 #[cfg_attr(test, derive(strum::EnumIter))]
@@ -49,8 +33,6 @@ pub enum Outcome {
 }
 
 impl Display for Outcome {
-    /// Each payload renders itself; the terminal outcome just delegates. An
-    /// empty rendering means the outcome is machine-only.
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Outcome::ActivityApproved(msg) => msg.fmt(f),
@@ -76,7 +58,6 @@ mod tests {
 
     use crate::output::ErrorMessage;
 
-    /// Reasons that live outside `Outcome`: the error envelope reasons.
     const NON_TERMINAL_REASONS: [&str; 2] = [
         ErrorMessage::RUNTIME_REASON,
         ErrorMessage::MISSING_INPUT_REASON,

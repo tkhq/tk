@@ -3,7 +3,9 @@ use std::fs;
 use std::path::Path;
 
 use tempfile::tempdir;
-use turnkey_auth::config::{Config, default_config_dir_from_home, default_config_file_from_home};
+use turnkey_auth::config::{
+    Config, ConfigKey, default_config_dir_from_home, default_config_file_from_home,
+};
 
 #[test]
 fn default_config_paths_are_derived_from_home() {
@@ -78,4 +80,21 @@ apiPrivateKey = "file-priv"
     assert_eq!(config.api_private_key, "file-priv");
     assert_eq!(config.private_key_id, "");
     assert_eq!(config.api_base_url, "https://api.turnkey.com");
+}
+
+#[test]
+fn every_config_key_round_trips_through_its_dotted_name() {
+    for key in ConfigKey::ALL {
+        assert_eq!(key.to_string().parse::<ConfigKey>().unwrap(), key);
+    }
+}
+
+#[test]
+fn an_unknown_name_is_not_a_config_key() {
+    let error = "not.a.key".parse::<ConfigKey>().unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "unsupported config key: not.a.key; supported keys: turnkey.organizationId, turnkey.apiPublicKey, turnkey.apiPrivateKey, turnkey.privateKeyId, turnkey.apiBaseUrl"
+    );
 }

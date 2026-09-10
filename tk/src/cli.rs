@@ -1,5 +1,3 @@
-//! CLI parsing and dispatch.
-
 use crate::commands;
 use crate::outcome::Outcome;
 use crate::output::{ColorChoice, Ctx, ErrorMessage, MessageFormat, Shell, StdCtx};
@@ -10,7 +8,7 @@ use std::process::ExitCode;
 use tracing::debug;
 use turnkey_auth::config::DEFAULT_CONFIG_DIR_DISPLAY;
 
-const LONG_ABOUT: &str = r#"CLI for Turnkey backed auth workflows.
+pub(crate) const LONG_ABOUT: &str = r#"CLI for Turnkey backed auth workflows.
 
 Interactive behavior:
     By default, commands may prompt when stdin is a TTY. Use --non-interactive
@@ -34,8 +32,13 @@ Output format:
         api_error               other non-success HTTP status, or a failed or
                                 unexpected activity
         approval_required       the activity needs more approvals
-        network_error           connect/timeout/DNS: request never reached the
-                                server
+        network_error           DNS/connect/TLS failure before delivery: the
+                                server never received the request, so a retry
+                                is safe
+        network_uncertain       any other transport failure (timeout, dropped
+                                connection, truncated response): delivery is
+                                not established, so reconcile a mutation
+                                before retrying it
         command_error           fallback for everything else
     Exit codes: 0 success, 1 runtime error, 2 usage error."#;
 
@@ -54,7 +57,6 @@ pub struct Cli {
     command: Commands,
 }
 
-/// Presentation settings shared by every command.
 #[derive(Debug, Args)]
 struct OutputOptions {
     /// Disable interactive prompts and fail fast when required values are missing.
@@ -80,7 +82,6 @@ struct OutputOptions {
 }
 
 impl Cli {
-    /// Run the CLI.
     pub async fn run() -> ExitCode {
         let args = match Cli::try_parse() {
             Ok(args) => args,
@@ -103,9 +104,7 @@ impl Cli {
         let result = self.command.run(&mut ctx).await;
         match result {
             Ok(outcome) => {
-                // Fail open: the command itself already succeeded, so a failure
-                // to deliver the outcome message should not flip the exit code.
-                // Make a best-effort warning on stderr and still exit successfully.
+                // Output delivery failure does not turn a completed command into a failure.
                 if let Err(emit_error) = ctx.shell().emit(&outcome) {
                     let mut stderr = std::io::stderr();
                     let _ = writeln!(stderr, "warning: failed to write CLI output: {emit_error}");
@@ -113,8 +112,7 @@ impl Cli {
                 ExitCode::SUCCESS
             }
             Err(error) => {
-                // Log the full cause chain before rendering, so
-                // `RUST_LOG=tk=debug` recovers it in both output modes.
+                // Record the full cause chain for diagnostics in either output mode.
                 debug!(?error, "command failed");
 
                 let shell = ctx.shell();
@@ -133,31 +131,18 @@ impl Cli {
     }
 }
 
-/// Exit code for a usage error (bad flags/args). Matches clap's default.
 const USAGE_ERROR_EXIT_CODE: u8 = 2;
 
-/// Handle a clap parse failure.
-///
-/// `--help`/`-h` and `--version` also surface as `Err`; those must always print
-/// clap's own text (never JSON), so we defer to `error.exit()` for them. Every
-/// other parse failure, including a missing subcommand at any depth, is
-/// emitted as a single `command_error`/`usage_error` NDJSON line on stdout when
-/// `--message-format json` was requested, otherwise handed back to clap's
-/// default rendering via `error.exit()`.
 fn handle_parse_error(error: clap::Error) -> ExitCode {
     match error.kind() {
         ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => error.exit(),
         _ if args_request_json_output(std::env::args_os()) => {
-            // clap's rendering (including the "Usage:" line) is plain text
-            // because tk builds clap without the `color` feature, so agents get
-            // pure NDJSON they can self-correct from.
+            // Clap is built without color, so rendered usage is plain text inside JSON.
             let message = error.render().to_string().trim_end().to_string();
             let error_message = ErrorMessage::usage_error(message);
 
-            // Serializing a struct of strings cannot fail.
             let msg = serde_json::to_string(&error_message).unwrap_or_else(|e| e.to_string());
 
-            // Best-effort: if writing fails we still exit with the usage code.
             let _ = writeln!(std::io::stdout(), "{msg}");
             ExitCode::from(USAGE_ERROR_EXIT_CODE)
         }
@@ -165,14 +150,7 @@ fn handle_parse_error(error: clap::Error) -> ExitCode {
     }
 }
 
-/// Check if the command args wanted `json` output.
-///
-/// Matches both `--message-format json` and `--message-format=json`. This is
-/// intentionally a heuristic: it recognizes raw token patterns without
-/// reconstructing clap's command grammar, so flag-like positional values (for
-/// example, after `--`) can produce a false positive. Emitting JSON in that
-/// ambiguous case is preferable to returning non-JSON output to a consumer
-/// that may have requested JSON.
+// Ambiguous flag-like positional values intentionally fail toward JSON output.
 fn args_request_json_output(args: impl IntoIterator<Item = OsString>) -> bool {
     const FLAG: &str = "--message-format";
     const JSON_FLAG: &str = "--message-format=json";

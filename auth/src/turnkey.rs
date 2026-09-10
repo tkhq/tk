@@ -120,22 +120,18 @@ impl TurnkeySigner {
                 decode_signature_parts(&response.result.r, &response.result.s, &response.result.v)
             }
             Err(TurnkeyClientError::ActivityRequiresApproval(activity_id)) => {
-                Err(self.consensus_required_error(&activity_id).await)
+                Err(self.approval_required_error(&activity_id).await)
             }
             Err(other) => Err(map_turnkey_error(other)),
         }
     }
 
-    /// Builds a consensus-needed error and enriches it with the activity fingerprint when available.
-    ///
-    /// The typed `ActivityRequiresApproval` error stays in the chain so the CLI
-    /// can classify it as `approval_required`.
-    async fn consensus_required_error(&self, activity_id: &str) -> anyhow::Error {
+    async fn approval_required_error(&self, activity_id: &str) -> anyhow::Error {
         let context = match self.get_activity_fingerprint(activity_id).await {
             Ok(fingerprint) => format!(
-                "signing requires consensus approval (fingerprint: {fingerprint}, activity id: {activity_id})"
+                "signing requires additional approval (fingerprint: {fingerprint}, activity id: {activity_id})"
             ),
-            Err(_) => format!("signing requires consensus approval (activity id: {activity_id})"),
+            Err(_) => format!("signing requires additional approval (activity id: {activity_id})"),
         };
         anyhow::Error::new(TurnkeyClientError::ActivityRequiresApproval(
             activity_id.to_string(),
@@ -175,8 +171,7 @@ impl TurnkeySigner {
     }
 }
 
-// Keep the typed client error in the chain so the CLI's error classification
-// can downcast it; the context line preserves the historical message prefix.
+// Preserve the typed cause for downcasting and the established context prefix.
 fn map_turnkey_error(error: TurnkeyClientError) -> anyhow::Error {
     anyhow::Error::new(error).context("Turnkey API request failed")
 }
@@ -366,10 +361,10 @@ mod tests {
 
         let message = error.to_string();
         assert!(
-            message.contains("consensus")
+            message.contains("approval")
                 && message.contains("consensus-fingerprint")
                 && message.contains("consensus-activity-id"),
-            "error should mention consensus and contain both activity fingerprint and id: {message}"
+            "error should mention approval and contain both activity fingerprint and id: {message}"
         );
         assert!(matches!(
             error.downcast_ref::<TurnkeyClientError>(),
@@ -411,7 +406,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "signing requires consensus approval (activity id: consensus-activity-id)"
+            "signing requires additional approval (activity id: consensus-activity-id)"
         );
     }
 

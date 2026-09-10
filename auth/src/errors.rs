@@ -1,8 +1,6 @@
-//! Typed errors shared with the CLI's error classification.
+//! Typed errors for recoverable auth failures.
 
-/// A resource lookup that returned successfully but found nothing, such as an
-/// API `Ok` response whose optional payload is `None`. The CLI classifies this
-/// as `not_found`, alongside HTTP 404s.
+/// An expected resource absent from an otherwise successful lookup response.
 #[derive(Debug, thiserror::Error)]
 #[error("{resource} not found: {id}")]
 pub struct MissingResource {
@@ -11,7 +9,7 @@ pub struct MissingResource {
 }
 
 impl MissingResource {
-    /// Builds the typed error for a `resource` that resolved to nothing.
+    /// Creates an error for a resource absent from a successful lookup.
     pub fn new(resource: &'static str, id: impl Into<String>) -> Self {
         Self {
             resource,

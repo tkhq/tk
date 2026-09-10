@@ -31,15 +31,11 @@ pub async fn run(_ctx: &mut StdCtx, args: Args) -> anyhow::Result<Outcome> {
     }
 }
 
-/// Terminal payload of `tk ssh agent start` and `tk ssh agent status`: a
-/// serving agent's identity.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunning {
-    /// The background agent's process ID.
     pub pid: u32,
-    /// The Unix socket serving SSH agent requests.
     pub socket: String,
 }
 
@@ -53,7 +49,6 @@ impl Display for AgentRunning {
     }
 }
 
-/// Terminal outcome of `tk ssh agent stop` when an agent was stopped.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]
@@ -65,7 +60,6 @@ impl Display for AgentStopped {
     }
 }
 
-/// Terminal outcome of `tk ssh agent stop` when no agent was running.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]

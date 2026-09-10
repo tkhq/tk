@@ -10,12 +10,10 @@ use crate::output::StdCtx;
 #[command(about, long_about = None)]
 pub struct Args {}
 
-/// Terminal outcome of `tk ssh public-key`: the authorized_keys line.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]
 pub struct PublicKeyPrinted {
-    /// The SSH public key in authorized_keys format.
     pub public_key: String,
 }
 
@@ -25,7 +23,6 @@ impl Display for PublicKeyPrinted {
     }
 }
 
-/// Runs the `tk ssh public-key` subcommand.
 pub async fn run(_ctx: &mut StdCtx, _args: Args) -> anyhow::Result<Outcome> {
     Ok(Outcome::PublicKeyPrinted(PublicKeyPrinted {
         public_key: turnkey_auth::public_key::get_public_key_line().await?,

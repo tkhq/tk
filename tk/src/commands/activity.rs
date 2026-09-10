@@ -43,12 +43,10 @@ pub struct RejectArgs {
     pub fingerprint: String,
 }
 
-/// Terminal outcome of `tk activity approve`.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityApproved {
-    /// The fingerprint of the approved activity.
     pub fingerprint: String,
 }
 
@@ -58,12 +56,10 @@ impl Display for ActivityApproved {
     }
 }
 
-/// Terminal outcome of `tk activity reject`.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityRejected {
-    /// The fingerprint of the rejected activity.
     pub fingerprint: String,
 }
 

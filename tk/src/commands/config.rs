@@ -26,23 +26,23 @@ enum Command {
 
 #[derive(Debug, ClapArgs)]
 struct GetArgs {
-    key: String,
+    /// Config key to read, for example `turnkey.organizationId`.
+    key: ConfigKey,
 }
 
 #[derive(Debug, ClapArgs)]
 struct SetArgs {
-    key: String,
+    /// Config key to write, for example `turnkey.organizationId`.
+    key: ConfigKey,
+    /// Value to persist for the key.
     value: String,
 }
 
-/// Terminal outcome of `tk config get`.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigValue {
-    /// The requested config key.
     pub key: String,
-    /// The resolved value, redacted when sensitive.
     pub value: String,
 }
 
@@ -52,12 +52,10 @@ impl Display for ConfigValue {
     }
 }
 
-/// Terminal outcome of `tk config set`. Machine-only: human mode stays silent.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigValueSet {
-    /// The persisted config key.
     pub key: String,
 }
 
@@ -67,12 +65,10 @@ impl Display for ConfigValueSet {
     }
 }
 
-/// Terminal outcome of `tk config list`: the effective config, redacted.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigListed {
-    /// The resolved effective config with sensitive values redacted.
     pub config: RedactedConfig,
 }
 
@@ -83,20 +79,17 @@ impl Display for ConfigListed {
     }
 }
 
-/// Runs the `tk config` subcommand.
 pub async fn run(_ctx: &mut StdCtx, args: Args) -> anyhow::Result<Outcome> {
     Ok(match args.command {
-        Command::Get(args) => {
-            let key = ConfigKey::parse(&args.key)?;
-            Outcome::ConfigValue(ConfigValue {
-                value: config::get_resolved_config_value(key).await?,
-                key: args.key,
+        Command::Get(GetArgs { key }) => Outcome::ConfigValue(ConfigValue {
+            value: config::get_resolved_config_value(key).await?,
+            key: key.to_string(),
+        }),
+        Command::Set(SetArgs { key, value }) => {
+            config::set_config_value(key, &value).await?;
+            Outcome::ConfigValueSet(ConfigValueSet {
+                key: key.to_string(),
             })
-        }
-        Command::Set(args) => {
-            let key = ConfigKey::parse(&args.key)?;
-            config::set_config_value(key, &args.value).await?;
-            Outcome::ConfigValueSet(ConfigValueSet { key: args.key })
         }
         Command::List => Outcome::ConfigListed(ConfigListed {
             config: config::redacted_config().await?,

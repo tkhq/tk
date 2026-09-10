@@ -177,3 +177,108 @@ async fn activity_approve_json_error_carries_http_status_classification() {
             .contains("no such activity")
     );
 }
+
+// A dropped response after complete delivery is ambiguous and must not promise
+// retry safety.
+#[test]
+fn activity_approve_dropped_response_is_network_uncertain() {
+    use std::io::Read;
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let (tx, rx) = mpsc::channel();
+
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut received = Vec::new();
+        let mut buffer = [0u8; 1024];
+
+        // Read the complete declared body before dropping the response.
+        loop {
+            let read = stream.read(&mut buffer).unwrap();
+            if read == 0 {
+                break;
+            }
+            received.extend_from_slice(&buffer[..read]);
+
+            let text = String::from_utf8_lossy(&received).to_lowercase();
+            let Some(header_end) = text.find("\r\n\r\n") else {
+                continue;
+            };
+            let content_length: usize = text[..header_end]
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length:"))
+                .map(|value| value.trim().parse().unwrap())
+                .unwrap_or(0);
+            if received.len() >= header_end + 4 + content_length {
+                break;
+            }
+        }
+
+        tx.send(received).unwrap();
+        drop(stream);
+    });
+
+    let api_key = TurnkeyP256ApiKey::generate();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    cmd.args(["activity", "approve", "dropped-fp", "--message-format=json"])
+        .env("TURNKEY_ORGANIZATION_ID", "org-id")
+        .env(
+            "TURNKEY_API_PUBLIC_KEY",
+            hex::encode(api_key.compressed_public_key()),
+        )
+        .env(
+            "TURNKEY_API_PRIVATE_KEY",
+            hex::encode(api_key.private_key()),
+        )
+        .env("TURNKEY_API_BASE_URL", &base_url);
+
+    let result = cmd.assert().code(1);
+    let request = String::from_utf8(rx.recv().unwrap()).unwrap();
+    server.join().unwrap();
+
+    assert!(
+        request.contains("POST /public/v1/submit/approve_activity"),
+        "server did not receive the submission: {request}"
+    );
+    assert!(
+        request.contains("dropped-fp"),
+        "server did not receive the request body: {request}"
+    );
+
+    let record: serde_json::Value = serde_json::from_slice(&result.get_output().stdout).unwrap();
+    assert_eq!(record["reason"], "command_error");
+    assert_eq!(record["code"], "network_uncertain");
+}
+
+#[test]
+fn activity_approve_connection_refused_is_network_error() {
+    use std::net::TcpListener;
+
+    // Bind and immediately release the port so nothing is listening on it.
+    let base_url = {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        format!("http://{}", listener.local_addr().unwrap())
+    };
+
+    let api_key = TurnkeyP256ApiKey::generate();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    cmd.args(["activity", "approve", "refused-fp", "--message-format=json"])
+        .env("TURNKEY_ORGANIZATION_ID", "org-id")
+        .env(
+            "TURNKEY_API_PUBLIC_KEY",
+            hex::encode(api_key.compressed_public_key()),
+        )
+        .env(
+            "TURNKEY_API_PRIVATE_KEY",
+            hex::encode(api_key.private_key()),
+        )
+        .env("TURNKEY_API_BASE_URL", &base_url);
+
+    let result = cmd.assert().code(1);
+    let record: serde_json::Value = serde_json::from_slice(&result.get_output().stdout).unwrap();
+    assert_eq!(record["reason"], "command_error");
+    assert_eq!(record["code"], "network_error");
+}

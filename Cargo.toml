@@ -1,29 +1,32 @@
 [workspace.package]
 edition = "2024"
 license = "Apache-2.0"
+rust-version = "1.95"
 
 [workspace]
 members = ["auth", "tk"]
 resolver = "3"
 
 [workspace.dependencies]
-anstyle = { version = "1.0.13", default-features = false }
-anyhow = { version = "1.0", default-features = false }
-assert_cmd = { version = "2", default-features = false }
-base64 = { version = "0.22.0", default-features = false, features = ["std"] }
-clap = { version = "4.5", features = ["std", "derive", "help", "usage", "error-context", "env"], default-features = false }
+anstyle = { version = "1.0.14", default-features = false }
+anyhow = { version = "1.0.104", default-features = false }
+assert_cmd = { version = "2.2.2", default-features = false }
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+clap = { version = "4.6.6", features = ["std", "derive", "help", "usage", "error-context", "env"], default-features = false }
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
-predicates = { version = "3", default-features = false }
-serde = { version = "1.0.219", default-features = false, features = ["std", "derive"] }
-serde_json = { version = "1.0.140", default-features = false, features = ["std"] }
-sha2 = { version = "0.10", default-features = false }
-strum = { version = "0.27.2", default-features = false, features = ["derive", "std", "strum_macros"] }
-tempfile = { version = "3.19.1", default-features = false }
-thiserror = { version = "2", default-features = false }
-tokio = { version = "=1.47.1", default-features = false }
-toml = { version = "0.8", default-features = false, features = ["parse", "display"] }
-tracing = { version = "0.1.41", default-features = false, features = ["attributes", "std"] }
+libc = { version = "0.2.189", default-features = false }
+predicates = { version = "3.1.4", default-features = false }
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+sha2 = { version = "0.11.0", default-features = false }
+strum = { version = "0.28.0", default-features = false, features = ["derive", "std", "strum_macros"] }
+tempfile = { version = "3.27.0", default-features = false }
+thiserror = { version = "2.0.20", default-features = false }
+tokio = { version = "=1.53.1", default-features = false }
+toml = { version = "1.1.5", default-features = false, features = ["serde", "parse", "display"] }
+tracing = { version = "0.1.44", default-features = false, features = ["attributes", "std"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt"] }
-turnkey_api_key_stamper = { git = "https://github.com/tkhq/rust-sdk.git", rev = "a64ca2b0d3178089221b648f3365eb67def95219" }
-turnkey_client = { git = "https://github.com/tkhq/rust-sdk.git", rev = "a64ca2b0d3178089221b648f3365eb67def95219" }
-wiremock = { version = "0.6", default-features = false }
+turnkey_auth = { path = "auth" }
+turnkey_api_key_stamper = { git = "https://github.com/tkhq/rust-sdk.git", rev = "ccbf6b4baa6db7797c15a6e101dc0c9f34515ede" }
+turnkey_client = { git = "https://github.com/tkhq/rust-sdk.git", rev = "ccbf6b4baa6db7797c15a6e101dc0c9f34515ede" }
+wiremock = { version = "0.6.5", default-features = false }

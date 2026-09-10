@@ -1,5 +1,3 @@
-//! User-facing output primitives for tk.
-
 use crate::errors::{Classification, ErrorCode, classify, render_error_chain};
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::Result;
@@ -8,7 +6,6 @@ use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 use std::io::{self, IsTerminal, Stderr, Stdout, Write};
 
-/// Selects human-readable or newline-delimited JSON output.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum MessageFormat {
     /// Human-readable text.
@@ -18,13 +15,11 @@ pub enum MessageFormat {
 }
 
 impl MessageFormat {
-    /// Returns true for the JSON message format.
     pub fn is_json(self) -> bool {
         matches!(self, MessageFormat::Json)
     }
 }
 
-/// Controls ANSI color in user-facing output.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum ColorChoice {
     /// Color when stderr is a terminal.
@@ -35,7 +30,6 @@ pub enum ColorChoice {
     Never,
 }
 
-/// The single owner of the CLI's output streams and presentation policy.
 pub struct Shell<Out = Stdout, Err = Stderr> {
     stdout: Out,
     stderr: Err,
@@ -44,7 +38,6 @@ pub struct Shell<Out = Stdout, Err = Stderr> {
 }
 
 impl Shell {
-    /// Builds a shell over the process's standard streams.
     pub fn standard(message_format: MessageFormat, color: ColorChoice) -> Self {
         let use_color = match color {
             ColorChoice::Auto => io::stderr().is_terminal(),
@@ -62,7 +55,6 @@ impl Shell {
 }
 
 impl<W, W2> Shell<W, W2> {
-    /// The selected message format.
     pub fn message_format(&self) -> MessageFormat {
         self.message_format
     }
@@ -77,14 +69,6 @@ impl<W, W2> Shell<W, W2> {
 }
 
 impl<W: Write, W2: Write> Shell<W, W2> {
-    /// Emit a machine-consumable message: one JSON line in JSON mode, or its
-    /// `Display` rendering in human mode.
-    ///
-    /// An empty rendering means the message is machine-only; human mode
-    /// prints nothing (JSON mode still emits the message). Every message
-    /// carries its own `reason` discriminator in its serialized form —
-    /// `Outcome` via its serde tag, everything else as a field or
-    /// struct-level tag.
     pub fn emit<M: Serialize + Display>(&mut self, message: &M) -> Result<()> {
         match self.message_format {
             MessageFormat::Human => {
@@ -103,26 +87,14 @@ impl<W: Write, W2: Write> Shell<W, W2> {
         }
     }
 
-    /// Human-only presentation writers.
-    ///
-    /// Every method on the returned [`Human`] handle writes only when the
-    /// message format is [`MessageFormat::Human`] and is a silent no-op
-    /// otherwise, so it must never carry machine-readable output. Use
-    /// [`Shell::emit`] for that.
     pub fn human(&mut self) -> Human<'_, W, W2> {
         Human(self)
     }
 }
 
-/// Human-only presentation writers over a borrowed [`Shell`].
-///
-/// Every method here writes only in [`MessageFormat::Human`] and is a silent
-/// no-op otherwise, so it is meant for human-facing output only. Machine
-/// readable JSON output must go through [`Shell::emit`].
 pub struct Human<'a, W: Write, W2: Write>(&'a mut Shell<W, W2>);
 
 impl<W: Write, W2: Write> Human<'_, W, W2> {
-    /// Writes one line to stdout.
     pub fn line(&mut self, message: impl Display) -> Result<()> {
         if matches!(self.0.message_format, MessageFormat::Human) {
             writeln!(self.0.stdout, "{message}")?;
@@ -130,7 +102,6 @@ impl<W: Write, W2: Write> Human<'_, W, W2> {
         Ok(())
     }
 
-    /// Renders an error's full cause chain as a red `error:` line on stderr.
     pub fn error(&mut self, error: &anyhow::Error) -> Result<()> {
         if matches!(self.0.message_format, MessageFormat::Human) {
             let style = self.0.style(AnsiColor::Red);
@@ -144,19 +115,14 @@ impl<W: Write, W2: Write> Human<'_, W, W2> {
     }
 }
 
-/// Bundles the `Shell` with cross-cutting CLI flags.
 pub struct Ctx<W, W2> {
     shell: Shell<W, W2>,
     non_interactive: bool,
 }
 
-/// The `Ctx` over the process's standard streams.
 pub type StdCtx = Ctx<Stdout, Stderr>;
 
 impl<W: Write, W2: Write> Ctx<W, W2> {
-    /// `non_interactive` is the raw `--non-interactive` flag; JSON output mode
-    /// always forces non-interactive regardless of the flag, since a piped
-    /// consumer can't answer prompts.
     pub fn new(shell: Shell<W, W2>, non_interactive: bool) -> Self {
         let non_interactive = non_interactive || shell.message_format().is_json();
         Self {
@@ -165,19 +131,16 @@ impl<W: Write, W2: Write> Ctx<W, W2> {
         }
     }
 
-    /// The output shell.
     pub fn shell(&mut self) -> &mut Shell<W, W2> {
         &mut self.shell
     }
 
-    /// Whether prompting is disabled.
     #[allow(dead_code, reason = "no command prompts yet")]
     pub fn is_non_interactive(&self) -> bool {
         self.non_interactive
     }
 }
 
-/// A required value that was absent in non-interactive mode.
 #[derive(Debug, thiserror::Error)]
 #[error(
     "{flag_hint} is required in non-interactive mode (set {flag_hint} or run in a TTY without \
@@ -188,7 +151,6 @@ pub struct MissingRequiredInput {
 }
 
 impl MissingRequiredInput {
-    /// Builds the error naming the flag that would have satisfied the input.
     #[allow(dead_code, reason = "no command prompts yet")]
     pub fn new(flag_hint: &str) -> Self {
         Self {
@@ -197,7 +159,6 @@ impl MissingRequiredInput {
     }
 }
 
-/// The machine-readable error envelope emitted in JSON mode.
 #[derive(Serialize)]
 pub struct ErrorMessage {
     reason: &'static str,
@@ -208,16 +169,9 @@ pub struct ErrorMessage {
 }
 
 impl ErrorMessage {
-    /// The message `reason` for every runtime error. `code` carries the finer
-    /// classification so the outcome `reason` registry stays unchanged.
     pub(crate) const RUNTIME_REASON: &'static str = "command_error";
     pub(crate) const MISSING_INPUT_REASON: &'static str = "missing_required_input";
 
-    /// Build an emitted error from an [`anyhow::Error`].
-    ///
-    /// The message is the full, size-capped error chain, not just the top
-    /// context layer. The `code` (and, when known, `httpStatus`) is derived by
-    /// walking the cause chain for the first typed error we recognize.
     pub fn from_error(error: &anyhow::Error) -> Self {
         // Preserve the historical special case first: missing required input
         // keeps its own dedicated `reason`.
@@ -239,7 +193,6 @@ impl ErrorMessage {
         }
     }
 
-    /// Build a `usage_error` message for a CLI argument-parsing failure.
     pub fn usage_error(message: String) -> Self {
         Self {
             reason: Self::RUNTIME_REASON,
@@ -360,21 +313,13 @@ mod tests {
     use anyhow::anyhow;
     use serde_json::Value;
 
-    /// Emit `error` through a JSON `TestShell` and parse the single NDJSON line.
     fn emit_error_json(error: &anyhow::Error) -> Value {
         let mut shell = TestShell::with_json_formatter();
         shell.emit(&ErrorMessage::from_error(error)).unwrap();
         let line = String::from_utf8(shell.into_stdout()).unwrap();
-        // Exactly one NDJSON object, newline-terminated.
         assert_eq!(line.matches('\n').count(), 1, "expected one NDJSON line");
         serde_json::from_str(line.trim_end()).expect("emitted line should be valid JSON")
     }
-
-    // The `code` taxonomy and its classification are owned and unit-tested in
-    // `crate::errors`. The tests below only assert the consumer wiring: that
-    // `ErrorMessage::from_error` renders the full chain, serializes
-    // `code`/`httpStatus` correctly, and preserves the `missing_required_input`
-    // reason override.
 
     #[test]
     fn missing_required_input_keeps_its_reason_and_code() {
@@ -401,8 +346,6 @@ mod tests {
 
     #[test]
     fn message_renders_full_anyhow_chain() {
-        // Two context layers stacked on a base error — all three must appear,
-        // proving `{:#}` (alternate) rendering rather than only the top layer.
         let error = anyhow!("base failure")
             .context("middle context")
             .context("top context");

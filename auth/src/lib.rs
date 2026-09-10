@@ -3,7 +3,7 @@
 
 /// Auth configuration resolution and persistence helpers.
 pub mod config;
-/// Typed errors shared with the CLI error taxonomy.
+/// Typed errors for recoverable auth failures.
 pub mod errors;
 /// Git SSH signing helpers backed by Turnkey.
 pub mod git_sign;
