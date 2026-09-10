@@ -3,11 +3,13 @@ name = "turnkey_auth"
 version = "0.0.0-alpha.0"
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 description = "Turnkey backed auth library for SSH, Git signing, and related workflows"
 repository = "https://github.com/tkhq/rust-sdk"
 homepage = "https://turnkey.com"
 
 [dependencies]
+thiserror = { workspace = true }
 anyhow = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }

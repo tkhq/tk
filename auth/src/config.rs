@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::fmt::{self, Display, Formatter};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -165,18 +167,17 @@ impl ResolvedConfig {
         }
     }
 
-    /// Serializes the effective config as JSON with sensitive values redacted.
-    pub fn render_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(&DisplayConfigFile {
-            turnkey: DisplayTurnkeyConfig {
+    /// The effective config with sensitive values redacted, ready to display.
+    pub fn redacted(&self) -> RedactedConfig {
+        RedactedConfig {
+            turnkey: RedactedTurnkeyConfig {
                 organization_id: self.organization_id.clone().unwrap_or_default(),
                 api_public_key: self.api_public_key.clone().unwrap_or_default(),
                 api_private_key: redact_if_present(self.api_private_key.as_deref()),
                 private_key_id: self.private_key_id.clone().unwrap_or_default(),
                 api_base_url: self.api_base_url.clone(),
             },
-        })
-        .context("failed to render resolved config")
+        }
     }
 
     fn into_complete(self) -> Result<Config> {
@@ -191,17 +192,59 @@ impl ResolvedConfig {
 }
 
 impl ConfigKey {
-    /// Parses a dotted config key name accepted by the CLI.
-    pub fn parse(value: &str) -> Result<Self> {
-        match value {
-            "turnkey.organizationId" => Ok(Self::OrganizationId),
-            "turnkey.apiPublicKey" => Ok(Self::ApiPublicKey),
-            "turnkey.apiPrivateKey" => Ok(Self::ApiPrivateKey),
-            "turnkey.privateKeyId" => Ok(Self::PrivateKeyId),
-            "turnkey.apiBaseUrl" => Ok(Self::ApiBaseUrl),
-            _ => Err(anyhow!("unsupported config key: {value}")),
+    /// Every supported config key, in declaration order.
+    pub const ALL: [Self; 5] = [
+        Self::OrganizationId,
+        Self::ApiPublicKey,
+        Self::ApiPrivateKey,
+        Self::PrivateKeyId,
+        Self::ApiBaseUrl,
+    ];
+
+    /// The dotted name this key is written as, both on the command line and in
+    /// the persisted config file.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::OrganizationId => "turnkey.organizationId",
+            Self::ApiPublicKey => "turnkey.apiPublicKey",
+            Self::ApiPrivateKey => "turnkey.apiPrivateKey",
+            Self::PrivateKeyId => "turnkey.privateKeyId",
+            Self::ApiBaseUrl => "turnkey.apiBaseUrl",
         }
     }
+}
+
+impl Display for ConfigKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+impl FromStr for ConfigKey {
+    type Err = UnsupportedConfigKey;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|key| key.name() == value)
+            .ok_or_else(|| UnsupportedConfigKey {
+                key: value.to_string(),
+            })
+    }
+}
+
+/// A config key name that matches no supported [`ConfigKey`].
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "unsupported config key: {key}; supported keys: {}",
+    supported_key_names()
+)]
+pub struct UnsupportedConfigKey {
+    key: String,
+}
+
+fn supported_key_names() -> String {
+    ConfigKey::ALL.map(ConfigKey::name).join(", ")
 }
 
 /// Returns the global tk config path, honoring `TURNKEY_TK_CONFIG_PATH` when set.
@@ -239,9 +282,9 @@ pub async fn get_resolved_config_value(key: ConfigKey) -> Result<String> {
     })
 }
 
-/// Renders the effective config as redacted JSON.
-pub async fn render_config() -> Result<String> {
-    ResolvedConfig::resolve().await?.render_json()
+/// Resolves the effective config with sensitive values redacted.
+pub async fn redacted_config() -> Result<RedactedConfig> {
+    Ok(ResolvedConfig::resolve().await?.redacted())
 }
 
 /// Persists one config value to the global config file.
@@ -362,14 +405,15 @@ impl PersistedTurnkeyConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct DisplayConfigFile {
-    turnkey: DisplayTurnkeyConfig,
+/// The effective config with sensitive values redacted.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct RedactedConfig {
+    turnkey: RedactedTurnkeyConfig,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DisplayTurnkeyConfig {
+struct RedactedTurnkeyConfig {
     organization_id: String,
     api_public_key: String,
     api_private_key: String,

@@ -1,4 +1,4 @@
 /target/
 /.claude/
-/AGENTS.md
 docs/plans/*
+.env.local

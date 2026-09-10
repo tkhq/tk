@@ -1,6 +1,10 @@
 use clap::{Args as ClapArgs, Subcommand};
+use serde::Serialize;
+use std::fmt::{self, Display, Formatter};
 
-use turnkey_auth::config::{self, ConfigKey};
+use crate::outcome::Outcome;
+use crate::output::StdCtx;
+use turnkey_auth::config::{self, ConfigKey, RedactedConfig};
 
 /// Arguments for the `tk config` subcommand.
 #[derive(Debug, ClapArgs)]
@@ -22,30 +26,73 @@ enum Command {
 
 #[derive(Debug, ClapArgs)]
 struct GetArgs {
-    key: String,
+    /// Config key to read, for example `turnkey.organizationId`.
+    key: ConfigKey,
 }
 
 #[derive(Debug, ClapArgs)]
 struct SetArgs {
-    key: String,
+    /// Config key to write, for example `turnkey.organizationId`.
+    key: ConfigKey,
+    /// Value to persist for the key.
     value: String,
 }
 
-/// Runs the `tk config` subcommand.
-pub async fn run(args: Args) -> anyhow::Result<()> {
-    match args.command {
-        Command::Get(args) => {
-            let key = ConfigKey::parse(&args.key)?;
-            println!("{}", config::get_resolved_config_value(key).await?);
-        }
-        Command::Set(args) => {
-            let key = ConfigKey::parse(&args.key)?;
-            config::set_config_value(key, &args.value).await?;
-        }
-        Command::List => {
-            print!("{}", config::render_config().await?);
-        }
-    }
+#[derive(Serialize)]
+#[cfg_attr(test, derive(Default))]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigValue {
+    pub key: String,
+    pub value: String,
+}
 
-    Ok(())
+impl Display for ConfigValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.value)
+    }
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(Default))]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigValueSet {
+    pub key: String,
+}
+
+impl Display for ConfigValueSet {
+    fn fmt(&self, _: &mut Formatter<'_>) -> fmt::Result {
+        Ok(())
+    }
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(Default))]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigListed {
+    pub config: RedactedConfig,
+}
+
+impl Display for ConfigListed {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let rendered = serde_json::to_string_pretty(&self.config).map_err(|_| fmt::Error)?;
+        f.write_str(&rendered)
+    }
+}
+
+pub async fn run(_ctx: &mut StdCtx, args: Args) -> anyhow::Result<Outcome> {
+    Ok(match args.command {
+        Command::Get(GetArgs { key }) => Outcome::ConfigValue(ConfigValue {
+            value: config::get_resolved_config_value(key).await?,
+            key: key.to_string(),
+        }),
+        Command::Set(SetArgs { key, value }) => {
+            config::set_config_value(key, &value).await?;
+            Outcome::ConfigValueSet(ConfigValueSet {
+                key: key.to_string(),
+            })
+        }
+        Command::List => Outcome::ConfigListed(ConfigListed {
+            config: config::redacted_config().await?,
+        }),
+    })
 }

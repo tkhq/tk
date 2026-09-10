@@ -1,6 +1,8 @@
 use clap::{Args as ClapArgs, Subcommand};
 
 use crate::commands::{agent, git_sign, public_key};
+use crate::outcome::Outcome;
+use crate::output::StdCtx;
 
 /// Top-level arguments for `tk ssh`.
 #[derive(Debug, ClapArgs)]
@@ -11,11 +13,11 @@ pub struct Args {
 }
 
 /// Runs the `tk ssh` subcommand tree.
-pub async fn run(args: Args) -> anyhow::Result<()> {
+pub async fn run(ctx: &mut StdCtx, args: Args) -> anyhow::Result<Outcome> {
     match args.command {
-        Command::Agent(args) => agent::run(args).await,
-        Command::GitSign(args) => git_sign::run(args).await,
-        Command::PublicKey(args) => public_key::run(args).await,
+        Command::Agent(args) => agent::run(ctx, args).await,
+        Command::GitSign(args) => git_sign::run(ctx, args).await,
+        Command::PublicKey(args) => public_key::run(ctx, args).await,
     }
 }
 

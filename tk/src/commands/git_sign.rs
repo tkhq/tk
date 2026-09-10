@@ -1,6 +1,9 @@
 use clap::Args as ClapArgs;
 
-/// Arguments for the `tk ssh git-sign` subcommand or direct SSH signer invocation.
+use crate::outcome::{MachineOnly, Outcome};
+use crate::output::StdCtx;
+
+/// Arguments for the `tk ssh git-sign` subcommand.
 #[derive(Debug, ClapArgs)]
 #[command(about, long_about = None)]
 pub struct Args {
@@ -8,7 +11,7 @@ pub struct Args {
     pub ssh_keygen_args: Vec<String>,
 }
 
-/// Runs the `tk ssh git-sign` subcommand or direct SSH signer invocation.
-pub async fn run(args: Args) -> anyhow::Result<()> {
-    turnkey_auth::git_sign::run_git_sign(&args.ssh_keygen_args).await
+pub async fn run(_ctx: &mut StdCtx, args: Args) -> anyhow::Result<Outcome> {
+    turnkey_auth::git_sign::run_git_sign(&args.ssh_keygen_args).await?;
+    Ok(Outcome::GitSignCompleted(MachineOnly {}))
 }

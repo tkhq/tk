@@ -147,3 +147,106 @@ fn config_set_writes_owner_only_file() {
     set_cmd.assert().success();
     assert_eq!(mode(&config_path), 0o600);
 }
+
+// Exact Clap golden shared by the get/set usage-error tests.
+const UNSUPPORTED_KEY_MESSAGE: &str = r#"error: invalid value 'not.a.key' for '<KEY>': unsupported config key: not.a.key; supported keys: turnkey.organizationId, turnkey.apiPublicKey, turnkey.apiPrivateKey, turnkey.privateKeyId, turnkey.apiBaseUrl
+
+For more information, try '--help'."#;
+
+#[test]
+fn config_get_rejects_unsupported_key_in_human_mode() {
+    let temp = tempdir().expect("temp dir should exist");
+    let config_path = temp.path().join("tk.toml");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    let assert = cmd
+        .args(["config", "get", "not.a.key"])
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty());
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone())
+        .expect("stderr should be valid utf-8");
+    assert_eq!(stderr.trim_end(), UNSUPPORTED_KEY_MESSAGE);
+    assert!(!config_path.exists(), "a usage error must not touch config");
+}
+
+#[test]
+fn config_set_rejects_unsupported_key_in_human_mode() {
+    let temp = tempdir().expect("temp dir should exist");
+    let config_path = temp.path().join("tk.toml");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    let assert = cmd
+        .args(["config", "set", "not.a.key", "some-value"])
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty());
+
+    let stderr = String::from_utf8(assert.get_output().stderr.clone())
+        .expect("stderr should be valid utf-8");
+    assert_eq!(stderr.trim_end(), UNSUPPORTED_KEY_MESSAGE);
+    assert!(!config_path.exists(), "a usage error must not touch config");
+}
+
+#[test]
+fn config_get_unsupported_key_json_emits_usage_error_envelope() {
+    let temp = tempdir().expect("temp dir should exist");
+    let config_path = temp.path().join("tk.toml");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    let output = cmd
+        .args(["config", "get", "not.a.key", "--message-format=json"])
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+
+    let record: Value = serde_json::from_slice(&output).expect("stdout should be one JSON object");
+    assert_eq!(
+        record,
+        serde_json::json!({
+            "reason": "command_error",
+            "code": "usage_error",
+            "message": UNSUPPORTED_KEY_MESSAGE,
+        })
+    );
+    assert!(!config_path.exists(), "a usage error must not touch config");
+}
+
+#[test]
+fn config_set_unsupported_key_json_emits_usage_error_envelope() {
+    let temp = tempdir().expect("temp dir should exist");
+    let config_path = temp.path().join("tk.toml");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    let output = cmd
+        .args([
+            "config",
+            "set",
+            "not.a.key",
+            "some-value",
+            "--message-format=json",
+        ])
+        .env("TURNKEY_TK_CONFIG_PATH", &config_path)
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+
+    let record: Value = serde_json::from_slice(&output).expect("stdout should be one JSON object");
+    assert_eq!(
+        record,
+        serde_json::json!({
+            "reason": "command_error",
+            "code": "usage_error",
+            "message": UNSUPPORTED_KEY_MESSAGE,
+        })
+    );
+    assert!(!config_path.exists(), "a usage error must not touch config");
+}
