@@ -66,8 +66,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-# The /releases/latest redirect names the newest release without an API
-# token or rate limit.
+# The /releases/latest redirect names the newest release without an API token.
 latest_url=$(curl --proto '=https' --tlsv1.2 -LsSf \
     -o /dev/null -w '%{url_effective}' "$repository_url/releases/latest")
 version=${latest_url##*/}
@@ -79,7 +78,7 @@ case "$version" in
         ;;
 esac
 case "$version" in
-    */* | *\?* | *\#*)
+    *[!A-Za-z0-9._-]*)
         echo "error: GitHub returned an invalid tk release version: $version" >&2
         exit 1
         ;;
@@ -119,17 +118,12 @@ fi
 # the expected root directory, and exactly one entry may be the binary.
 package="tk-$target-$version"
 expected_binary="$package/tk"
-entries="$temporary_dir/archive-entries"
-tar -tzf "$archive" >"$entries"
-if ! awk -v root="$package/" '
-    index($0, root) != 1 || $0 ~ /(^|\/)\.\.(\/|$)/ { exit 1 }
-' "$entries"; then
-    echo "error: release archive contains an unexpected path" >&2
-    exit 1
-fi
-binary_count=$(awk -v expected="$expected_binary" '$0 == expected { count++ } END { print count + 0 }' "$entries")
-if [ "$binary_count" -ne 1 ]; then
-    echo "error: release archive does not contain exactly one $expected_binary" >&2
+if ! tar -tzf "$archive" | awk -v root="$package/" -v binary="$expected_binary" '
+    index($0, root) != 1 || $0 ~ /(^|\/)\.\.(\/|$)/ { bad = 1; exit }
+    $0 == binary { count++ }
+    END { exit bad || count != 1 }
+'; then
+    echo "error: release archive must contain exactly one $expected_binary and no paths outside $package/" >&2
     exit 1
 fi
 

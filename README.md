@@ -22,17 +22,10 @@ Install the latest release binary (Linux glibc and macOS, x86_64 and arm64):
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh
 ```
 
-The installer places `tk` in `$HOME/.local/bin` (override with `TK_INSTALL_DIR`)
-after verifying the release checksum. Run `tk --version` to confirm.
-
-Or build from the root of this repo:
-
-```bash
-cargo install --path tk
-```
-
-The installed binary is named `tk`. See [releasing](./docs/releasing.md) for how
-binaries are published.
+The installer verifies the release checksum and places `tk` in
+`$HOME/.local/bin` (override with `TK_INSTALL_DIR`). Or build from the root of
+this repo with `cargo install --path tk`. See [releasing](./docs/releasing.md)
+for how binaries are published.
 
 ## Commands
 
