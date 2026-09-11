@@ -42,9 +42,31 @@ Output format:
         command_error           fallback for everything else
     Exit codes: 0 success, 1 runtime error, 2 usage error."#;
 
+/// Release tag baked in at build time; the tag, not the manifest, is the
+/// version of record for published binaries.
+const VERSION: &str = env!("TK_VERSION");
+
+/// Detailed `--version` output with the provenance recorded by the build.
+const LONG_VERSION: &str = concat!(
+    env!("TK_VERSION"),
+    "\ntarget: ",
+    env!("TK_BUILD_TARGET"),
+    "\ncommit: ",
+    env!("TK_GIT_SHA"),
+    " (",
+    env!("TK_GIT_DIRTY"),
+    ")",
+    "\nbuilt: ",
+    env!("TK_BUILD_TIMESTAMP"),
+    "\nrelease build: ",
+    env!("TK_RELEASE_BUILD"),
+);
+
 /// Top-level CLI arguments for the `tk` binary.
 #[derive(Debug, Parser)]
 #[command(
+    version = VERSION,
+    long_version = LONG_VERSION,
     about = "CLI for Turnkey backed auth workflows",
     long_about = LONG_ABOUT,
     after_help = after_help()

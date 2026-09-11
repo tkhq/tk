@@ -66,6 +66,29 @@ fn cli_help_lists_commands() {
 }
 
 #[test]
+fn version_reports_the_baked_release_version() {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    cmd.arg("-V");
+    cmd.assert()
+        .success()
+        .stdout(format!("tk {}\n", env!("TK_VERSION")));
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    cmd.arg("--version");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::starts_with(format!(
+            "tk {}\ntarget: {}\n",
+            env!("TK_VERSION"),
+            env!("TK_BUILD_TARGET")
+        )))
+        .stdout(predicate::str::ends_with(format!(
+            "\nrelease build: {}\n",
+            env!("TK_RELEASE_BUILD")
+        )));
+}
+
+#[test]
 fn public_key_requires_turnkey_org_id() {
     let temp = tempdir().unwrap();
     let config_path = temp.path().join("tk.toml");

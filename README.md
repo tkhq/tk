@@ -16,13 +16,23 @@ Experimental Turnkey auth workspace centered on the `tk` CLI.
 
 ## Installation
 
-From the root of this repo:
+Install the latest release binary (Linux glibc and macOS, x86_64 and arm64):
 
 ```bash
-cargo install -p tk
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh
 ```
 
-The installed binary is named `tk`.
+The installer places `tk` in `$HOME/.local/bin` (override with `TK_INSTALL_DIR`)
+after verifying the release checksum. Run `tk --version` to confirm.
+
+Or build from the root of this repo:
+
+```bash
+cargo install --path tk
+```
+
+The installed binary is named `tk`. See [releasing](./docs/releasing.md) for how
+binaries are published.
 
 ## Commands
 
