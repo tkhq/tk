@@ -2,7 +2,7 @@ use crate::{
     auth::{ResolvedAuth, build_turnkey_client},
     errors::{InvalidInput, MissingResource},
     operations::{OperationOutput, submit_activity},
-    resources::BodyArgs,
+    resources::{BodyArgs, Kind, ResourceRef, Selector},
 };
 use anyhow::Result;
 use clap::Subcommand;
@@ -20,9 +20,8 @@ use uuid::Uuid;
 #[derive(Debug, Subcommand)]
 pub enum WalletCommand {
     List,
-    Get {
-        id: Uuid,
-    },
+    /// Fetch one wallet selected by --id or --name.
+    Get(Selector),
     Create(BodyArgs),
     Update(BodyArgs),
     Account {
@@ -56,7 +55,7 @@ pub enum SignCommand {
 
 pub enum PreparedWalletCommand {
     List,
-    Get(Uuid),
+    Get(ResourceRef),
     Create(CreateWalletIntent),
     Update(UpdateWalletIntent),
     Accounts {
@@ -73,7 +72,7 @@ impl WalletCommand {
     pub fn prepare(self) -> Result<PreparedWalletCommand> {
         Ok(match self {
             Self::List => PreparedWalletCommand::List,
-            Self::Get { id } => PreparedWalletCommand::Get(id),
+            Self::Get(selector) => PreparedWalletCommand::Get(selector.into()),
             Self::Create(input) => PreparedWalletCommand::Create(input.parse()?),
             Self::Update(input) => {
                 let params: UpdateWalletIntent = input.parse()?;
@@ -147,11 +146,41 @@ impl PreparedWalletCommand {
                 "ACTIVITY_TYPE_SIGN_TRANSACTION_V2",
                 to_value(p)?,
             ),
-            query => return query.query(auth).await,
+            Self::List => return Lookup::List.query(auth).await,
+            Self::Get(reference) => {
+                let id = Kind::Wallet.resolve_one(&auth, reference).await?;
+                return Lookup::Get(id).query(auth).await;
+            }
+            Self::Accounts {
+                wallet_id,
+                limit,
+                cursor,
+            } => {
+                return Lookup::Accounts {
+                    wallet_id,
+                    limit,
+                    cursor,
+                }
+                .query(auth)
+                .await;
+            }
         };
         submit_activity(&auth, command, endpoint, kind, &params).await
     }
+}
 
+/// A read-only wallet query whose target has already been resolved to an ID.
+enum Lookup {
+    List,
+    Get(Uuid),
+    Accounts {
+        wallet_id: Uuid,
+        limit: u32,
+        cursor: Option<String>,
+    },
+}
+
+impl Lookup {
     async fn query(self, auth: ResolvedAuth) -> Result<OperationOutput> {
         let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
         let organization_id = auth.org_id;
@@ -202,7 +231,6 @@ impl PreparedWalletCommand {
                     json!({"accounts": accounts, "nextCursor": next}),
                 ))
             }
-            _ => unreachable!("mutations are submitted by run"),
         }
     }
 }
@@ -230,9 +258,16 @@ mod tests {
         assert!(WalletParser::try_parse_from(both).is_err());
     }
 
+    const ID: &str = "11111111-1111-4111-8111-111111111111";
+
     #[test]
     fn wallet_uuid_is_checked_before_authentication() {
-        assert!(WalletParser::try_parse_from(["wallet", "get", "not-an-id"]).is_err());
+        assert!(WalletParser::try_parse_from(["wallet", "get", "--id", "not-an-id"]).is_err());
+        assert!(WalletParser::try_parse_from(["wallet", "get"]).is_err());
+        assert!(
+            WalletParser::try_parse_from(["wallet", "get", "--id", ID, "--name", "treasury"])
+                .is_err()
+        );
         let parsed = WalletParser::try_parse_from([
             "wallet",
             "update",

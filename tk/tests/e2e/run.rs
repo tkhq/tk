@@ -322,7 +322,7 @@ impl Run {
     }
 
     fn wait_as(&self, mut cmd: Command, id: &str) -> Value {
-        let record = self.ok(cmd.args(["activity", "wait", id, "--timeout", "90"]));
+        let record = self.ok(cmd.args(["activity", "wait", "--id", id, "--timeout", "90"]));
         assert_eq!(record["command"], "activity.wait");
         assert_eq!(record["status"], "completed", "{record}");
         assert_eq!(record["activity"]["id"], id);
@@ -350,8 +350,14 @@ impl Run {
             Some("completed") => Ok(record),
             Some("pending") => {
                 let id = id_of(&record);
-                let (exit, waited, stdout, stderr) =
-                    self.attempt(waiter().args(["activity", "wait", &id, "--timeout", "90"]));
+                let (exit, waited, stdout, stderr) = self.attempt(waiter().args([
+                    "activity",
+                    "wait",
+                    "--id",
+                    &id,
+                    "--timeout",
+                    "90",
+                ]));
                 if exit != Some(0) {
                     return Err((waited, stdout, stderr));
                 }

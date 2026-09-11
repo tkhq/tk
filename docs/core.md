@@ -69,10 +69,10 @@ with the activity identity to inspect, and is never retried implicitly.
 
 ```sh
 tk activity list --limit 50 [--cursor ACTIVITY_ID]
-tk activity get ACTIVITY_ID
-tk activity approve ACTIVITY_ID
-tk activity reject ACTIVITY_ID
-tk activity wait ACTIVITY_ID --timeout 60
+tk activity get --id ACTIVITY_ID
+tk activity approve --id ACTIVITY_ID
+tk activity reject --id ACTIVITY_ID
+tk activity wait --id ACTIVITY_ID --timeout 60
 ```
 
 Approve/reject fetch the activity's fingerprint by ID and submit one vote.
@@ -81,6 +81,29 @@ Inspecting a rejected activity is a successful inspection. `wait` fails with
 when time runs out; both carry the last observed activity so the wait can be
 resumed with the same ID. Server errors, throttling, and transport failures
 during a poll do not end the wait; the next poll runs until the deadline.
+
+## Selecting resources
+
+Commands that act on an existing resource take explicit flags, never a bare
+positional that has to be guessed as a name or an ID. `get` commands require
+exactly one of `--id ID` or `--name NAME`; `delete` commands accept any mix of
+repeated `--id` and `--name`:
+
+```sh
+tk user get --id USER_ID
+tk user get --name alice
+tk policy delete --name "agent policy" --id POLICY_ID
+tk user tag delete --name agents
+tk wallet get --name treasury
+tk api-key delete --user-id USER_ID --id API_KEY_ID [--id API_KEY_ID ...]
+tk policy evaluations --activity-id ACTIVITY_ID
+```
+
+A `--name` is resolved with one listing request and must match exactly one
+resource: no match fails as `not_found`, and several matches fail as
+`invalid_input` listing the candidate IDs to pass with `--id`. Passing both
+`--id` and `--name` to a `get`, or neither to either command, is a
+`usage_error` rejected before credentials are loaded.
 
 ## Users, policies, and API keys
 

@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use reqwest::{Client, Url};
-use serde::Serialize;
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use turnkey_api_key_stamper::{Stamp, TurnkeyP256ApiKey};
 use turnkey_client::generated::{
@@ -49,14 +49,24 @@ pub enum ActivityCommand {
         #[arg(long)]
         cursor: Option<String>,
     },
-    /// Fetch one activity by ID.
-    Get { id: String },
-    /// Approve a pending activity by ID.
-    Approve { id: String },
-    /// Reject a pending activity by ID.
-    Reject { id: String },
+    /// Fetch one activity by --id.
+    Get {
+        #[arg(long)]
+        id: String,
+    },
+    /// Approve a pending activity by --id.
+    Approve {
+        #[arg(long)]
+        id: String,
+    },
+    /// Reject a pending activity by --id.
+    Reject {
+        #[arg(long)]
+        id: String,
+    },
     /// Poll one activity until it reaches a terminal status.
     Wait {
+        #[arg(long)]
         id: String,
         #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
@@ -561,6 +571,17 @@ async fn vote(
     submitted.map_err(|error| with_target(error, target))
 }
 
+/// Sends one signed query and decodes its response.
+pub(crate) async fn query<T: Serialize, R: DeserializeOwned>(
+    auth: &ResolvedAuth,
+    endpoint: &str,
+    request: &T,
+) -> Result<R> {
+    let url = url(&auth.api_base_url, &format!("/public/v1/query/{endpoint}"))?;
+    let value = post(&client()?, url, encode(request)?, &auth.stamper, false).await?;
+    serde_json::from_value(value).with_context(|| format!("{endpoint} response was malformed"))
+}
+
 pub async fn submit_activity<T: Serialize>(
     auth: &ResolvedAuth,
     command: &'static str,
@@ -670,7 +691,9 @@ mod tests {
             RequestCli::try_parse_from(["tk", "--path", "https://other.test", "--body", "{}"])
                 .is_err()
         );
-        assert!(ActivityCli::try_parse_from(["tk", "wait", "a", "--timeout", "0"]).is_err());
+        assert!(
+            ActivityCli::try_parse_from(["tk", "wait", "--id", "a", "--timeout", "0"]).is_err()
+        );
     }
 
     #[tokio::test]

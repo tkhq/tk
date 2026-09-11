@@ -121,12 +121,12 @@ async fn signed_request_preserves_body_and_pending_vs_rejected_exit_codes() {
         .mount(&server)
         .await;
     let inspected = record(
-        authed(&server.uri()).args(["activity", "get", "rejected-id"]),
+        authed(&server.uri()).args(["activity", "get", "--id", "rejected-id"]),
         0,
     );
     assert_eq!(inspected["activity"]["status"], "ACTIVITY_STATUS_REJECTED");
     let waited = record(
-        authed(&server.uri()).args(["activity", "wait", "rejected-id"]),
+        authed(&server.uri()).args(["activity", "wait", "--id", "rejected-id"]),
         1,
     );
     assert_eq!(waited["reason"], "command_error");
@@ -150,7 +150,7 @@ async fn raw_request_http_status_keeps_the_api_message() {
         .mount(&server)
         .await;
     let result = record(
-        authed(&server.uri()).args(["activity", "get", "some-id"]),
+        authed(&server.uri()).args(["activity", "get", "--id", "some-id"]),
         1,
     );
     assert_eq!(result["reason"], "command_error");
@@ -175,7 +175,7 @@ async fn wait_timeout_is_a_resumable_error_record() {
         .mount(&server)
         .await;
     let result = record(
-        authed(&server.uri()).args(["activity", "wait", "slow-id", "--timeout", "1"]),
+        authed(&server.uri()).args(["activity", "wait", "--id", "slow-id", "--timeout", "1"]),
         1,
     );
     assert_eq!(result["code"], "wait_timeout");

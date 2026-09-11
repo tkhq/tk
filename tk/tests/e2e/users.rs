@@ -38,11 +38,21 @@ fn user_lifecycle_from_input_json_and_stdin() {
         .to_string();
 
     for (id, name) in [(&json_user, &json_name), (&stdin_user, &stdin_name)] {
-        let got = run.ok(run.admin().args(["user", "get", id]));
+        let got = run.ok(run.admin().args(["user", "get", "--id", id]));
         assert_eq!(got["command"], "user.get");
         assert_eq!(got["data"]["user"]["userId"], *id);
         assert_eq!(got["data"]["user"]["userName"], *name);
+        let by_name = run.ok(run.admin().args(["user", "get", "--name", name]));
+        assert_eq!(by_name["data"]["user"], got["data"]["user"]);
     }
+    let usage = run.record(run.admin_offline().args(["user", "get", &json_user]), 2);
+    assert_eq!(usage["code"], "usage_error");
+    let usage = run.record(
+        run.admin_offline()
+            .args(["user", "get", "--id", &json_user, "--name", &json_name]),
+        2,
+    );
+    assert_eq!(usage["code"], "usage_error");
     let list = run.ok(run.admin().args(["user", "list"]));
     assert_eq!(list["command"], "user.list");
     let listed: Vec<&str> = list["data"]["users"]
@@ -55,13 +65,15 @@ fn user_lifecycle_from_input_json_and_stdin() {
     assert!(listed.contains(&stdin_user.as_str()));
 
     let deleted = run.submit(
-        run.admin().args(["user", "delete", &stdin_user]),
+        run.admin().args(["user", "delete", "--name", &stdin_name]),
         "user.delete",
     );
     assert_eq!(
         result(&deleted, "deleteUsersResult")["userIds"],
         json!([stdin_user])
     );
-    let missing = run.err(run.admin().args(["user", "get", &stdin_user]));
+    let missing = run.err(run.admin().args(["user", "get", "--id", &stdin_user]));
+    assert_eq!(missing["code"], "not_found");
+    let missing = run.err(run.admin().args(["user", "get", "--name", &stdin_name]));
     assert_eq!(missing["code"], "not_found");
 }

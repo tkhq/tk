@@ -15,23 +15,20 @@ use uuid::Uuid;
 use crate::{
     auth::{ResolvedAuth, build_turnkey_client},
     errors::{InvalidInput, MissingResource},
-    operations::{OperationOutput, submit_activity},
+    operations::{self, OperationOutput, submit_activity},
 };
 
 #[derive(Debug, Subcommand)]
 pub enum UserCommand {
     List,
-    Get {
-        id: Uuid,
-    },
+    /// Fetch one user selected by --id or --name.
+    Get(Selector),
     /// Create one or more users from a CreateUsersIntentV4 parameters object.
     Create(BodyArgs),
     /// Update user name, email, phone, or tag membership.
     Update(BodyArgs),
-    Delete {
-        #[arg(required = true, num_args = 1..)]
-        ids: Vec<Uuid>,
-    },
+    /// Delete the users selected by any mix of repeated --id and --name.
+    Delete(Selectors),
     Tag {
         #[command(subcommand)]
         command: TagCommand,
@@ -43,29 +40,26 @@ pub enum TagCommand {
     List,
     Create(BodyArgs),
     Update(BodyArgs),
-    Delete {
-        #[arg(required = true, num_args = 1..)]
-        ids: Vec<Uuid>,
-    },
+    /// Delete the user tags selected by any mix of repeated --id and --name.
+    Delete(Selectors),
 }
 
 #[derive(Debug, Subcommand)]
 pub enum PolicyCommand {
     List,
-    Get {
-        id: Uuid,
-    },
+    /// Fetch one policy selected by --id or --name.
+    Get(Selector),
     /// Create a policy from a CreatePolicyIntentV3 parameters object.
     Create(BodyArgs),
     /// Create multiple policies from a parameters object containing policies.
     CreateBatch(BodyArgs),
     /// Update with policyEffect/policyCondition/policyConsensus field names.
     Update(BodyArgs),
-    Delete {
-        #[arg(required = true, num_args = 1..)]
-        ids: Vec<Uuid>,
-    },
+    /// Delete the policies selected by any mix of repeated --id and --name.
+    Delete(Selectors),
+    /// List the policy evaluations recorded for one activity.
     Evaluations {
+        #[arg(long)]
         activity_id: Uuid,
     },
 }
@@ -78,12 +72,203 @@ pub enum ApiKeyCommand {
     },
     /// Register public keys using CreateApiKeysIntentV2 parameters.
     Register(BodyArgs),
+    /// Delete one user's API keys selected by repeated --id.
     Delete {
+        /// ID of the user who owns the API keys.
         #[arg(long)]
         user_id: Uuid,
-        #[arg(required = true, num_args = 1..)]
+        /// ID of an API key to delete; repeat for several.
+        #[arg(long = "id", value_name = "ID", required = true)]
         ids: Vec<Uuid>,
     },
+}
+
+/// A resource addressed by its ID or by its unique name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ResourceRef {
+    Id(Uuid),
+    Name(String),
+}
+
+/// Exactly one of `--id` or `--name` selects a single resource.
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+pub struct Selector {
+    /// ID of the resource.
+    #[arg(long)]
+    id: Option<Uuid>,
+    /// Name of the resource; it must match exactly one resource.
+    #[arg(long)]
+    name: Option<String>,
+}
+
+impl From<Selector> for ResourceRef {
+    fn from(selector: Selector) -> Self {
+        match selector {
+            Selector { id: Some(id), .. } => Self::Id(id),
+            Selector {
+                name: Some(name), ..
+            } => Self::Name(name),
+            Selector {
+                id: None,
+                name: None,
+            } => unreachable!("clap requires exactly one of --id or --name"),
+        }
+    }
+}
+
+/// At least one of repeated `--id` or `--name` selects one or more resources.
+#[derive(Debug, Args)]
+#[group(required = true, multiple = true)]
+pub struct Selectors {
+    /// ID of a resource; repeat for several.
+    #[arg(long, value_name = "ID")]
+    id: Vec<Uuid>,
+    /// Name of a resource; it must match exactly one resource. Repeat for several.
+    #[arg(long, value_name = "NAME")]
+    name: Vec<String>,
+}
+
+impl From<Selectors> for Vec<ResourceRef> {
+    fn from(Selectors { id, name }: Selectors) -> Self {
+        id.into_iter()
+            .map(ResourceRef::Id)
+            .chain(name.into_iter().map(ResourceRef::Name))
+            .collect()
+    }
+}
+
+/// The resource families whose names can be resolved to IDs.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Kind {
+    User,
+    UserTag,
+    Policy,
+    Wallet,
+}
+
+impl Kind {
+    fn noun(self) -> &'static str {
+        match self {
+            Kind::User => "user",
+            Kind::UserTag => "user tag",
+            Kind::Policy => "policy",
+            Kind::Wallet => "wallet",
+        }
+    }
+
+    /// Lists every `(id, name)` pair of this kind in the organization.
+    async fn list(self, auth: &ResolvedAuth) -> Result<Vec<(String, String)>> {
+        let organization_id = auth.org_id.clone();
+        Ok(match self {
+            Kind::User => {
+                let response: query::GetUsersResponse = operations::query(
+                    auth,
+                    "list_users",
+                    &query::GetUsersRequest { organization_id },
+                )
+                .await?;
+                response
+                    .users
+                    .into_iter()
+                    .map(|user| (user.user_id, user.user_name))
+                    .collect()
+            }
+            Kind::UserTag => {
+                let response: query::ListUserTagsResponse = operations::query(
+                    auth,
+                    "list_user_tags",
+                    &query::ListUserTagsRequest { organization_id },
+                )
+                .await?;
+                response
+                    .user_tags
+                    .into_iter()
+                    .map(|tag| (tag.tag_id, tag.tag_name))
+                    .collect()
+            }
+            Kind::Policy => {
+                let response: query::GetPoliciesResponse = operations::query(
+                    auth,
+                    "list_policies",
+                    &query::GetPoliciesRequest { organization_id },
+                )
+                .await?;
+                response
+                    .policies
+                    .into_iter()
+                    .map(|policy| (policy.policy_id, policy.policy_name))
+                    .collect()
+            }
+            Kind::Wallet => {
+                let response: query::GetWalletsResponse = operations::query(
+                    auth,
+                    "list_wallets",
+                    &query::GetWalletsRequest { organization_id },
+                )
+                .await?;
+                response
+                    .wallets
+                    .into_iter()
+                    .map(|wallet| (wallet.wallet_id, wallet.wallet_name))
+                    .collect()
+            }
+        })
+    }
+
+    /// Resolves one reference to an ID, listing the organization only for a name.
+    pub(crate) async fn resolve_one(
+        self,
+        auth: &ResolvedAuth,
+        reference: ResourceRef,
+    ) -> Result<Uuid> {
+        match reference {
+            ResourceRef::Id(id) => Ok(id),
+            ResourceRef::Name(name) => {
+                let listed = self.list(auth).await?;
+                self.find(&listed, &name)
+            }
+        }
+    }
+
+    /// Resolves every reference to an ID with at most one listing request.
+    async fn resolve(self, auth: &ResolvedAuth, references: Vec<ResourceRef>) -> Result<Vec<Uuid>> {
+        let listed = if references
+            .iter()
+            .any(|reference| matches!(reference, ResourceRef::Name(_)))
+        {
+            self.list(auth).await?
+        } else {
+            Vec::new()
+        };
+        references
+            .into_iter()
+            .map(|reference| match reference {
+                ResourceRef::Id(id) => Ok(id),
+                ResourceRef::Name(name) => self.find(&listed, &name),
+            })
+            .collect()
+    }
+
+    fn find(self, listed: &[(String, String)], name: &str) -> Result<Uuid> {
+        let noun = self.noun();
+        let matches: Vec<&str> = listed
+            .iter()
+            .filter(|(_, candidate)| candidate == name)
+            .map(|(id, _)| id.as_str())
+            .collect();
+        match matches.as_slice() {
+            [] => Err(MissingResource::new(noun, name).into()),
+            [only] => Uuid::parse_str(only)
+                .with_context(|| format!("{noun} ID from the API is not a UUID")),
+            many => Err(InvalidInput(format!(
+                "{} {noun}s are named {name}; select by --id instead: {}",
+                many.len(),
+                many.join(", ")
+            ))
+            .into()),
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -103,25 +288,35 @@ pub struct PreparedResource {
 
 enum Operation {
     Users,
-    User(Uuid),
+    User(ResourceRef),
     CreateUsers(intent::CreateUsersIntentV4),
     UpdateUser(intent::UpdateUserIntent),
-    DeleteUsers(intent::DeleteUsersIntent),
+    DeleteUsers(Vec<ResourceRef>),
     Tags,
     CreateTag(intent::CreateUserTagIntent),
     UpdateTag(intent::UpdateUserTagIntent),
-    DeleteTags(intent::DeleteUserTagsIntent),
+    DeleteTags(Vec<ResourceRef>),
     Policies,
-    Policy(Uuid),
+    Policy(ResourceRef),
     CreatePolicy(intent::CreatePolicyIntentV3),
     CreatePolicies(intent::CreatePoliciesIntent),
     UpdatePolicy(intent::UpdatePolicyIntentV2),
-    DeletePolicy(intent::DeletePolicyIntent),
-    DeletePolicies(intent::DeletePoliciesIntent),
+    DeletePolicies(Vec<ResourceRef>),
     Evaluations(Uuid),
     ApiKeys(Option<Uuid>),
     RegisterKeys(intent::CreateApiKeysIntentV2),
     DeleteKeys(intent::DeleteApiKeysIntent),
+}
+
+/// A read-only query whose targets have already been resolved to IDs.
+enum Lookup {
+    Users,
+    User(Uuid),
+    Tags,
+    Policies,
+    Policy(Uuid),
+    Evaluations(Uuid),
+    ApiKeys(Option<Uuid>),
 }
 
 impl BodyArgs {
@@ -236,7 +431,7 @@ impl UserCommand {
     pub fn prepare(self) -> Result<PreparedResource> {
         let operation = match self {
             UserCommand::List => Operation::Users,
-            UserCommand::Get { id } => Operation::User(id),
+            UserCommand::Get(selector) => Operation::User(selector.into()),
             UserCommand::Create(body) => {
                 let params: intent::CreateUsersIntentV4 = body.parse()?;
                 require(
@@ -246,16 +441,12 @@ impl UserCommand {
                 Operation::CreateUsers(params)
             }
             UserCommand::Update(body) => Operation::UpdateUser(body.parse()?),
-            UserCommand::Delete { ids } => Operation::DeleteUsers(intent::DeleteUsersIntent {
-                user_ids: ids.into_iter().map(|id| id.to_string()).collect(),
-            }),
+            UserCommand::Delete(selectors) => Operation::DeleteUsers(selectors.into()),
             UserCommand::Tag { command } => match command {
                 TagCommand::List => Operation::Tags,
                 TagCommand::Create(body) => Operation::CreateTag(body.parse()?),
                 TagCommand::Update(body) => Operation::UpdateTag(body.parse()?),
-                TagCommand::Delete { ids } => Operation::DeleteTags(intent::DeleteUserTagsIntent {
-                    user_tag_ids: ids.into_iter().map(|id| id.to_string()).collect(),
-                }),
+                TagCommand::Delete(selectors) => Operation::DeleteTags(selectors.into()),
             },
         };
         Ok(PreparedResource { operation })
@@ -266,7 +457,7 @@ impl PolicyCommand {
     pub fn prepare(self) -> Result<PreparedResource> {
         let operation = match self {
             PolicyCommand::List => Operation::Policies,
-            PolicyCommand::Get { id } => Operation::Policy(id),
+            PolicyCommand::Get(selector) => Operation::Policy(selector.into()),
             PolicyCommand::Create(body) => Operation::CreatePolicy(body.parse()?),
             PolicyCommand::CreateBatch(body) => {
                 let params: intent::CreatePoliciesIntent = body.parse()?;
@@ -277,14 +468,7 @@ impl PolicyCommand {
                 Operation::CreatePolicies(params)
             }
             PolicyCommand::Update(body) => Operation::UpdatePolicy(body.parse()?),
-            PolicyCommand::Delete { ids } => match ids.as_slice() {
-                [only] => Operation::DeletePolicy(intent::DeletePolicyIntent {
-                    policy_id: only.to_string(),
-                }),
-                many => Operation::DeletePolicies(intent::DeletePoliciesIntent {
-                    policy_ids: many.iter().map(|id| id.to_string()).collect(),
-                }),
-            },
+            PolicyCommand::Delete(selectors) => Operation::DeletePolicies(selectors.into()),
             PolicyCommand::Evaluations { activity_id } => Operation::Evaluations(activity_id),
         };
         Ok(PreparedResource { operation })
@@ -331,7 +515,7 @@ impl PreparedResource {
             Operation::CreatePolicy(_) => "policy.create",
             Operation::CreatePolicies(_) => "policy.create-batch",
             Operation::UpdatePolicy(_) => "policy.update",
-            Operation::DeletePolicy(_) | Operation::DeletePolicies(_) => "policy.delete",
+            Operation::DeletePolicies(_) => "policy.delete",
             Operation::Evaluations(_) => "policy.evaluations",
             Operation::ApiKeys(_) => "api-key.list",
             Operation::RegisterKeys(_) => "api-key.register",
@@ -348,8 +532,13 @@ impl PreparedResource {
                 to_value(p)?,
             ),
             Operation::UpdateUser(p) => ("update_user", "ACTIVITY_TYPE_UPDATE_USER", to_value(p)?),
-            Operation::DeleteUsers(p) => {
-                ("delete_users", "ACTIVITY_TYPE_DELETE_USERS", to_value(p)?)
+            Operation::DeleteUsers(references) => {
+                let user_ids = resolve_ids(&auth, Kind::User, references).await?;
+                (
+                    "delete_users",
+                    "ACTIVITY_TYPE_DELETE_USERS",
+                    to_value(intent::DeleteUsersIntent { user_ids })?,
+                )
             }
             Operation::CreateTag(p) => (
                 "create_user_tag",
@@ -361,11 +550,14 @@ impl PreparedResource {
                 "ACTIVITY_TYPE_UPDATE_USER_TAG",
                 to_value(p)?,
             ),
-            Operation::DeleteTags(p) => (
-                "delete_user_tags",
-                "ACTIVITY_TYPE_DELETE_USER_TAGS",
-                to_value(p)?,
-            ),
+            Operation::DeleteTags(references) => {
+                let user_tag_ids = resolve_ids(&auth, Kind::UserTag, references).await?;
+                (
+                    "delete_user_tags",
+                    "ACTIVITY_TYPE_DELETE_USER_TAGS",
+                    to_value(intent::DeleteUserTagsIntent { user_tag_ids })?,
+                )
+            }
             Operation::CreatePolicy(p) => (
                 "create_policy",
                 "ACTIVITY_TYPE_CREATE_POLICY_V3",
@@ -381,14 +573,21 @@ impl PreparedResource {
                 "ACTIVITY_TYPE_UPDATE_POLICY_V2",
                 to_value(p)?,
             ),
-            Operation::DeletePolicy(p) => {
-                ("delete_policy", "ACTIVITY_TYPE_DELETE_POLICY", to_value(p)?)
+            Operation::DeletePolicies(references) => {
+                let policy_ids = resolve_ids(&auth, Kind::Policy, references).await?;
+                match <[String; 1]>::try_from(policy_ids) {
+                    Ok([policy_id]) => (
+                        "delete_policy",
+                        "ACTIVITY_TYPE_DELETE_POLICY",
+                        to_value(intent::DeletePolicyIntent { policy_id })?,
+                    ),
+                    Err(policy_ids) => (
+                        "delete_policies",
+                        "ACTIVITY_TYPE_DELETE_POLICIES",
+                        to_value(intent::DeletePoliciesIntent { policy_ids })?,
+                    ),
+                }
             }
-            Operation::DeletePolicies(p) => (
-                "delete_policies",
-                "ACTIVITY_TYPE_DELETE_POLICIES",
-                to_value(p)?,
-            ),
             Operation::RegisterKeys(p) => (
                 "create_api_keys",
                 "ACTIVITY_TYPE_CREATE_API_KEYS_V2",
@@ -399,25 +598,41 @@ impl PreparedResource {
                 "ACTIVITY_TYPE_DELETE_API_KEYS",
                 to_value(p)?,
             ),
-            query => return Self::query(command, query, auth).await,
+            Operation::Users => return Self::query(command, Lookup::Users, auth).await,
+            Operation::User(reference) => {
+                let id = Kind::User.resolve_one(&auth, reference).await?;
+                return Self::query(command, Lookup::User(id), auth).await;
+            }
+            Operation::Tags => return Self::query(command, Lookup::Tags, auth).await,
+            Operation::Policies => return Self::query(command, Lookup::Policies, auth).await,
+            Operation::Policy(reference) => {
+                let id = Kind::Policy.resolve_one(&auth, reference).await?;
+                return Self::query(command, Lookup::Policy(id), auth).await;
+            }
+            Operation::Evaluations(id) => {
+                return Self::query(command, Lookup::Evaluations(id), auth).await;
+            }
+            Operation::ApiKeys(user_id) => {
+                return Self::query(command, Lookup::ApiKeys(user_id), auth).await;
+            }
         };
         submit_activity(&auth, command, endpoint, kind, &params).await
     }
 
     async fn query(
         command: &'static str,
-        operation: Operation,
+        lookup: Lookup,
         auth: ResolvedAuth,
     ) -> Result<OperationOutput> {
         let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
         let organization_id = auth.org_id;
-        let data = match operation {
-            Operation::Users => to_value(
+        let data = match lookup {
+            Lookup::Users => to_value(
                 client
                     .get_users(query::GetUsersRequest { organization_id })
                     .await?,
             )?,
-            Operation::User(id) => {
+            Lookup::User(id) => {
                 let response = client
                     .get_user(query::GetUserRequest {
                         organization_id,
@@ -429,17 +644,17 @@ impl PreparedResource {
                 }
                 to_value(response)?
             }
-            Operation::Tags => to_value(
+            Lookup::Tags => to_value(
                 client
                     .list_user_tags(query::ListUserTagsRequest { organization_id })
                     .await?,
             )?,
-            Operation::Policies => to_value(
+            Lookup::Policies => to_value(
                 client
                     .get_policies(query::GetPoliciesRequest { organization_id })
                     .await?,
             )?,
-            Operation::Policy(id) => {
+            Lookup::Policy(id) => {
                 let response = client
                     .get_policy(query::GetPolicyRequest {
                         organization_id,
@@ -451,7 +666,7 @@ impl PreparedResource {
                 }
                 to_value(response)?
             }
-            Operation::Evaluations(id) => to_value(
+            Lookup::Evaluations(id) => to_value(
                 client
                     .get_policy_evaluations(query::GetPolicyEvaluationsRequest {
                         organization_id,
@@ -459,7 +674,7 @@ impl PreparedResource {
                     })
                     .await?,
             )?,
-            Operation::ApiKeys(user_id) => to_value(
+            Lookup::ApiKeys(user_id) => to_value(
                 client
                     .get_api_keys(query::GetApiKeysRequest {
                         organization_id,
@@ -467,10 +682,19 @@ impl PreparedResource {
                     })
                     .await?,
             )?,
-            _ => unreachable!("mutations are submitted by run"),
         };
         Ok(OperationOutput::result(command, data))
     }
+}
+
+/// Resolves delete targets to wire-format IDs before the activity is submitted.
+async fn resolve_ids(
+    auth: &ResolvedAuth,
+    kind: Kind,
+    references: Vec<ResourceRef>,
+) -> Result<Vec<String>> {
+    let ids = kind.resolve(auth, references).await?;
+    Ok(ids.into_iter().map(|id| id.to_string()).collect())
 }
 
 #[cfg(test)]
@@ -523,9 +747,17 @@ mod tests {
     #[test]
     fn malformed_and_unsupported_inputs_fail_before_auth() {
         for args in [
-            vec!["user", "get", "not-a-uuid"],
+            vec!["user", "get", "--id", "not-a-uuid"],
+            vec!["user", "get", ID],
+            vec!["user", "get"],
+            vec!["user", "get", "--id", ID, "--name", "agent"],
             vec!["user", "delete"],
+            vec!["user", "delete", ID],
             vec!["policy", "delete"],
+            vec!["policy", "get", "--name", "agent", "--id", ID],
+            vec!["policy", "evaluations", ID],
+            vec!["api-key", "delete", "--user-id", ID],
+            vec!["api-key", "delete", "--user-id", ID, OTHER],
             vec!["policy", "list", "--cursor", "invented"],
             vec![
                 "policy",
@@ -610,7 +842,7 @@ mod tests {
                 "ACTIVITY_TYPE_UPDATE_USER",
             ),
             (
-                vec!["user", "delete", ID],
+                vec!["user", "delete", "--id", ID],
                 "delete_users",
                 "ACTIVITY_TYPE_DELETE_USERS",
             ),
@@ -625,7 +857,7 @@ mod tests {
                 "ACTIVITY_TYPE_UPDATE_USER_TAG",
             ),
             (
-                vec!["user", "tag", "delete", ID],
+                vec!["user", "tag", "delete", "--id", ID],
                 "delete_user_tags",
                 "ACTIVITY_TYPE_DELETE_USER_TAGS",
             ),
@@ -645,12 +877,12 @@ mod tests {
                 "ACTIVITY_TYPE_UPDATE_POLICY_V2",
             ),
             (
-                vec!["policy", "delete", ID],
+                vec!["policy", "delete", "--id", ID],
                 "delete_policy",
                 "ACTIVITY_TYPE_DELETE_POLICY",
             ),
             (
-                vec!["policy", "delete", ID, OTHER],
+                vec!["policy", "delete", "--id", ID, "--id", OTHER],
                 "delete_policies",
                 "ACTIVITY_TYPE_DELETE_POLICIES",
             ),
@@ -660,7 +892,7 @@ mod tests {
                 "ACTIVITY_TYPE_CREATE_API_KEYS_V2",
             ),
             (
-                vec!["api-key", "delete", "--user-id", ID, OTHER],
+                vec!["api-key", "delete", "--user-id", ID, "--id", OTHER],
                 "delete_api_keys",
                 "ACTIVITY_TYPE_DELETE_API_KEYS",
             ),
@@ -748,6 +980,146 @@ mod tests {
         }
     }
 
+    #[test]
+    fn selectors_parse_into_resource_references() {
+        let id = Uuid::parse_str(ID).unwrap();
+        let other = Uuid::parse_str(OTHER).unwrap();
+        for (args, expected) in [
+            (vec!["user", "get", "--id", ID], ResourceRef::Id(id)),
+            (
+                vec!["policy", "get", "--name", "agent policy"],
+                ResourceRef::Name("agent policy".into()),
+            ),
+        ] {
+            match prepare(&args).unwrap().operation {
+                Operation::User(actual) | Operation::Policy(actual) => assert_eq!(actual, expected),
+                _ => panic!("expected a single-resource lookup for {args:?}"),
+            }
+        }
+        let PreparedResource {
+            operation: Operation::DeleteUsers(actual),
+        } = prepare(&[
+            "user", "delete", "--name", "agent", "--id", ID, "--id", OTHER, "--name", "ops",
+        ])
+        .unwrap()
+        else {
+            panic!("expected a user deletion")
+        };
+        assert_eq!(
+            actual,
+            vec![
+                ResourceRef::Id(id),
+                ResourceRef::Id(other),
+                ResourceRef::Name("agent".into()),
+                ResourceRef::Name("ops".into()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn names_resolve_through_one_listing_and_reject_ambiguity() {
+        let users = json!({"users": [
+            {"userId": ID, "userName": "agent", "userTags": [], "apiKeys": [], "authenticators": [], "oauthProviders": [], "createdAt": null, "updatedAt": null},
+            {"userId": OTHER, "userName": "twin", "userTags": [], "apiKeys": [], "authenticators": [], "oauthProviders": [], "createdAt": null, "updatedAt": null},
+            {"userId": OTHER, "userName": "twin", "userTags": [], "apiKeys": [], "authenticators": [], "oauthProviders": [], "createdAt": null, "updatedAt": null},
+        ]});
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/public/v1/query/list_users"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&users))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/public/v1/query/get_user"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"user": users["users"][0]})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/public/v1/submit/delete_users"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"activity": {
+                    "id": OTHER, "organizationId": ID, "type": "ACTIVITY_TYPE_DELETE_USERS",
+                    "status": "ACTIVITY_STATUS_COMPLETED", "fingerprint": "fixture"
+                }})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let auth = || ResolvedAuth::for_tests(ID, &server.uri(), TurnkeyP256ApiKey::generate());
+
+        let got = prepare(&["user", "get", "--name", "agent"])
+            .unwrap()
+            .run(auth())
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(got).unwrap()["data"]["user"]["userId"],
+            ID
+        );
+        let get_user: Value = serde_json::from_slice(
+            &server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .find(|request| request.url.path() == "/public/v1/query/get_user")
+                .unwrap()
+                .body,
+        )
+        .unwrap();
+        assert_eq!(get_user["userId"], ID);
+
+        prepare(&["user", "delete", "--name", "agent", "--id", OTHER])
+            .unwrap()
+            .run(auth())
+            .await
+            .unwrap();
+        let delete: Value = serde_json::from_slice(
+            &server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .find(|request| request.url.path() == "/public/v1/submit/delete_users")
+                .unwrap()
+                .body,
+        )
+        .unwrap();
+        assert_eq!(delete["parameters"]["userIds"], json!([OTHER, ID]));
+
+        let ambiguous = prepare(&["user", "get", "--name", "twin"])
+            .unwrap()
+            .run(auth())
+            .await
+            .unwrap_err();
+        let ambiguous = ambiguous.downcast_ref::<InvalidInput>().unwrap();
+        assert_eq!(
+            ambiguous.0,
+            format!("2 users are named twin; select by --id instead: {OTHER}, {OTHER}")
+        );
+
+        let missing = prepare(&["user", "delete", "--name", "nobody"])
+            .unwrap()
+            .run(auth())
+            .await
+            .unwrap_err();
+        assert!(missing.downcast_ref::<MissingResource>().is_some());
+        assert_eq!(
+            server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .filter(|request| request.url.path() == "/public/v1/query/list_users")
+                .count(),
+            4
+        );
+        server.verify().await;
+    }
+
     #[tokio::test]
     async fn missing_lookup_preserves_typed_error() {
         let server = MockServer::start().await;
@@ -756,7 +1128,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({"user": null})))
             .mount(&server)
             .await;
-        let result = prepare(&["user", "get", ID])
+        let result = prepare(&["user", "get", "--id", ID])
             .unwrap()
             .run(ResolvedAuth::for_tests(
                 ID,
@@ -809,7 +1181,7 @@ mod tests {
                 .expect(0)
                 .mount(&server)
                 .await;
-            let error = prepare(&["user", "delete", ID])
+            let error = prepare(&["user", "delete", "--id", ID])
                 .unwrap()
                 .run(ResolvedAuth::for_tests(
                     ID,

@@ -215,6 +215,7 @@ async fn typed_client_http_status_is_classified_end_to_end() {
             &server.uri(),
             "user",
             "get",
+            "--id",
             "00000000-0000-4000-8000-000000000002",
         ])
         .assert()

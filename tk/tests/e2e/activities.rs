@@ -21,7 +21,7 @@ fn activity_list_paginates_and_get_and_wait_inspect_a_completed_activity() {
     );
     let activity_id = id_of(&created);
 
-    let got = run.ok(run.admin().args(["activity", "get", &activity_id]));
+    let got = run.ok(run.admin().args(["activity", "get", "--id", &activity_id]));
     assert_eq!(got["command"], "activity.get");
     assert_eq!(got["status"], "completed");
     assert_eq!(
@@ -30,7 +30,7 @@ fn activity_list_paginates_and_get_and_wait_inspect_a_completed_activity() {
     );
     assert_eq!(got["data"]["activity"]["id"], activity_id);
 
-    let waited = run.ok(run.admin().args(["activity", "wait", &activity_id]));
+    let waited = run.ok(run.admin().args(["activity", "wait", "--id", &activity_id]));
     assert_eq!(waited["command"], "activity.wait");
     assert_eq!(waited["status"], "completed");
     assert_eq!(waited["activity"], got["activity"]);

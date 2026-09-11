@@ -66,8 +66,14 @@ fn api_key_register_list_delete() {
     assert_eq!(ours["credential"]["publicKey"], public_key);
 
     let deleted = run.submit(
-        run.admin()
-            .args(["api-key", "delete", "--user-id", &user_id, &api_key_id]),
+        run.admin().args([
+            "api-key",
+            "delete",
+            "--user-id",
+            &user_id,
+            "--id",
+            &api_key_id,
+        ]),
         "api-key.delete",
     );
     assert_eq!(

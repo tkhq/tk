@@ -36,7 +36,7 @@ fn wallet_create_get_update_and_account_pagination() {
         .unwrap()
         .to_string();
 
-    let got = run.ok(run.admin().args(["wallet", "get", &wallet_id]));
+    let got = run.ok(run.admin().args(["wallet", "get", "--id", &wallet_id]));
     assert_eq!(got["command"], "wallet.get");
     assert_eq!(got["data"]["wallet"]["walletId"], wallet_id);
     assert_eq!(got["data"]["wallet"]["walletName"], name);
@@ -55,7 +55,8 @@ fn wallet_create_get_update_and_account_pagination() {
         result(&updated, "updateWalletResult")["walletId"],
         wallet_id
     );
-    let got = run.ok(run.admin().args(["wallet", "get", &wallet_id]));
+    let got = run.ok(run.admin().args(["wallet", "get", "--name", &renamed]));
+    assert_eq!(got["data"]["wallet"]["walletId"], wallet_id);
     assert_eq!(got["data"]["wallet"]["walletName"], renamed);
 
     let accounts = run.submit(
