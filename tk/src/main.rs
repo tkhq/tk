@@ -1,14 +1,17 @@
-// Direct print macros bypass tk's output protocol; use `Shell::emit` for
-// structured output, `Shell::human` for presentation output, and tracing for
-// diagnostics.
+//! Entry point; all output goes through the shell, never print macros.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
+mod auth;
 mod cli;
 mod commands;
 mod errors;
+mod keygen;
 mod logging;
+mod operations;
 mod outcome;
 mod output;
+mod resources;
+mod wallets;
 
 use crate::cli::Cli;
 use std::io::Write;

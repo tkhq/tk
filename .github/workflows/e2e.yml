@@ -1,0 +1,38 @@
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - tk/**
+      - auth/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .github/workflows/e2e.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-turnkey-org
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TK_E2E_ORGANIZATION_ID: ${{ secrets.TK_E2E_ORGANIZATION_ID }}
+      TK_E2E_API_PUBLIC_KEY: ${{ secrets.TK_E2E_API_PUBLIC_KEY }}
+      TK_E2E_API_PRIVATE_KEY: ${{ secrets.TK_E2E_API_PRIVATE_KEY }}
+      TK_E2E_API_BASE_URL: ${{ secrets.TK_E2E_API_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Run end-to-end tests
+        run: cargo test --locked -p tk --test e2e -- --ignored

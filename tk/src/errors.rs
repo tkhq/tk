@@ -1,24 +1,108 @@
 use serde::Serialize;
+use serde_json::Value;
 pub use turnkey_auth::errors::MissingResource;
 use turnkey_client::TurnkeyClientError;
 
-// Bounds untrusted upstream bodies in one NDJSON record.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct InvalidInput(pub String);
+
+#[derive(Debug, thiserror::Error)]
+#[error("HTTP response was not successful: {status} ({body})")]
+pub struct UnexpectedHttpStatus {
+    pub status: u16,
+    pub body: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActivityErrorKind {
+    /// A mutation was sent but its outcome could not be observed. Callers must
+    /// inspect activities before resubmitting.
+    SubmissionUnknown,
+    /// `activity wait` ran out of time while the activity was still pending.
+    WaitTimeout,
+    /// The activity reached a terminal state other than completed.
+    NotCompleted,
+    /// The server responded, but the response did not carry the expected
+    /// activity fields.
+    MalformedResponse,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub struct ActivityError {
+    kind: ActivityErrorKind,
+    activity: Option<Value>,
+    message: String,
+    #[source]
+    source: Option<reqwest::Error>,
+}
+
+impl ActivityError {
+    pub fn new(kind: ActivityErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            activity: None,
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    pub fn with_activity(mut self, activity: Value) -> Self {
+        self.activity = Some(activity);
+        self
+    }
+
+    pub fn with_source(mut self, source: reqwest::Error) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    pub fn kind(&self) -> ActivityErrorKind {
+        self.kind
+    }
+
+    pub fn activity(&self) -> Option<&Value> {
+        self.activity.as_ref()
+    }
+}
+
+pub fn activity_identity(error: &anyhow::Error) -> Option<&Value> {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<ActivityError>())
+        .and_then(ActivityError::activity)
+}
+
 const MAX_ERROR_MESSAGE_BYTES: usize = 8 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[cfg_attr(test, derive(strum::EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
+    /// A required value was absent in non-interactive mode.
     MissingRequiredInput,
+    /// Bad flags/args, a clap parse failure.
     UsageError,
-    #[allow(dead_code, reason = "no command produces this code yet")]
+    /// Semantic validation failure in command code.
     InvalidInput,
+    /// HTTP 401/403.
     Unauthorized,
+    /// HTTP 404, or an OK response with an empty resource.
     NotFound,
+    /// Any other non-success HTTP status, or a failed/unexpected activity.
     ApiError,
+    /// An activity needs more approvals.
     ApprovalRequired,
+    /// A connection failure that proves the request never reached the server.
     NetworkError,
+    /// A transport failure where request delivery cannot be ruled out.
     NetworkUncertain,
+    /// A mutation was sent but its outcome is unknown; inspect before retrying.
+    SubmissionUnknown,
+    /// `activity wait` timed out while the activity was still pending.
+    WaitTimeout,
+    /// Fallback for everything else.
     CommandError,
 }
 
@@ -29,21 +113,59 @@ pub struct Classification {
 }
 
 impl Classification {
-    fn new(code: ErrorCode, http_status: Option<u16>) -> Self {
+    pub(crate) fn new(code: ErrorCode, http_status: Option<u16>) -> Self {
         Self { code, http_status }
     }
 }
 
 pub fn classify(error: &anyhow::Error) -> Classification {
     for cause in error.chain() {
+        if cause.downcast_ref::<InvalidInput>().is_some() {
+            return Classification::new(ErrorCode::InvalidInput, None);
+        }
         if cause.downcast_ref::<MissingResource>().is_some() {
             return Classification::new(ErrorCode::NotFound, None);
+        }
+        if let Some(http) = cause.downcast_ref::<UnexpectedHttpStatus>() {
+            return classify_http_status(http.status);
+        }
+        if let Some(activity) = cause.downcast_ref::<ActivityError>() {
+            let code = match activity.kind() {
+                ActivityErrorKind::SubmissionUnknown => ErrorCode::SubmissionUnknown,
+                ActivityErrorKind::WaitTimeout => ErrorCode::WaitTimeout,
+                ActivityErrorKind::NotCompleted | ActivityErrorKind::MalformedResponse => {
+                    ErrorCode::ApiError
+                }
+            };
+            return Classification::new(code, None);
+        }
+        if let Some(reqwest_error) = cause.downcast_ref::<reqwest::Error>() {
+            return classify_reqwest_error(reqwest_error);
         }
         if let Some(client_error) = cause.downcast_ref::<TurnkeyClientError>() {
             return classify_turnkey_client_error(client_error);
         }
     }
     Classification::new(ErrorCode::CommandError, None)
+}
+
+fn classify_http_status(status: u16) -> Classification {
+    let code = match status {
+        401 | 403 => ErrorCode::Unauthorized,
+        404 => ErrorCode::NotFound,
+        _ => ErrorCode::ApiError,
+    };
+    Classification::new(code, Some(status))
+}
+
+fn classify_reqwest_error(error: &reqwest::Error) -> Classification {
+    if error.is_connect() {
+        Classification::new(ErrorCode::NetworkError, None)
+    } else if error.is_timeout() || error.is_request() || error.is_body() {
+        Classification::new(ErrorCode::NetworkUncertain, None)
+    } else {
+        Classification::new(ErrorCode::CommandError, None)
+    }
 }
 
 pub(crate) fn render_error_chain(error: &anyhow::Error) -> String {
@@ -56,7 +178,6 @@ fn truncate_message(message: String) -> String {
     }
 
     let total = message.len();
-    // Truncate on a char boundary so we never split a UTF-8 sequence.
     let mut cut = MAX_ERROR_MESSAGE_BYTES;
     while !message.is_char_boundary(cut) {
         cut -= 1;
@@ -67,37 +188,14 @@ fn truncate_message(message: String) -> String {
     )
 }
 
-// Exhaustive by design: new upstream variants require an explicit classification.
 fn classify_turnkey_client_error(error: &TurnkeyClientError) -> Classification {
     match error {
         TurnkeyClientError::UnexpectedHttpStatus(status, _)
-        | TurnkeyClientError::RefusedRedirect(status, _) => {
-            let code = match status {
-                401 | 403 => ErrorCode::Unauthorized,
-                404 => ErrorCode::NotFound,
-                _ => ErrorCode::ApiError,
-            };
-
-            Classification::new(code, Some(*status))
-        }
-        // A connect error proves non-delivery and must precede the broader
-        // request classification.
-        TurnkeyClientError::Http(reqwest_error) if reqwest_error.is_connect() => {
-            Classification::new(ErrorCode::NetworkError, None)
-        }
-        // Other transport-window failures cannot prove non-delivery; classify
-        // conservatively to prevent unsafe mutation retries.
-        TurnkeyClientError::Http(reqwest_error)
-            if reqwest_error.is_timeout()
-                || reqwest_error.is_request()
-                || reqwest_error.is_body() =>
-        {
-            Classification::new(ErrorCode::NetworkUncertain, None)
-        }
+        | TurnkeyClientError::RefusedRedirect(status, _) => classify_http_status(*status),
+        TurnkeyClientError::Http(reqwest_error) => classify_reqwest_error(reqwest_error),
         TurnkeyClientError::ActivityRequiresApproval(_) => {
             Classification::new(ErrorCode::ApprovalRequired, None)
         }
-        // Failures after an API response was available.
         TurnkeyClientError::MissingContentTypeHeader
         | TurnkeyClientError::HeaderToStrError(_)
         | TurnkeyClientError::HeaderFromStrError(_)
@@ -112,10 +210,8 @@ fn classify_turnkey_client_error(error: &TurnkeyClientError) -> Classification {
         | TurnkeyClientError::MissingResult
         | TurnkeyClientError::MissingInnerResult
         | TurnkeyClientError::ExceededRetries(_) => Classification::new(ErrorCode::ApiError, None),
-        // Failures before a usable API response was available.
         TurnkeyClientError::BuilderMissingApiKey
         | TurnkeyClientError::ReqwestBuilder(_)
-        | TurnkeyClientError::Http(_)
         | TurnkeyClientError::SerdeJsonFailure(_)
         | TurnkeyClientError::StamperError(_)
         | TurnkeyClientError::EnclaveEncrypt(_) => {
@@ -139,7 +235,6 @@ mod tests {
             .to_string()
     }
 
-    // More-indented taxonomy lines are continuations.
     fn documented_codes() -> BTreeSet<String> {
         crate::cli::LONG_ABOUT
             .lines()
@@ -170,21 +265,10 @@ mod tests {
     }
 
     #[test]
-    fn every_error_code_is_documented_in_help() {
+    fn help_documents_every_error_code() {
         let declared: BTreeSet<String> = ErrorCode::iter().map(wire_name).collect();
         let documented = documented_codes();
-
-        let undocumented: Vec<_> = declared.difference(&documented).collect();
-        assert!(
-            undocumented.is_empty(),
-            "these ErrorCode variants are missing from the --help taxonomy in cli.rs: {undocumented:?}"
-        );
-
-        let stale: Vec<_> = documented.difference(&declared).collect();
-        assert!(
-            stale.is_empty(),
-            "the --help taxonomy in cli.rs documents codes that no longer exist: {stale:?}"
-        );
+        assert_eq!(documented, declared);
     }
 
     fn client_error(error: TurnkeyClientError) -> anyhow::Error {
