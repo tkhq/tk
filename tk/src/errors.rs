@@ -7,6 +7,24 @@ use turnkey_client::TurnkeyClientError;
 #[error("{0}")]
 pub struct InvalidInput(pub String);
 
+/// A persisted or API value that failed to parse.
+#[derive(Debug, thiserror::Error)]
+#[error("{summary}")]
+pub struct Malformed {
+    summary: String,
+    #[source]
+    source: serde_json::Error,
+}
+
+impl Malformed {
+    pub fn new(summary: impl Into<String>, source: serde_json::Error) -> Self {
+        Self {
+            summary: summary.into(),
+            source,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("HTTP response was not successful: {status} ({body})")]
 pub struct UnexpectedHttpStatus {
@@ -35,7 +53,7 @@ pub struct ActivityError {
     activity: Option<Value>,
     message: String,
     #[source]
-    source: Option<reqwest::Error>,
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
 impl ActivityError {
@@ -53,8 +71,8 @@ impl ActivityError {
         self
     }
 
-    pub fn with_source(mut self, source: reqwest::Error) -> Self {
-        self.source = Some(source);
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.source = Some(Box::new(source));
         self
     }
 
@@ -67,11 +85,12 @@ impl ActivityError {
     }
 }
 
-pub fn activity_identity(error: &anyhow::Error) -> Option<&Value> {
+/// Returns recovery details for an observed activity.
+pub fn error_details(error: &anyhow::Error) -> Option<Value> {
     error
-        .chain()
-        .find_map(|cause| cause.downcast_ref::<ActivityError>())
+        .downcast_ref::<ActivityError>()
         .and_then(ActivityError::activity)
+        .map(|activity| serde_json::json!({"activity": activity}))
 }
 
 const MAX_ERROR_MESSAGE_BYTES: usize = 8 * 1024;
@@ -121,6 +140,9 @@ impl Classification {
 pub fn classify(error: &anyhow::Error) -> Classification {
     for cause in error.chain() {
         if cause.downcast_ref::<InvalidInput>().is_some() {
+            return Classification::new(ErrorCode::InvalidInput, None);
+        }
+        if cause.downcast_ref::<Malformed>().is_some() {
             return Classification::new(ErrorCode::InvalidInput, None);
         }
         if cause.downcast_ref::<MissingResource>().is_some() {
@@ -383,6 +405,35 @@ mod tests {
                 Classification::new(ErrorCode::CommandError, None)
             );
         }
+    }
+
+    #[test]
+    fn malformed_json_classifies_as_invalid_input_and_keeps_the_parse_error_as_source() {
+        let parse_error = serde_json::from_str::<serde_json::Value>("{").unwrap_err();
+        let error = anyhow::Error::new(Malformed::new("state is malformed", parse_error));
+
+        assert_eq!(
+            classify(&error),
+            Classification::new(ErrorCode::InvalidInput, None)
+        );
+        let malformed = error.downcast_ref::<Malformed>().unwrap();
+        assert!(std::error::Error::source(malformed).is_some());
+    }
+
+    #[test]
+    fn activity_error_keeps_a_non_reqwest_source_in_the_chain() {
+        let parse_error = serde_json::from_str::<serde_json::Value>("{").unwrap_err();
+        let error = anyhow::Error::new(
+            ActivityError::new(ActivityErrorKind::MalformedResponse, "bad response")
+                .with_source(parse_error),
+        );
+
+        assert_eq!(
+            classify(&error),
+            Classification::new(ErrorCode::ApiError, None)
+        );
+        let activity_error = error.downcast_ref::<ActivityError>().unwrap();
+        assert!(std::error::Error::source(activity_error).is_some());
     }
 
     #[test]

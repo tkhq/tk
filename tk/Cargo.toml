@@ -12,7 +12,9 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
 libc = { workspace = true }
+rand_core = { workspace = true }
 reqwest = { workspace = true }
+rpassword = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -23,6 +25,7 @@ tracing-subscriber = { workspace = true }
 turnkey_api_key_stamper = { workspace = true }
 turnkey_auth = { workspace = true }
 turnkey_client = { workspace = true }
+turnkey_enclave_encrypt = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
 

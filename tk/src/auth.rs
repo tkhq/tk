@@ -7,12 +7,13 @@ use std::{
     collections::BTreeMap,
     io::ErrorKind,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 use tokio::{
     fs::{self, OpenOptions},
     io::AsyncWriteExt,
 };
+use tracing::debug;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::TurnkeyClient;
 use turnkey_client::generated::GetWhoamiRequest;
@@ -171,6 +172,54 @@ fn registry_path(options: &AuthOptions) -> Result<PathBuf> {
     match &options.config {
         Some(path) => Ok(path.clone()),
         None => Ok(home()?.join(".config/turnkey/tk.config.toml")),
+    }
+}
+
+/// Returns the directory for tk-managed state.
+pub(crate) fn state_dir() -> Result<PathBuf> {
+    Ok(home()?.join(".config/turnkey/tk"))
+}
+
+/// Removes files older than `max_age`, ignoring a missing directory.
+pub(crate) async fn sweep_stale(dir: &Path, max_age: Duration) -> std::io::Result<usize> {
+    let cutoff = SystemTime::now()
+        .checked_sub(max_age)
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let mut removed = 0;
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        let mut entries = match fs::read_dir(&current).await {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        while let Some(entry) = entries.next_entry().await? {
+            let metadata = entry.metadata().await?;
+            if metadata.is_dir() {
+                pending.push(entry.path());
+            } else if metadata.is_file() && metadata.modified()? < cutoff {
+                fs::remove_file(entry.path()).await?;
+                removed += 1;
+            }
+        }
+    }
+    Ok(removed)
+}
+
+/// Best-effort cleanup of stale pending-export recovery keys.
+pub(crate) async fn sweep_state() {
+    const PENDING_EXPORT_LIFETIME: Duration = Duration::from_secs(8 * 60 * 60);
+    let result = match state_dir() {
+        Ok(dir) => sweep_stale(&dir.join("secrets/pending"), PENDING_EXPORT_LIFETIME).await,
+        Err(error) => {
+            debug!(%error, "skipping state sweep");
+            return;
+        }
+    };
+    match result {
+        Ok(0) => {}
+        Ok(removed) => debug!(removed, "swept stale pending export state"),
+        Err(error) => debug!(%error, "state sweep failed"),
     }
 }
 
@@ -570,5 +619,42 @@ pub async fn run_profile(
                 json!({"name": name, "credentialFilesDeleted": false}),
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sweep_removes_only_files_older_than_the_cutoff() {
+        use std::time::{Duration, SystemTime};
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("org-a");
+        std::fs::create_dir_all(&nested).unwrap();
+        let stale = nested.join("stale.json");
+        let fresh = nested.join("fresh.json");
+        std::fs::write(&stale, b"{}").unwrap();
+        std::fs::write(&fresh, b"{}").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&stale)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(25 * 3600))
+            .unwrap();
+
+        let removed = sweep_stale(dir.path(), Duration::from_secs(24 * 3600))
+            .await
+            .unwrap();
+
+        assert_eq!(removed, 1);
+        assert!(!stale.exists());
+        assert!(fresh.exists());
+        assert_eq!(
+            sweep_stale(&dir.path().join("does-not-exist"), Duration::from_secs(1))
+                .await
+                .unwrap(),
+            0
+        );
     }
 }

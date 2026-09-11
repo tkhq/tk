@@ -143,7 +143,7 @@ fn consensus_approve_and_reject() {
         );
     assert_eq!(timed_out["reason"], "command_error");
     assert_eq!(timed_out["code"], "wait_timeout");
-    assert_eq!(timed_out["activity"], pending["activity"]);
+    assert_eq!(timed_out["details"]["activity"], pending["activity"]);
 
     let approved = run.ok(run
         .as_user(&approver)
@@ -204,7 +204,7 @@ fn consensus_approve_and_reject() {
     assert_eq!(failed["reason"], "command_error");
     assert_eq!(failed["code"], "api_error");
     assert_eq!(
-        failed["activity"],
+        failed["details"]["activity"],
         json!({"id": rejected_activity, "status": "ACTIVITY_STATUS_REJECTED"})
     );
     let inspected = run.ok(run

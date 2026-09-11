@@ -22,5 +22,6 @@ mod api_keys;
 mod identity;
 mod policies;
 mod request;
+mod secrets;
 mod users;
 mod wallets;
