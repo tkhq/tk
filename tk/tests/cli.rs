@@ -66,6 +66,15 @@ fn cli_help_lists_commands() {
 }
 
 #[test]
+fn version_reports_the_baked_release_version() {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    cmd.arg("-V");
+    cmd.assert()
+        .success()
+        .stdout(format!("tk {}\n", env!("TK_VERSION")));
+}
+
+#[test]
 fn public_key_requires_turnkey_org_id() {
     let temp = tempdir().unwrap();
     let config_path = temp.path().join("tk.toml");
