@@ -1,4 +1,4 @@
-use crate::errors::{Classification, ErrorCode, classify, render_error_chain};
+use crate::errors::{Classification, ErrorCode, activity_identity, classify, render_error_chain};
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::Result;
 use clap::ValueEnum;
@@ -66,10 +66,12 @@ impl<W, W2> Shell<W, W2> {
             Style::new()
         }
     }
-}
 
-impl<W: Write, W2: Write> Shell<W, W2> {
-    pub fn emit<M: Serialize + Display>(&mut self, message: &M) -> Result<()> {
+    pub fn emit<M: Serialize + Display>(&mut self, message: &M) -> Result<()>
+    where
+        W: Write,
+        W2: Write,
+    {
         match self.message_format {
             MessageFormat::Human => {
                 let text = message.to_string();
@@ -87,7 +89,11 @@ impl<W: Write, W2: Write> Shell<W, W2> {
         }
     }
 
-    pub fn human(&mut self) -> Human<'_, W, W2> {
+    pub fn human(&mut self) -> Human<'_, W, W2>
+    where
+        W: Write,
+        W2: Write,
+    {
         Human(self)
     }
 }
@@ -165,6 +171,8 @@ pub struct ErrorMessage {
     code: ErrorCode,
     #[serde(rename = "httpStatus", skip_serializing_if = "Option::is_none")]
     http_status: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    activity: Option<serde_json::Value>,
     message: String,
 }
 
@@ -173,13 +181,12 @@ impl ErrorMessage {
     pub(crate) const MISSING_INPUT_REASON: &'static str = "missing_required_input";
 
     pub fn from_error(error: &anyhow::Error) -> Self {
-        // Preserve the historical special case first: missing required input
-        // keeps its own dedicated `reason`.
         if error.downcast_ref::<MissingRequiredInput>().is_some() {
             return Self {
                 reason: Self::MISSING_INPUT_REASON,
                 code: ErrorCode::MissingRequiredInput,
                 http_status: None,
+                activity: None,
                 message: render_error_chain(error),
             };
         }
@@ -189,6 +196,7 @@ impl ErrorMessage {
             reason: Self::RUNTIME_REASON,
             code,
             http_status,
+            activity: activity_identity(error).cloned(),
             message: render_error_chain(error),
         }
     }
@@ -198,6 +206,7 @@ impl ErrorMessage {
             reason: Self::RUNTIME_REASON,
             code: ErrorCode::UsageError,
             http_status: None,
+            activity: None,
             message,
         }
     }

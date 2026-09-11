@@ -1,4 +1,4 @@
 /target/
 /.claude/
 docs/plans/*
-.env.local
+.env.*

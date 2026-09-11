@@ -1,6 +1,6 @@
-// Variant names define stable snake_case JSON reasons.
+//! Outcome reasons; variant names are the stable snake_case JSON values.
 
-use crate::commands::{activity, agent, config, public_key};
+use crate::commands::{agent, config, public_key};
 use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 
@@ -18,8 +18,6 @@ impl Display for MachineOnly {
 #[serde(tag = "reason", rename_all = "snake_case")]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum Outcome {
-    ActivityApproved(activity::ActivityApproved),
-    ActivityRejected(activity::ActivityRejected),
     ConfigValue(config::ConfigValue),
     ConfigValueSet(config::ConfigValueSet),
     ConfigListed(config::ConfigListed),
@@ -35,8 +33,6 @@ pub enum Outcome {
 impl Display for Outcome {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Outcome::ActivityApproved(msg) => msg.fmt(f),
-            Outcome::ActivityRejected(msg) => msg.fmt(f),
             Outcome::ConfigValue(msg) => msg.fmt(f),
             Outcome::ConfigValueSet(msg) => msg.fmt(f),
             Outcome::ConfigListed(msg) => msg.fmt(f),

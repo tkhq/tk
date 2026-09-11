@@ -156,6 +156,12 @@ Default guidance for coding-agent runs in this repository.
 
 ## Tests and verification
 
+- Prefer end-to-end tests over unit tests. Cover a behavior in the real-binary
+  `tk/tests/e2e/` suite first; add a unit or mock-server test only for a
+  failure mode the live API cannot produce on demand (transport timeouts,
+  malformed responses, rejected or failed activities) or for local parsing
+  that needs no server. Delete a unit test once an e2e test covers the same
+  behavior.
 - Prefer complete structural equality when the complete value or serialized
   shape is the contract. Use focused field or predicate assertions when a test
   deliberately covers only one property and unrelated fields are outside its
@@ -169,3 +175,30 @@ Default guidance for coding-agent runs in this repository.
   validation tests.
 - Test migrations and serialized compatibility by parsing the complete output
   into the target schema and comparing it with a complete expected value.
+
+## End-to-end tests
+
+- When adding a new `tk` command or feature, or changing the JSON record shape
+  of an existing one, add or update the matching test in the `tk/tests/e2e/`
+  module (one file per command area; the runner lives in `run.rs`) so the
+  real-binary suite keeps covering it. Keep every file under 1000 lines. Run
+  it with `cargo test -p tk --test e2e -- --ignored`; the suite runs in
+  parallel and must stay correct that way.
+- Every e2e test starts with `Run::new()`, which creates a sub-organization
+  named with the run marker, rooted by the admin key from `.env.test`, and
+  deletes it, with everything inside, when the `Run` drops. Run every command
+  through the runner's bundles (`admin()` for the root, `as_user()` for users
+  the test created) so it targets that sub-organization; never address the
+  parent organization or another test's resources. Do not add per-resource
+  cleanup: the sub-organization deletion is the cleanup. A test that needs a
+  non-root actor creates the user with `run.create_user()` and a policy that
+  allows it, as the consensus test does.
+- Submissions may legitimately return `pending` while the API is busy. Use
+  `run.submit(cmd, "<command>")`, which asserts the command on the initial
+  response and returns the completed record, instead of asserting completion
+  on the first response.
+- The runner retries transient outcomes with exponential backoff: transport
+  errors and HTTP 429/5xx at every call, and server-side `FAILED` activities
+  by re-submitting the command. Tests must not add their own sleeps or retry
+  loops, and must not retry to make an assertion pass; if a test is flaky,
+  fix the runner's policy or the test's assumption.
