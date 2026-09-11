@@ -1,10 +1,4 @@
-//! Per-test runner. Every [`Run`] is its own Turnkey sub-organization:
-//! `new` creates it with the admin credential from `.env.test` and makes that
-//! same credential the sub-organization's root, every command the test runs
-//! is signed by it against the sub-organization, and dropping the `Run`
-//! deletes the sub-organization together with everything the test created.
-//! Tests therefore never see each other's users, policies, wallets, or
-//! activity history, and run in parallel.
+//! Per-test runner; each [`Run`] owns an isolated Turnkey sub-organization.
 use crate::config::E2eConfig;
 use assert_cmd::Command;
 use serde_json::{Value, json};
@@ -13,7 +7,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
@@ -55,13 +49,11 @@ fn activity_failed(record: &Value) -> bool {
 
 pub(crate) struct Run {
     pub(crate) home: TempDir,
-    /// The parent organization and the admin credential, which is also the
-    /// root of this run's sub-organization.
+    /// Parent organization and its admin credential.
     pub(crate) config: E2eConfig,
     pub(crate) marker: String,
     pub(crate) secrets: RefCell<Vec<String>>,
-    /// The sub-organization this run owns; `None` only while it is being
-    /// created, so a failed bootstrap never tries to delete anything.
+    /// The owned sub-organization, once created.
     sub_org: Option<String>,
 }
 
@@ -102,8 +94,7 @@ pub(crate) fn user_params(name: &str, api_keys: Value) -> String {
 }
 
 impl Run {
-    /// Creates the sub-organization for one test, rooted by the admin
-    /// credential from `.env.test` so the same key signs everything.
+    /// Creates an isolated sub-organization for the test.
     pub(crate) fn new() -> Self {
         let config = E2eConfig::load();
         let secrets = RefCell::new(vec![config.private_key.0.clone()]);
@@ -157,7 +148,7 @@ impl Run {
         format!("{}-{suffix}", self.marker)
     }
 
-    /// The sub-organization every command of this test runs against.
+    /// The sub-organization used by this test.
     pub(crate) fn org(&self) -> String {
         self.sub_org
             .clone()
@@ -166,6 +157,24 @@ impl Run {
 
     pub(crate) fn registry_path(&self) -> PathBuf {
         self.home.path().join(".config/turnkey/tk.config.toml")
+    }
+
+    pub(crate) fn home(&self) -> &Path {
+        self.home.path()
+    }
+
+    /// Returns the pending-export state path for a credential and secret.
+    pub(crate) fn export_state(&self, api_public_key: &str, secret_id: &str) -> PathBuf {
+        self.home()
+            .join(".config/turnkey/tk/secrets/pending")
+            .join(self.org())
+            .join(api_public_key)
+            .join(format!("{secret_id}.json"))
+    }
+
+    /// Returns the admin credential's public key for state paths.
+    pub(crate) fn admin_public_key(&self) -> &str {
+        &self.config.public_key
     }
 
     pub(crate) fn cli_at(&self, base: &str) -> Command {
@@ -191,8 +200,7 @@ impl Run {
         cmd
     }
 
-    /// The admin key against the parent organization. Only sub-organization
-    /// creation uses it.
+    /// Admin key scoped to the parent organization.
     fn parent(&self) -> Command {
         self.with_bundle(
             self.cli(),
@@ -211,13 +219,12 @@ impl Run {
         )
     }
 
-    /// The admin key against this run's sub-organization, where it is root.
+    /// Admin key scoped to this run's sub-organization.
     pub(crate) fn admin(&self) -> Command {
         self.admin_at(&self.config.api_base_url)
     }
 
-    /// The sub-organization root bundle pointed at an unroutable host, for
-    /// asserting that a check happens before any request.
+    /// Root bundle pointed at an unroutable host for preflight tests.
     pub(crate) fn admin_offline(&self) -> Command {
         self.admin_at(UNROUTABLE)
     }
@@ -230,7 +237,7 @@ impl Run {
         key
     }
 
-    /// A bundle for another user of the sub-organization.
+    /// Bundle for another sub-organization user.
     pub(crate) fn as_user(&self, key: &TurnkeyP256ApiKey) -> Command {
         self.with_bundle(
             self.cli(),
@@ -240,7 +247,7 @@ impl Run {
         )
     }
 
-    /// Writes the admin key as a `tk api-key generate` style file.
+    /// Writes the admin key in `tk api-key generate` format.
     pub(crate) fn admin_key_file(&self) -> PathBuf {
         let path = self.home.path().join("admin-key.json");
         let mut file = OpenOptions::new()
@@ -270,9 +277,8 @@ impl Run {
         text
     }
 
-    /// Runs the binary and parses its one JSON record, returning the exit
-    /// code for callers that decide what an unexpected code means.
-    fn run(&self, cmd: &mut Command) -> (Option<i32>, Value, String, String) {
+    /// Runs the binary once, redacting tracked secrets from both streams.
+    fn output(&self, cmd: &mut Command) -> (Option<i32>, String, String) {
         let output = cmd.output().unwrap();
         let stdout = self.redact(&output.stdout);
         let stderr = self.redact(&output.stderr);
@@ -282,15 +288,25 @@ impl Run {
                 "private key leaked to {stream}\nstdout: {stdout}\nstderr: {stderr}"
             );
         }
-        assert!(stderr.is_empty(), "stderr not empty: {stderr}");
-        let record = serde_json::from_str(&stdout)
-            .unwrap_or_else(|error| panic!("stdout is not one JSON record ({error}): {stdout}"));
-        (output.status.code(), record, stdout, stderr)
+        (output.status.code(), stdout, stderr)
     }
 
-    /// Runs the binary, repeating it with backoff while the outcome is a
-    /// transient failure. `assert_cmd` re-spawns the process and re-applies
-    /// any `write_stdin` buffer on every call.
+    /// Runs the binary once and asserts that stderr is empty.
+    fn captured(&self, cmd: &mut Command) -> (Option<i32>, String, String) {
+        let (code, stdout, stderr) = self.output(cmd);
+        assert!(stderr.is_empty(), "stderr not empty: {stderr}");
+        (code, stdout, stderr)
+    }
+
+    /// Runs the binary and parses its JSON record.
+    fn run(&self, cmd: &mut Command) -> (Option<i32>, Value, String, String) {
+        let (code, stdout, stderr) = self.captured(cmd);
+        let record = serde_json::from_str(&stdout)
+            .unwrap_or_else(|error| panic!("stdout is not one JSON record ({error}): {stdout}"));
+        (code, record, stdout, stderr)
+    }
+
+    /// Runs the binary with backoff for transient failures.
     fn attempt(&self, cmd: &mut Command) -> (Option<i32>, Value, String, String) {
         for attempt in 1..ATTEMPTS {
             let (exit, record, stdout, stderr) = self.run(cmd);
@@ -321,6 +337,33 @@ impl Run {
         self.record(cmd, 1)
     }
 
+    /// Runs a human-mode read, retrying non-zero exits and stderr output.
+    fn human_attempt(&self, cmd: &mut Command) -> (Option<i32>, String, String) {
+        for attempt in 1..ATTEMPTS {
+            let (code, stdout, stderr) = self.output(cmd);
+            if code == Some(0) && stderr.is_empty() {
+                return (code, stdout, stderr);
+            }
+            eprintln!(
+                "transient failure, attempt {attempt}/{ATTEMPTS}\nstdout: {stdout}\nstderr: {stderr}"
+            );
+            backoff(attempt);
+        }
+        self.output(cmd)
+    }
+
+    /// Runs a human-mode command and returns its raw stdout.
+    pub(crate) fn human_stdout(&self, cmd: &mut Command) -> String {
+        let (code, stdout, stderr) = self.human_attempt(cmd);
+        assert_eq!(
+            code,
+            Some(0),
+            "unexpected exit code\nstdout: {stdout}\nstderr: {stderr}"
+        );
+        assert!(stderr.is_empty(), "stderr not empty: {stderr}");
+        stdout
+    }
+
     fn wait_as(&self, mut cmd: Command, id: &str) -> Value {
         let record = self.ok(cmd.args(["activity", "wait", id, "--timeout", "90"]));
         assert_eq!(record["command"], "activity.wait");
@@ -333,8 +376,7 @@ impl Run {
         self.wait_as(self.admin(), id)
     }
 
-    /// Submits once, following a `pending` answer with a wait. Returns the
-    /// completed record, or the failing record with its streams.
+    /// Submits once and waits for pending activities.
     fn submit_once(
         &self,
         cmd: &mut Command,
@@ -363,6 +405,33 @@ impl Run {
         }
     }
 
+    /// Runs `secret export` until it delivers the value, handling approval
+    /// and transient activity failures.
+    pub(crate) fn export(&self, cmd: &mut Command) -> Value {
+        for attempt in 1..=ATTEMPTS {
+            let (exit, record, stdout, stderr) = self.attempt(cmd);
+            if exit != Some(0) {
+                if activity_failed(&record) && attempt < ATTEMPTS {
+                    eprintln!(
+                        "secret.export failed server-side, attempt {attempt}/{ATTEMPTS}: {record}"
+                    );
+                    backoff(attempt);
+                    continue;
+                }
+                panic!("secret.export failed\nstdout: {stdout}\nstderr: {stderr}");
+            }
+            assert_eq!(record["command"], "secret.export", "{record}");
+            match record["status"].as_str() {
+                Some("completed") => return record,
+                Some("pending") => {
+                    self.wait(&id_of(&record));
+                }
+                other => panic!("unexpected secret.export status {other:?}: {record}"),
+            }
+        }
+        panic!("secret.export did not deliver within {ATTEMPTS} attempts")
+    }
+
     fn submit_as(&self, cmd: &mut Command, command: &str, waiter: &dyn Fn() -> Command) -> Value {
         for attempt in 1..=ATTEMPTS {
             match self.submit_once(cmd, command, waiter) {
@@ -381,19 +450,11 @@ impl Run {
         panic!("{command} did not complete within {ATTEMPTS} attempts")
     }
     /// Submits `command` as the sub-organization root and returns its
-    /// completed activity record. The API may answer before the activity
-    /// finishes, so a `pending` response is legitimate and is followed by a
-    /// wait; only the completed record is returned, which is why the command
-    /// is asserted here rather than by callers. An activity the API accepted
-    /// and then failed is submitted again with backoff. Note that `tk`
-    /// subcommands stamp a fresh timestamp per invocation, so a re-submit is a
-    /// new activity; a raw `request` with a fixed `timestampMs` would be
-    /// deduplicated by fingerprint and must rebuild its body per attempt.
+    /// completed activity record, retrying transient failures.
     pub(crate) fn submit(&self, cmd: &mut Command, command: &str) -> Value {
         self.submit_as(cmd, command, &|| self.admin())
     }
-    /// Creates a user of the sub-organization with one fresh API key. The
-    /// user can only run queries until a policy names it.
+    /// Creates a user with a fresh API key.
     pub(crate) fn create_user(&self, label: &str) -> (String, TurnkeyP256ApiKey) {
         let name = self.name(label);
         let key = self.key();
@@ -417,11 +478,7 @@ impl Run {
             .to_string();
         (user_id, key)
     }
-    /// Deletes the sub-organization and everything in it. The API has been
-    /// observed to fail deletions with an internal error while other
-    /// activities are in flight, and the same request succeeds once they
-    /// settle. The body is rebuilt per attempt because the API deduplicates
-    /// an identical `timestampMs` body to the same (failed) activity.
+    /// Deletes the sub-organization and retries transient failures.
     fn delete_sub_organization(&self) {
         for attempt in 1..=ATTEMPTS {
             let body = json!({

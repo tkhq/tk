@@ -132,7 +132,7 @@ async fn signed_request_preserves_body_and_pending_vs_rejected_exit_codes() {
     assert_eq!(waited["reason"], "command_error");
     assert_eq!(waited["code"], "api_error");
     assert_eq!(
-        waited["activity"],
+        waited["details"]["activity"],
         json!({"id":"rejected-id","status":"ACTIVITY_STATUS_REJECTED"})
     );
 }
@@ -180,7 +180,7 @@ async fn wait_timeout_is_a_resumable_error_record() {
     );
     assert_eq!(result["code"], "wait_timeout");
     assert_eq!(
-        result["activity"],
+        result["details"]["activity"],
         json!({"id":"slow-id","status":"ACTIVITY_STATUS_CONSENSUS_NEEDED"})
     );
 }

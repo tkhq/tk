@@ -1,4 +1,6 @@
-use crate::errors::{Classification, ErrorCode, activity_identity, classify, render_error_chain};
+//! User-facing output primitives for tk.
+
+use crate::errors::{Classification, ErrorCode, classify, error_details, render_error_chain};
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::Result;
 use clap::ValueEnum;
@@ -141,7 +143,6 @@ impl<W: Write, W2: Write> Ctx<W, W2> {
         &mut self.shell
     }
 
-    #[allow(dead_code, reason = "no command prompts yet")]
     pub fn is_non_interactive(&self) -> bool {
         self.non_interactive
     }
@@ -157,7 +158,6 @@ pub struct MissingRequiredInput {
 }
 
 impl MissingRequiredInput {
-    #[allow(dead_code, reason = "no command prompts yet")]
     pub fn new(flag_hint: &str) -> Self {
         Self {
             flag_hint: flag_hint.to_string(),
@@ -171,8 +171,9 @@ pub struct ErrorMessage {
     code: ErrorCode,
     #[serde(rename = "httpStatus", skip_serializing_if = "Option::is_none")]
     http_status: Option<u16>,
+    /// Command-specific recovery details for machine consumers.
     #[serde(skip_serializing_if = "Option::is_none")]
-    activity: Option<serde_json::Value>,
+    details: Option<serde_json::Value>,
     message: String,
 }
 
@@ -186,7 +187,7 @@ impl ErrorMessage {
                 reason: Self::MISSING_INPUT_REASON,
                 code: ErrorCode::MissingRequiredInput,
                 http_status: None,
-                activity: None,
+                details: None,
                 message: render_error_chain(error),
             };
         }
@@ -196,7 +197,7 @@ impl ErrorMessage {
             reason: Self::RUNTIME_REASON,
             code,
             http_status,
-            activity: activity_identity(error).cloned(),
+            details: error_details(error),
             message: render_error_chain(error),
         }
     }
@@ -206,7 +207,7 @@ impl ErrorMessage {
             reason: Self::RUNTIME_REASON,
             code: ErrorCode::UsageError,
             http_status: None,
-            activity: None,
+            details: None,
             message,
         }
     }

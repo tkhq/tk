@@ -1,9 +1,10 @@
 use crate::auth::{self, AuthCommand, AuthOptions, LoginArgs, ProfileCommand, ResolvedAuth};
 use crate::commands;
 use crate::keygen::GenerateArgs;
-use crate::operations::{ActivityCommand, OperationOutput, RequestArgs, run_activity};
+use crate::operations::{ActivityCommand, RequestArgs, run_activity};
 use crate::output::{ColorChoice, Ctx, ErrorMessage, MessageFormat, Shell, StdCtx};
 use crate::resources::{ApiKeyCommand, PolicyCommand, PreparedResource, UserCommand};
+use crate::secrets::{PreparedSecret, SecretCommand};
 use crate::wallets::{PreparedWalletCommand, SignCommand, WalletCommand};
 use clap::{ArgAction, Args, Parser, Subcommand, builder::FalseyValueParser, error::ErrorKind};
 use serde::Serialize;
@@ -28,9 +29,9 @@ Output format:
     --non-interactive, so commands never prompt and fail fast on missing input.
 
     Errors emit reason "command_error" (or "missing_required_input") plus a
-    "code" classifying the failure, an optional numeric "httpStatus", an
-    optional "activity" identity for activity failures, and a "message"
-    carrying the full error chain. The "code" taxonomy is:
+    "code" classifying the failure, an optional numeric "httpStatus", optional
+    "details" for recovery (such as the last observed activity identity), and
+    a "message" carrying the full error chain. The "code" taxonomy is:
         missing_required_input  a required value was absent (non-interactive)
         usage_error             bad flags/args (argument parsing failed)
         invalid_input           semantic validation failed in the command
@@ -111,6 +112,7 @@ impl Cli {
 
         let shell = Shell::standard(self.output.message_format, self.output.color);
         let mut ctx = Ctx::new(shell, self.output.non_interactive);
+        auth::sweep_state().await;
         let options = &self.auth;
         let result = match self.command {
             Commands::Config(args) => {
@@ -151,6 +153,15 @@ impl Cli {
             Commands::Sign { command } => {
                 run_prepared(command.prepare(), options, PreparedWalletCommand::run).await
             }
+            Commands::Secret { command } => {
+                let result = run_prepared(
+                    command.prepare(ctx.is_non_interactive()),
+                    options,
+                    PreparedSecret::run,
+                )
+                .await;
+                return emit(&mut ctx, result);
+            }
             Commands::Login(login) => auth::run_auth(AuthCommand::Login(login), options).await,
             Commands::Whoami => auth::run_auth(AuthCommand::Whoami, options).await,
             Commands::Auth { command } => auth::run_auth(command, options).await,
@@ -160,11 +171,11 @@ impl Cli {
     }
 }
 
-async fn run_prepared<P>(
+async fn run_prepared<P, M>(
     prepared: anyhow::Result<P>,
     options: &AuthOptions,
-    run: impl AsyncFnOnce(P, ResolvedAuth) -> anyhow::Result<OperationOutput>,
-) -> anyhow::Result<OperationOutput> {
+    run: impl AsyncFnOnce(P, ResolvedAuth) -> anyhow::Result<M>,
+) -> anyhow::Result<M> {
     let prepared = prepared?;
     let auth = auth::resolve(options).await?;
     run(prepared, auth).await
@@ -172,13 +183,17 @@ async fn run_prepared<P>(
 
 fn emit<M: Serialize + Display>(ctx: &mut StdCtx, result: anyhow::Result<M>) -> ExitCode {
     match result {
-        Ok(message) => {
-            if let Err(emit_error) = ctx.shell().emit(&message) {
+        Ok(message) => match ctx.shell().emit(&message) {
+            Ok(()) => ExitCode::SUCCESS,
+            // The command succeeded but its output never reached the user,
+            // and it may be the only copy of a value the command consumed.
+            // A zero exit would tell a wrapper script otherwise.
+            Err(emit_error) => {
                 let mut stderr = std::io::stderr();
-                let _ = writeln!(stderr, "warning: failed to write CLI output: {emit_error}");
+                let _ = writeln!(stderr, "error: failed to write CLI output: {emit_error}");
+                ExitCode::FAILURE
             }
-            ExitCode::SUCCESS
-        }
+        },
         Err(error) => {
             debug!(?error, "command failed");
 
@@ -265,6 +280,11 @@ enum Commands {
         #[command(subcommand)]
         command: SignCommand,
     },
+    /// List, import, and export Secrets.
+    Secret {
+        #[command(subcommand)]
+        command: SecretCommand,
+    },
     /// Save an existing API credential as a named profile and select it.
     Login(LoginArgs),
     /// Verify the selected identity remotely.
@@ -301,6 +321,7 @@ impl Commands {
             Commands::ApiKey { .. } => "api-key",
             Commands::Wallet { .. } => "wallet",
             Commands::Sign { .. } => "sign",
+            Commands::Secret { .. } => "secret",
             Commands::Login(_) => "login",
             Commands::Whoami => "whoami",
             Commands::Auth { .. } => "auth",

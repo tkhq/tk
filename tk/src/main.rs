@@ -11,6 +11,7 @@ mod operations;
 mod outcome;
 mod output;
 mod resources;
+mod secrets;
 mod wallets;
 
 use crate::cli::Cli;
