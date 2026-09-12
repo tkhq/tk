@@ -7,6 +7,8 @@ pub mod config;
 pub mod errors;
 /// Git SSH signing helpers backed by Turnkey.
 pub mod git_sign;
+/// OpenPGP packet, armor, key, and signature helpers for Turnkey backed keys.
+pub mod openpgp;
 /// Public-key helpers backed by Turnkey.
 pub mod public_key;
 /// SSH wire-format helpers for public keys and signatures.

@@ -14,11 +14,14 @@ use tempfile::TempDir;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use uuid::Uuid;
 
-const SCRUBBED: [&str; 11] = [
+const SCRUBBED: [&str; 14] = [
     "HOME",
     "TK_CONFIG",
     "TK_PROFILE",
     "TK_NON_INTERACTIVE",
+    "TK_GPG_WALLET_ID",
+    "TK_GPG_KEY_INDEX",
+    "TK_GPG_PROGRAM",
     "TURNKEY_TK_CONFIG_PATH",
     "TURNKEY_ORGANIZATION_ID",
     "TURNKEY_API_PUBLIC_KEY",
