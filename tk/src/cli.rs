@@ -1,5 +1,6 @@
 use crate::auth::{self, AuthCommand, AuthOptions, LoginArgs, ProfileCommand, ResolvedAuth};
 use crate::commands;
+use crate::gpg::{self, GpgCommand};
 use crate::keygen::GenerateArgs;
 use crate::operations::{ActivityCommand, RequestArgs, run_activity};
 use crate::output::{ColorChoice, Ctx, ErrorMessage, MessageFormat, Shell, StdCtx};
@@ -126,6 +127,7 @@ impl Cli {
             Commands::ApiKey {
                 command: ApiKeyCommands::Generate(generate),
             } => return emit(&mut ctx, generate.run().await),
+            Commands::Gpg { command } => return emit(&mut ctx, gpg::run(command, options).await),
             Commands::Request(request) => {
                 run_prepared(request.prepare(), options, async |prepared, auth| {
                     prepared.run(&auth).await
@@ -285,6 +287,11 @@ enum Commands {
         #[command(subcommand)]
         command: SecretCommand,
     },
+    /// Create OpenPGP keys as wallet accounts, register them, export them, and sign with them.
+    Gpg {
+        #[command(subcommand)]
+        command: GpgCommand,
+    },
     /// Save an existing API credential as a named profile and select it.
     Login(LoginArgs),
     /// Verify the selected identity remotely.
@@ -322,6 +329,7 @@ impl Commands {
             Commands::Wallet { .. } => "wallet",
             Commands::Sign { .. } => "sign",
             Commands::Secret { .. } => "secret",
+            Commands::Gpg { .. } => "gpg",
             Commands::Login(_) => "login",
             Commands::Whoami => "whoami",
             Commands::Auth { .. } => "auth",
@@ -333,7 +341,8 @@ impl Commands {
 fn after_help() -> String {
     format!(
         "\
-API identity (login, whoami, request, activity, user, policy, api-key, wallet, sign):
+API identity (login, whoami, request, activity, user, policy, api-key, wallet,
+sign, gpg):
   Resolved from exactly one source: the TURNKEY_ORGANIZATION_ID,
   TURNKEY_API_PUBLIC_KEY, TURNKEY_API_PRIVATE_KEY environment bundle; else the
   profile named by --profile or TK_PROFILE (an explicit profile always wins);
