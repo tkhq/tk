@@ -98,6 +98,32 @@ update is an error rather than a silently dropped field.
 
 See `tk user|policy|api-key --help` for the full sub-command list.
 
+## GPG signing
+
+`tk gpg` holds an OpenPGP key as one wallet account. The key signs and
+certifies. It does not decrypt. The private key never leaves Turnkey. `tk`
+sends only a SHA-256 digest for Turnkey to sign. Set the target wallet and
+key index once with `tk gpg use`, or pass `--wallet-id` and `--key-index` on
+each command:
+
+```sh
+tk gpg keys create --wallet-id WALLET_UUID --user-id "Name <email>" [--at-index N]
+tk gpg keys list --wallet-id WALLET_UUID
+tk gpg keys export --wallet-id WALLET_UUID --key-index 0
+tk gpg sign FILE --wallet-id WALLET_UUID --key-index 0
+tk gpg use --wallet-id WALLET_UUID --key-index 0
+```
+
+`tk gpg keys export` signs the self certification with the key, so a policy
+that requires approval blocks it.
+
+A key behind a policy that requires approval cannot sign for Git and cannot
+export. Each run signs a new digest and opens a new activity, so approving
+one activity does not complete a later run. The command fails with
+`approval_required` and names the activity id for the audit trail. Use a
+policy that lets the API key sign without approval. See
+[GPG signing](gpg-signing.md) for the full Git setup.
+
 ## Wallets and signing
 
 `tk wallet list|get|create|update`, `tk wallet account list|create`, and

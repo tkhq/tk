@@ -1,6 +1,7 @@
 //! Outcome reasons; variant names are the stable snake_case JSON values.
 
 use crate::commands::{agent, config, public_key};
+use crate::gpg;
 use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 
@@ -28,6 +29,11 @@ pub enum Outcome {
     AgentNotRunning(agent::AgentNotRunning),
     AgentStatusReport(agent::AgentRunning),
     AgentDaemonExited(MachineOnly),
+    GpgKeyCreated(gpg::KeyCreated),
+    GpgKeysListed(gpg::KeysListed),
+    GpgPublicKeyExported(gpg::PublicKeyExported),
+    GpgSignatureCreated(gpg::SignatureCreated),
+    GpgProfileUpdated(gpg::ProfileUpdated),
 }
 
 impl Display for Outcome {
@@ -43,6 +49,11 @@ impl Display for Outcome {
             Outcome::AgentNotRunning(msg) => msg.fmt(f),
             Outcome::AgentStatusReport(msg) => msg.fmt(f),
             Outcome::AgentDaemonExited(msg) => msg.fmt(f),
+            Outcome::GpgKeyCreated(msg) => msg.fmt(f),
+            Outcome::GpgKeysListed(msg) => msg.fmt(f),
+            Outcome::GpgPublicKeyExported(msg) => msg.fmt(f),
+            Outcome::GpgSignatureCreated(msg) => msg.fmt(f),
+            Outcome::GpgProfileUpdated(msg) => msg.fmt(f),
         }
     }
 }

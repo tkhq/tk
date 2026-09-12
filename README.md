@@ -6,6 +6,7 @@ Experimental Turnkey auth workspace centered on the `tk` CLI.
 
 - [Git signing](./docs/git-signing.md)
 - [SSH agent](./docs/ssh-agent.md)
+- [GPG signing](./docs/gpg-signing.md)
 
 > Warning: `tk` is experimental and has not been audited.
 
@@ -31,6 +32,11 @@ tk config
 tk ssh public-key
 tk ssh git-sign
 tk ssh agent
+tk gpg keys create
+tk gpg keys list
+tk gpg keys export
+tk gpg sign
+tk gpg use
 ```
 
 ## Configuration
@@ -74,3 +80,17 @@ export TURNKEY_API_BASE_URL="https://api.turnkey.com" # optional
 ```
 
 These environment variables override values stored in the global config file. This can be helpful for CI.
+
+### GPG Environment
+
+```bash
+export TK_GPG_WALLET_ID="<wallet-uuid>" # optional
+export TK_GPG_KEY_INDEX="<key-index>" # optional
+export TK_GPG_PROGRAM="/usr/bin/gpg" # optional
+```
+
+- `TK_GPG_WALLET_ID` overrides the wallet saved by `tk gpg use` in the active profile.
+- `TK_GPG_KEY_INDEX` overrides the key index saved by `tk gpg use` in the active profile.
+- `TK_GPG_PROGRAM` names the real GnuPG binary the git shim runs for verification calls. Set it only to a binary you trust: the shim runs it with the arguments the caller sent.
+
+See [GPG signing](./docs/gpg-signing.md).

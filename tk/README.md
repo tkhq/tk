@@ -8,3 +8,4 @@ Flow specific guides:
 
 - [Git signing](../docs/git-signing.md)
 - [SSH agent](../docs/ssh-agent.md)
+- [GPG signing](../docs/gpg-signing.md)

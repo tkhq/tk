@@ -12,6 +12,10 @@ fn cli_help_lists_commands() {
         .stdout(predicate::str::contains("activity"))
         .stdout(predicate::str::contains("config"))
         .stdout(predicate::str::contains("ssh"))
+        .stdout(predicate::str::contains(
+            "gpg       Create OpenPGP keys as wallet accounts",
+        ))
+        .stdout(predicate::str::contains("TK_GPG_WALLET_ID"))
         .stdout(predicate::str::contains("TURNKEY_ORGANIZATION_ID"))
         .stdout(predicate::str::contains("TURNKEY_API_PUBLIC_KEY"))
         .stdout(predicate::str::contains("TURNKEY_API_PRIVATE_KEY"))

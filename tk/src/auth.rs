@@ -111,6 +111,16 @@ impl Default for Registry {
     }
 }
 
+/// The wallet and key index the gpg commands and the git shim use when no
+/// flag or environment value names them.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GpgProfile {
+    pub wallet_id: Uuid,
+    #[serde(default)]
+    pub key_index: u32,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Profile {
@@ -119,12 +129,22 @@ struct Profile {
     api_key_file: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     ssh_signing_key_id: Option<String>,
+    /// Additive since registry version 1. Reading a profile never writes it
+    /// back, so a file without this table keeps its current bytes. Note the
+    /// cost of `deny_unknown_fields` above: once `tk gpg use` has written
+    /// this table, an older binary rejects the whole registry, not just the
+    /// table it does not know.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gpg: Option<GpgProfile>,
 }
 
 pub struct ResolvedAuth {
     pub org_id: String,
     pub api_base_url: String,
     pub stamper: TurnkeyP256ApiKey,
+    /// `None` when the identity came from the environment bundle or the
+    /// profile has no gpg table.
+    pub gpg: Option<GpgProfile>,
     source: &'static str,
     profile: Option<String>,
 }
@@ -136,6 +156,7 @@ impl ResolvedAuth {
             org_id: org_id.into(),
             api_base_url: api_base_url.into(),
             stamper,
+            gpg: None,
             source: "test",
             profile: None,
         }
@@ -435,6 +456,7 @@ pub async fn resolve(options: &AuthOptions) -> Result<ResolvedAuth> {
                 org_id: org.to_string(),
                 api_base_url: endpoint(options, DEFAULT_URL.into())?,
                 stamper: parse_key(&private, &public)?,
+                gpg: None,
                 source: "environment",
                 profile: None,
             });
@@ -442,14 +464,8 @@ pub async fn resolve(options: &AuthOptions) -> Result<ResolvedAuth> {
     }
     let path = registry_path(options)?;
     let registry = load(&path).await?;
-    let Some(name) = options
-        .profile
-        .as_ref()
-        .or(registry.active_profile.as_ref())
-    else {
-        return Err(InvalidInput("no selected identity; use --profile or tk login".into()).into());
-    };
-    let profile = registry.profiles.get(name).ok_or_else(|| {
+    let name = selected_profile(options, registry.active_profile.as_deref())?;
+    let profile = registry.profiles.get(&name).ok_or_else(|| {
         InvalidInput(format!(
             "profile {name} does not exist in {}",
             path.display()
@@ -462,13 +478,44 @@ pub async fn resolve(options: &AuthOptions) -> Result<ResolvedAuth> {
             .to_string(),
         api_base_url: endpoint(options, profile.api_base_url.clone())?,
         stamper: read_key(&profile.api_key_file).await?,
+        gpg: profile.gpg,
         source: "profile",
-        profile: Some(name.clone()),
+        profile: Some(name),
     })
+}
+
+/// The profile a command acts on: the explicit `--profile` or `TK_PROFILE`
+/// if there is one, else the registry's active selection. Every reader and
+/// writer of a profile goes through here so the choice and its remediation
+/// stay in one place.
+fn selected_profile(options: &AuthOptions, active: Option<&str>) -> Result<String> {
+    options
+        .profile
+        .clone()
+        .or_else(|| active.map(str::to_string))
+        .ok_or_else(|| {
+            InvalidInput("no selected identity; use --profile or tk login".into()).into()
+        })
 }
 
 fn profile_missing(name: &str) -> InvalidInput {
     InvalidInput(format!("profile {name} does not exist"))
+}
+
+/// Writes the gpg table into the profile named by `--profile` or
+/// `TK_PROFILE`, else the active profile. Returns the profile name.
+pub async fn set_profile_gpg(options: &AuthOptions, gpg: GpgProfile) -> Result<String> {
+    let path = registry_path(options)?;
+    let _lock = registry_lock(&path).await?;
+    let mut registry = load(&path).await?;
+    let name = selected_profile(options, registry.active_profile.as_deref())?;
+    let profile = registry
+        .profiles
+        .get_mut(&name)
+        .ok_or_else(|| profile_missing(&name))?;
+    profile.gpg = Some(gpg);
+    save(&path, &registry).await?;
+    Ok(name)
 }
 
 pub async fn run_auth(command: AuthCommand, options: &AuthOptions) -> Result<OperationOutput> {
@@ -554,6 +601,7 @@ pub async fn run_auth(command: AuthCommand, options: &AuthOptions) -> Result<Ope
                     api_base_url: base_url,
                     api_key_file: key_path,
                     ssh_signing_key_id: None,
+                    gpg: None,
                 },
             );
             registry.active_profile = Some(args.name.clone());
