@@ -21,6 +21,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 rpassword = { version = "7.4", default-features = false }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+sha1 = { version = "0.10", default-features = false }
 sha2 = { version = "0.11.0", default-features = false }
 strum = { version = "0.28.0", default-features = false, features = ["derive", "std", "strum_macros"] }
 tempfile = { version = "3.27.0", default-features = false }

@@ -5,6 +5,7 @@ mod auth;
 mod cli;
 mod commands;
 mod errors;
+mod gpg;
 mod keygen;
 mod logging;
 mod operations;
@@ -37,6 +38,13 @@ async fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+
+    // Git invokes `tk` through gpg.program with gpg style arguments. Like
+    // the ssh path above, this one bypasses clap and the output shell: its
+    // stdout, stderr, and exit code are gpg's contract, not tk's.
+    if let Some(invocation) = gpg::shim::Invocation::parse(&raw_args) {
+        return gpg::shim::run(invocation, raw_args).await;
     }
 
     Cli::run().await

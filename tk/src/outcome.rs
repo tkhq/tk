@@ -1,6 +1,7 @@
 //! Outcome reasons; variant names are the stable snake_case JSON values.
 
 use crate::commands::{agent, config, public_key};
+use crate::gpg;
 use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 
@@ -28,6 +29,13 @@ pub enum Outcome {
     AgentNotRunning(agent::AgentNotRunning),
     AgentStatusReport(agent::AgentRunning),
     AgentDaemonExited(MachineOnly),
+    GpgKeyCreated(gpg::KeyRegistered),
+    GpgKeyRegistered(gpg::KeyRegistered),
+    GpgKeyRemoved(gpg::RegisteredKey),
+    GpgKeysRegistered(gpg::KeysRegistered),
+    GpgKeysListed(gpg::KeysListed),
+    GpgPublicKeyExported(gpg::PublicKeyExported),
+    GpgSignatureCreated(gpg::SignatureCreated),
 }
 
 impl Display for Outcome {
@@ -43,6 +51,17 @@ impl Display for Outcome {
             Outcome::AgentNotRunning(msg) => msg.fmt(f),
             Outcome::AgentStatusReport(msg) => msg.fmt(f),
             Outcome::AgentDaemonExited(msg) => msg.fmt(f),
+            Outcome::GpgKeyCreated(msg) => write!(f, "created and {msg}"),
+            Outcome::GpgKeyRegistered(msg) => msg.fmt(f),
+            Outcome::GpgKeyRemoved(msg) => write!(
+                f,
+                "removed OpenPGP key {} from the registry; its accounts stay in wallet {}",
+                msg.fingerprint, msg.wallet_id
+            ),
+            Outcome::GpgKeysRegistered(msg) => msg.fmt(f),
+            Outcome::GpgKeysListed(msg) => msg.fmt(f),
+            Outcome::GpgPublicKeyExported(msg) => msg.fmt(f),
+            Outcome::GpgSignatureCreated(msg) => msg.fmt(f),
         }
     }
 }

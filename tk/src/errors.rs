@@ -25,6 +25,15 @@ impl Malformed {
     }
 }
 
+/// `identity` names the source of the selection.
+#[derive(Debug, thiserror::Error)]
+#[error("the selected identity ({identity}) belongs to organization {actual}, not {expected}")]
+pub struct OrganizationMismatch {
+    pub expected: uuid::Uuid,
+    pub actual: uuid::Uuid,
+    pub identity: &'static str,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("HTTP response was not successful: {status} ({body})")]
 pub struct UnexpectedHttpStatus {
@@ -143,6 +152,9 @@ pub fn classify(error: &anyhow::Error) -> Classification {
             return Classification::new(ErrorCode::InvalidInput, None);
         }
         if cause.downcast_ref::<Malformed>().is_some() {
+            return Classification::new(ErrorCode::InvalidInput, None);
+        }
+        if cause.downcast_ref::<OrganizationMismatch>().is_some() {
             return Classification::new(ErrorCode::InvalidInput, None);
         }
         if cause.downcast_ref::<MissingResource>().is_some() {

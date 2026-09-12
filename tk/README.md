@@ -6,5 +6,8 @@ For the canonical project overview, installation, configuration, and workspace l
 
 Flow specific guides:
 
+- [Turnkey account administration](../docs/core.md)
+- [Secrets manager](../docs/secrets.md)
 - [Git signing](../docs/git-signing.md)
 - [SSH agent](../docs/ssh-agent.md)
+- [GPG signing](../docs/gpg-signing.md)
