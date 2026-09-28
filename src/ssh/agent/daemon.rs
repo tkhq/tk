@@ -151,12 +151,16 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
 
     match wait_for_startup(&socket, &mut child).await {
         Ok(()) => {
-            let metadata = require_metadata(&pid_file).await?;
+            let AgentMetadata {
+                pid,
+                socket_mode,
+                keys,
+            } = require_metadata(&pid_file).await?;
             Ok(Outcome::AgentStarted(AgentRunning {
-                pid: metadata.pid,
+                pid,
                 socket: socket.display().to_string(),
-                socket_mode: metadata.socket_mode,
-                keys: metadata.keys,
+                socket_mode,
+                keys,
             }))
         }
         Err(error) => {
@@ -202,22 +206,26 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
         return Err(anyhow!("ssh-agent is not running"));
     }
 
-    let metadata = require_metadata(&pid_file).await?;
-    if !is_process_alive(metadata.pid) {
-        return Err(anyhow!("ssh-agent pid {} is not running", metadata.pid));
+    let AgentMetadata {
+        pid,
+        socket_mode,
+        keys,
+    } = require_metadata(&pid_file).await?;
+    if !is_process_alive(pid) {
+        return Err(anyhow!("ssh-agent pid {} is not running", pid));
     }
     if probe_agent_socket(&socket).await.is_err() {
         return Err(anyhow!(
             "ssh-agent pid {} is marked running but socket {} is not serving requests",
-            metadata.pid,
+            pid,
             socket.display()
         ));
     }
     Ok(Outcome::AgentStatusReport(AgentRunning {
-        pid: metadata.pid,
+        pid,
         socket: socket.display().to_string(),
-        socket_mode: metadata.socket_mode,
-        keys: metadata.keys,
+        socket_mode,
+        keys,
     }))
 }
 
