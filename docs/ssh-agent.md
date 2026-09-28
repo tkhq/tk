@@ -51,9 +51,8 @@ tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid
 tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid --socket-mode 660
 ```
 
-Access to the socket grants signing authority: any process that can connect
-may request signatures with every served key. The `agent_started` and
-`agent_status_report` records name the applied mode in `socketMode`.
+The `agent_started` and `agent_status_report` records name the applied mode in
+`socketMode`.
 
 Restart after adding or removing keys:
 
