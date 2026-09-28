@@ -144,3 +144,40 @@ struct InternalRunArgs {
     #[arg(long, default_value = "600")]
     socket_mode: SocketMode,
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::*;
+
+    #[derive(Debug, Parser)]
+    struct AgentParser {
+        #[command(flatten)]
+        args: Args,
+    }
+
+    #[test]
+    fn start_socket_mode_defaults_to_owner_read_write_during_cli_parsing() {
+        let parsed = AgentParser::try_parse_from(["agent", "start"]).unwrap();
+        let Command::Start(args) = parsed.args.command else {
+            panic!("expected the start subcommand");
+        };
+
+        assert_eq!(args.socket_mode, "600".parse().unwrap());
+    }
+
+    #[test]
+    fn start_rejects_invalid_socket_modes_during_cli_parsing() {
+        for value in ["999", "abc"] {
+            let error = AgentParser::try_parse_from(["agent", "start", "--socket-mode", value])
+                .unwrap_err();
+
+            assert_eq!(
+                error.kind(),
+                clap::error::ErrorKind::ValueValidation,
+                "{value}"
+            );
+        }
+    }
+}
