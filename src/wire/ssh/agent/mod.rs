@@ -15,6 +15,7 @@ use tracing::{debug, warn};
 
 use super::Ed25519PublicKey;
 use super::protocol;
+use crate::socket::SocketMode;
 
 /// One identity advertised by the SSH agent.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,12 +50,17 @@ pub trait Keyring: Send + Sync {
 }
 
 /// Runs a foreground SSH agent bound to the provided Unix socket path.
-pub async fn run(socket: PathBuf, keyring: Arc<dyn Keyring>) -> Result<()> {
+pub async fn run(socket: PathBuf, mode: SocketMode, keyring: Arc<dyn Keyring>) -> Result<()> {
     remove_stale_socket(&socket).await?;
 
     let result = async {
         let listener = UnixListener::bind(&socket)
             .with_context(|| format!("failed to bind SSH agent socket at {}", socket.display()))?;
+        fs::set_permissions(&socket, mode.permissions())
+            .await
+            .with_context(|| {
+                format!("failed to restrict SSH agent socket at {}", socket.display())
+            })?;
         let mut interrupt =
             signal(SignalKind::interrupt()).context("failed to install SIGINT handler")?;
         let mut terminate =

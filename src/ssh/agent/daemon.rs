@@ -27,6 +27,7 @@ use super::{
 use crate::auth::{self, AuthOptions, build_turnkey_client};
 use crate::errors::InvalidInput;
 use crate::outcome::{MachineOnly, Outcome};
+use crate::socket::SocketMode;
 use crate::ssh::registry::{SelectError, SshKeyEntry, SshKeyName};
 use crate::ssh::selection_error;
 use crate::ssh::signer::{BACKOFF, TurnkeySigner};
@@ -73,6 +74,7 @@ impl Keyring for RegistryKeyring {
 #[derive(Deserialize, Serialize)]
 struct AgentMetadata {
     pid: u32,
+    socket_mode: SocketMode,
     keys: Vec<String>,
 }
 
@@ -110,6 +112,9 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
     }
     command.arg("--socket").arg(&socket);
     command.arg("--pid-file").arg(&pid_file);
+    command
+        .arg("--socket-mode")
+        .arg(args.socket_mode.to_string());
     for requested in &requested {
         command.arg("--key").arg(requested.to_string());
     }
@@ -148,6 +153,7 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
             Ok(Outcome::AgentStarted(AgentRunning {
                 pid: metadata.pid,
                 socket: socket.display().to_string(),
+                socket_mode: metadata.socket_mode.to_string(),
                 keys: metadata.keys,
             }))
         }
@@ -208,6 +214,7 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
     Ok(Outcome::AgentStatusReport(AgentRunning {
         pid: metadata.pid,
         socket: socket.display().to_string(),
+        socket_mode: metadata.socket_mode.to_string(),
         keys: metadata.keys,
     }))
 }
@@ -248,11 +255,12 @@ pub async fn internal_run(args: InternalRunArgs, options: &AuthOptions) -> Resul
         .ok_or_else(|| anyhow!("ssh-agent is already running"))?;
     let metadata = AgentMetadata {
         pid: process::id(),
+        socket_mode: args.socket_mode,
         keys,
     };
     write_pid_file(&args.pid_file, &metadata).await?;
 
-    let result = agent::run(args.socket, keyring).await;
+    let result = agent::run(args.socket, args.socket_mode, keyring).await;
     let _ = fs::remove_file(&args.pid_file).await;
     result.map(|()| Outcome::AgentDaemonExited(MachineOnly {}))
 }
@@ -583,6 +591,7 @@ mod tests {
     fn metadata(pid: u32) -> AgentMetadata {
         AgentMetadata {
             pid,
+            socket_mode: "600".parse().unwrap(),
             keys: vec!["SHA256:example".to_string()],
         }
     }
