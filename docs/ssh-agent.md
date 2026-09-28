@@ -46,7 +46,14 @@ tk ssh agent start --profile agent
 # Move the socket and pid file off their defaults under ~/.config/turnkey/.
 # `status` and `stop` take the same two flags.
 tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid
+
+# Open the socket to a supplemental group; the default mode is 600.
+tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid --socket-mode 660
 ```
+
+Access to the socket grants signing authority: any process that can connect
+may request signatures with every served key. The `agent_started` and
+`agent_status_report` records name the applied mode in `socketMode`.
 
 Restart after adding or removing keys:
 
