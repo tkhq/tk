@@ -31,7 +31,7 @@ pub async fn run(args: Args, options: &AuthOptions) -> Result<Outcome> {
         Command::Start(args) => daemon::start(args, options).await,
         Command::Stop(args) => daemon::stop(args).await,
         Command::Status(args) => daemon::status(args).await,
-        Command::InternalRun(args) => daemon::internal_run(args, options).await,
+        Command::InternalRun(args) => daemon::internal_run(args, options.clone()).await,
     }
 }
 

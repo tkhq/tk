@@ -92,6 +92,15 @@ pub(crate) fn result<'v>(record: &'v Value, key: &str) -> &'v Value {
     &record["data"]["activity"]["result"][key]
 }
 
+// The API has answered an unknown credential with both 401 and 403.
+pub(crate) fn assert_unauthenticated(record: &Value) {
+    assert_eq!(record["code"], "unauthorized", "{record}");
+    assert!(
+        matches!(record["httpStatus"].as_u64(), Some(401 | 403)),
+        "{record}"
+    );
+}
+
 pub(crate) fn created_user_id(record: &Value) -> String {
     result(record, "createUsersResult")["userIds"][0]
         .as_str()
@@ -639,7 +648,7 @@ impl Run {
         ]);
         cmd
     }
-    fn write_key_file(&self, name: &str, public: &str, private: &str) -> PathBuf {
+    pub(crate) fn write_key_file(&self, name: &str, public: &str, private: &str) -> PathBuf {
         let path = self.home.path().join(name);
         let mut file = OpenOptions::new()
             .write(true)

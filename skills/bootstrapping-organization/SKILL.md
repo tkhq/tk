@@ -133,7 +133,7 @@ which human approves. The organization id comes from step 1.
 
 ## Troubleshooting
 
-- `login` fails with `unauthorized` (401): the profile's public key is not
+- `login` fails with `unauthorized` (401 or 403): the profile's public key is not
   registered on a user in that organization. Add it to the root user at
   https://app.turnkey.com, then rerun the same `login`.
 - `login` fails with `invalid_input` naming `profile set`: the profile was

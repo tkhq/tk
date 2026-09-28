@@ -1,4 +1,4 @@
-use crate::run::{AGENT_TAG, AdminLogin, HUMAN_TAG, Run, result};
+use crate::run::{AGENT_TAG, AdminLogin, HUMAN_TAG, Run, assert_unauthenticated, result};
 use serde_json::{Value, json};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -281,8 +281,7 @@ fn login_with_unregistered_credential_fails_and_selects_nothing() {
         .arg(&key_file));
     let error = run.err(run.cli().args(["login", "--profile-name", &name]));
     assert_eq!(error["reason"], "command_error");
-    assert_eq!(error["code"], "unauthorized");
-    assert_eq!(error["httpStatus"], 401);
+    assert_unauthenticated(&error);
     assert_eq!(
         run.ok(run.cli().args(["profile", "list"]))["data"]["activeProfile"],
         Value::Null
@@ -336,8 +335,7 @@ fn profile_create_generates_a_credential_that_logs_in_once_registered() {
     );
 
     let unregistered = run.err(run.cli().args(["login", "--profile-name", &name]));
-    assert_eq!(unregistered["code"], "unauthorized");
-    assert_eq!(unregistered["httpStatus"], 401);
+    assert_unauthenticated(&unregistered);
     assert_eq!(
         run.err(run.cli().args(["auth", "status"]))["code"],
         "invalid_input"

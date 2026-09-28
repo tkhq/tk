@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 use std::env;
 use std::ffi::OsString;
 use std::io::{self, ErrorKind};
@@ -16,15 +16,20 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
+use tokio::sync::Mutex;
 use tokio::time::{sleep, timeout};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::TurnkeyClient;
+use uuid::Uuid;
 
 use super::lock::{AgentLock, is_lock_held_by_other, resolve_lock_file};
 use super::{
     AgentNotRunning, AgentPathArgs, AgentRunning, AgentStopped, InternalRunArgs, StartArgs,
 };
-use crate::auth::{self, AuthOptions, build_turnkey_client};
+use crate::auth::{
+    self, ApiBaseUrl, AuthOptions, CredentialSource, LoadedRegistry, ResolvedAuth,
+    build_turnkey_client,
+};
 use crate::errors::InvalidInput;
 use crate::outcome::{MachineOnly, Outcome};
 use crate::ssh::registry::{SelectError, SshKeyEntry, SshKeyName};
@@ -36,10 +41,35 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(4);
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 const PROBE_TIMEOUT: Duration = Duration::from_millis(250);
 
-type OrganizationClient = Arc<TurnkeyClient<TurnkeyP256ApiKey>>;
+struct OrganizationClient {
+    public_key: Vec<u8>,
+    api_base_url: ApiBaseUrl,
+    client: Arc<TurnkeyClient<TurnkeyP256ApiKey>>,
+}
+
+impl OrganizationClient {
+    fn connect(auth: ResolvedAuth) -> Result<Self> {
+        let public_key = auth.stamper.compressed_public_key();
+        let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
+        Ok(Self {
+            public_key,
+            api_base_url: auth.api_base_url,
+            client: Arc::new(client),
+        })
+    }
+}
+
+enum CredentialReload {
+    Fixed(Arc<TurnkeyClient<TurnkeyP256ApiKey>>),
+    FromRegistry {
+        options: AuthOptions,
+        clients: BTreeMap<Uuid, Mutex<OrganizationClient>>,
+    },
+}
 
 struct RegistryKeyring {
-    entries: BTreeMap<Ed25519PublicKey, (SshKeyEntry, OrganizationClient)>,
+    entries: BTreeMap<Ed25519PublicKey, SshKeyEntry>,
+    reload: CredentialReload,
     backoff: Duration,
 }
 
@@ -47,7 +77,7 @@ impl Keyring for RegistryKeyring {
     fn identities(&self) -> Vec<AgentIdentity> {
         self.entries
             .values()
-            .map(|(entry, _)| AgentIdentity {
+            .map(|entry| AgentIdentity {
                 public_key: entry.public_key,
                 comment: format!("turnkey:{}", entry.private_key_id),
             })
@@ -56,10 +86,38 @@ impl Keyring for RegistryKeyring {
 
     fn sign<'a>(&'a self, public_key: &'a Ed25519PublicKey, data: &'a [u8]) -> SignFuture<'a> {
         Box::pin(async move {
-            let (entry, client) = self.entries.get(public_key).ok_or(SignError::UnknownKey)?;
+            let entry = self.entries.get(public_key).ok_or(SignError::UnknownKey)?;
+            let organization_id = entry.organization_id;
+            let client = match &self.reload {
+                CredentialReload::Fixed(client) => Arc::clone(client),
+                CredentialReload::FromRegistry { options, clients } => {
+                    let mut cached = clients
+                        .get(&organization_id)
+                        .ok_or(SignError::UnknownKey)?
+                        .lock()
+                        .await;
+                    async {
+                        let auth = LoadedRegistry::load()
+                            .await?
+                            .resolve_for_organization(options, organization_id)
+                            .await?;
+                        if auth.stamper.compressed_public_key() != cached.public_key
+                            || auth.api_base_url != cached.api_base_url
+                        {
+                            *cached = OrganizationClient::connect(auth)?;
+                        }
+                        anyhow::Ok(())
+                    }
+                    .await
+                    .with_context(|| {
+                        format!("reload the credential for SSH organization {organization_id}")
+                    })?;
+                    Arc::clone(&cached.client)
+                }
+            };
             TurnkeySigner::new(
-                client,
-                entry.organization_id,
+                &client,
+                organization_id,
                 &entry.private_key_id,
                 self.backoff,
             )
@@ -113,7 +171,7 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
     for requested in &requested {
         command.arg("--key").arg(requested.to_string());
     }
-    let mut registry = auth::LoadedRegistry::load().await?;
+    let mut registry = LoadedRegistry::load().await?;
     select_keys(options, requested, &mut registry)?;
 
     create_parent_dir(&socket).await?;
@@ -212,33 +270,42 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
     }))
 }
 
-pub async fn internal_run(args: InternalRunArgs, options: &AuthOptions) -> Result<Outcome> {
-    let mut registry = auth::LoadedRegistry::load().await?;
-    let selected = select_keys(options, args.key, &mut registry)?;
-    let mut clients: BTreeMap<_, OrganizationClient> = BTreeMap::new();
+pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result<Outcome> {
+    let mut registry = LoadedRegistry::load().await?;
+    let selected = select_keys(&options, args.key, &mut registry)?;
+    let mut fixed = None;
+    let mut clients = BTreeMap::new();
     let mut keys = Vec::with_capacity(selected.len());
     let mut entries = BTreeMap::new();
     for entry in selected {
         let organization_id = entry.organization_id;
-        let client = match clients.get(&organization_id) {
-            Some(client) => Arc::clone(client),
-            None => {
-                let auth = registry
-                    .resolve_for_organization(options, organization_id)
-                    .await
-                    .with_context(|| {
-                        format!("select a credential for SSH organization {organization_id}")
-                    })?;
-                let client = Arc::new(build_turnkey_client(auth.stamper, &auth.api_base_url)?);
-                clients.insert(organization_id, Arc::clone(&client));
-                client
+        if let Entry::Vacant(slot) = clients.entry(organization_id) {
+            let auth = registry
+                .resolve_for_organization(&options, organization_id)
+                .await
+                .with_context(|| {
+                    format!("select a credential for SSH organization {organization_id}")
+                })?;
+            let environment = match auth.source {
+                CredentialSource::Environment => true,
+                CredentialSource::Profile(_) => false,
+            };
+            let cached = OrganizationClient::connect(auth)?;
+            if environment {
+                fixed = Some(Arc::clone(&cached.client));
             }
-        };
+            slot.insert(Mutex::new(cached));
+        }
         keys.push(entry.fingerprint().to_string());
-        entries.insert(entry.public_key, (entry, client));
+        entries.insert(entry.public_key, entry);
     }
+    let reload = match fixed {
+        Some(client) => CredentialReload::Fixed(client),
+        None => CredentialReload::FromRegistry { options, clients },
+    };
     let keyring = Arc::new(RegistryKeyring {
         entries,
+        reload,
         backoff: BACKOFF,
     });
 
@@ -260,7 +327,7 @@ pub async fn internal_run(args: InternalRunArgs, options: &AuthOptions) -> Resul
 fn select_keys(
     options: &AuthOptions,
     requested: Vec<SshKeyName>,
-    registry: &mut auth::LoadedRegistry,
+    registry: &mut LoadedRegistry,
 ) -> Result<Vec<SshKeyEntry>> {
     let mut table = registry.take_ssh_keys()?;
     if table.is_empty() {
@@ -535,14 +602,12 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::auth::ResolvedAuth;
     use crate::errors::{ErrorCode, classify};
     use crate::ssh::registry::PrivateKeyId;
 
     const ORG: &str = "00000000-0000-4000-8000-000000000001";
 
-    /// The server is returned so it outlives the request; a dropped server
-    /// goes back to wiremock's pool and answers another test.
+    // A dropped MockServer returns to wiremock's pool and answers another test.
     async fn keyring_against(
         responses: Vec<ResponseTemplate>,
     ) -> (MockServer, RegistryKeyring, Ed25519PublicKey) {
@@ -558,15 +623,17 @@ mod tests {
             }
         }
         let auth = ResolvedAuth::for_tests(ORG, &server.uri(), TurnkeyP256ApiKey::generate());
+        let org_id = auth.org_id;
         let client = build_turnkey_client(auth.stamper, &auth.api_base_url).unwrap();
         let public_key = Ed25519PublicKey::from_bytes([1; 32]);
         let entry = SshKeyEntry {
-            organization_id: auth.org_id,
+            organization_id: org_id,
             private_key_id: PrivateKeyId::from("private-key-id".to_string()),
             public_key,
         };
         let keyring = RegistryKeyring {
-            entries: [(public_key, (entry, Arc::new(client)))].into(),
+            entries: [(public_key, entry)].into(),
+            reload: CredentialReload::Fixed(Arc::new(client)),
             backoff: Duration::ZERO,
         };
         (server, keyring, public_key)

@@ -29,7 +29,7 @@ request selects and the references that workflow names.
 | "store a secret", "give the agent its environment", "finish a pending export", "rotate a secret" | [managing-secrets](managing-secrets/SKILL.md) |
 | "provision an agent", "give the agent a permanent key", "fence what the agent can export", "two agents must not read each other's secrets" | [provisioning-agent-identity](provisioning-agent-identity/SKILL.md) |
 | "session keys", "expiring credential", "renew the agent's key", "set up a provisioner", "the session expired" | [provisioning-session-agent](provisioning-session-agent/SKILL.md) |
-| "git over SSH", "ssh with a Turnkey key", "start the ssh agent", "ssh stopped working after rotation" | [using-ssh](using-ssh/SKILL.md) |
+| "git over SSH", "ssh with a Turnkey key", "start the ssh agent", "ssh says agent refused operation" | [using-ssh](using-ssh/SKILL.md) |
 | "sign commits", "configure git signing", "gpg.program", "verify-commit fails" | [signing-git-commits](signing-git-commits/SKILL.md) |
 | "GPG signing broker container", "credential-free Git signing", "provisioner container", "mount the signing socket" | [deploying-signing-broker](deploying-signing-broker/SKILL.md) |
 | "what is pending", "which agents have keys", "when does this key expire", "who approved", "audit the agents" | [inspecting-agents](inspecting-agents/SKILL.md) |

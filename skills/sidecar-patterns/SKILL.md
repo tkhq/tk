@@ -39,7 +39,7 @@ command another workflow already documents; this workflow fixes where each one r
   be authenticated: the provisioner binds the request to the expected
   organization, agent user id, and lifetime before it mints anything.
 - The SSH socket is signing authority. Bind it under the agent's `HOME`,
-  mode-restricted to that OS user, and restart the daemon after every rotation.
+  mode-restricted to that OS user.
 - The OpenPGP socket is signing authority too. The broker alone holds the signing
   profile, serves one fingerprint, and restarts after its own rotation. The agent's
   boundary gets the socket and the public key, never the broker's profile or
@@ -100,7 +100,7 @@ secrets are imported ([managing-secrets](../managing-secrets/SKILL.md)).
    | `session status` exits `0` | nothing; the key is healthy |
    | exits `1` with `session_expiring` and no pending request | `session request`; save `data.publicKey`; if `data.userId` is `null` use the persisted `AGENT_USER_ID` |
    | a pending request exists | `session provision`; `pending` means a human must approve; `alreadyRegistered: true` or `completed` means proceed |
-   | provision completed | `session activate`, then `whoami` as that principal; restart only its daemons: the SSH daemon (step 4) for `agent`, the GPG broker (step 5) for `broker` |
+   | provision completed | `session activate`, then `whoami` as that principal; for `broker`, restart the GPG broker (step 5) |
    | activate fails `unauthorized` | the key is not registered yet; leave the request in place and try next tick |
    | the mint activity was rejected | `session request --replace`, alert (step 6), start over next tick |
 
@@ -118,8 +118,8 @@ secrets are imported ([managing-secrets](../managing-secrets/SKILL.md)).
    ```
 
    Export `SSH_AUTH_SOCK=/run/agent/ssh.sock` in the agent's environment.
-   The daemon caches its API client, so the renewal loop restarts it after
-   step 3 activates a new key. Registration is in [using-ssh](../using-ssh/SKILL.md).
+   The daemon picks up the key step 3 activates on its next signature.
+   Registration is in [using-ssh](../using-ssh/SKILL.md).
 
 5. **Sign commits through the broker.** Run `gpg agent serve` as `broker` per
    [deploying-signing-broker](../deploying-signing-broker/SKILL.md). It serves one
@@ -183,8 +183,6 @@ timers, mounts, or alert delivery.
   `--replace` only after its activity was rejected.
 - `whoami` succeeds from the shell but the agent process gets
   `unauthorized`: it runs with a different `HOME` or `TK_PROFILE`. Pin both.
-- The SSH daemon signs until rotation, then every request fails
-  `unauthorized`: the daemon still holds the old client. Stop and start it.
 - `secret env` exits `1` with `approval_required` at boot: an
   approval-gated secret matched the prefix. Add `--property consensus=unilateral`
   or move that secret to an on-demand export.

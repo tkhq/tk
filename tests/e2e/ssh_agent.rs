@@ -547,25 +547,42 @@ fn using_ssh_register_serve_sign() {
     );
     assert!(!signature.exists());
 
-    let next_key = run.key();
-    run.register_api_key(
-        &agent_id,
-        &run.name("agent-next"),
-        &hex::encode(next_key.compressed_public_key()),
-    );
     let profile = run.name("agent");
-    run.login_as(&profile, &next_key);
-    sign_and_check(&agent);
-    let stale_socket = run.home().join("agent/stale.sock");
-    let stale_pid_file = run.home().join("agent/stale.pid");
-    let stale = Agent::start(
+    run.login_as(&profile, &agent_key);
+    let profiled_socket = run.home().join("agent/profiled.sock");
+    let profiled_pid_file = run.home().join("agent/profiled.pid");
+    let profiled = Agent::start(
         &run,
-        &mut run.as_user(&agent_key),
+        run.cli().args(["--profile", &profile]),
         &[],
-        &[("--socket", &stale_socket), ("--pid-file", &stale_pid_file)],
+        &[
+            ("--socket", &profiled_socket),
+            ("--pid-file", &profiled_pid_file),
+        ],
     );
-    assert_eq!(agent.stop(), json!({"reason": "agent_stopped"}));
-    let restarted = Agent::start(&run, run.cli().args(["--profile", &profile]), &[], &paths);
+    let registry = fs::read(run.registry_path()).unwrap();
+    fs::write(run.registry_path(), b"version = ").unwrap();
+    let unreadable = profiled.sign(&ssh_keygen, &served_public_key, &payload);
+    assert!(
+        !unreadable.status.success(),
+        "a daemon whose registry failed to load still signed"
+    );
+    assert!(!signature.exists());
+    fs::write(run.registry_path(), registry).unwrap();
+    sign_and_check(&profiled);
+
+    let next_key = run.key();
+    let next_public_key = hex::encode(next_key.compressed_public_key());
+    run.register_api_key(&agent_id, &run.name("agent-next"), &next_public_key);
+    let next_key_file = run.write_key_file(
+        &format!("{profile}-next.json"),
+        &next_public_key,
+        &hex::encode(next_key.private_key()),
+    );
+    run.ok(run
+        .cli()
+        .args(["profile", "set", &profile, "--api-key-file"])
+        .arg(&next_key_file));
 
     let old_id = run.api_key_id(&agent_id, &hex::encode(agent_key.compressed_public_key()));
     let deleted = run.submit(
@@ -580,13 +597,21 @@ fn using_ssh_register_serve_sign() {
     let revoked = run.err(run.as_user(&agent_key).arg("whoami"));
     assert_eq!(revoked["code"], "unauthorized", "{revoked}");
 
-    let refused = stale.sign(&ssh_keygen, &served_public_key, &payload);
+    let refused = agent.sign(&ssh_keygen, &served_public_key, &payload);
     assert!(
         !refused.status.success(),
         "a daemon holding the revoked credential still signed"
     );
     assert!(!signature.exists());
-    assert_eq!(stale.stop(), json!({"reason": "agent_stopped"}));
-    sign_and_check(&restarted);
-    assert_eq!(restarted.stop(), json!({"reason": "agent_stopped"}));
+    assert_eq!(agent.stop(), json!({"reason": "agent_stopped"}));
+    sign_and_check(&profiled);
+
+    run.ok(run.cli().args(["profile", "delete", &profile]));
+    let unselected = profiled.sign(&ssh_keygen, &served_public_key, &payload);
+    assert!(
+        !unselected.status.success(),
+        "a daemon whose profile was deleted still signed"
+    );
+    assert!(!signature.exists());
+    assert_eq!(profiled.stop(), json!({"reason": "agent_stopped"}));
 }
