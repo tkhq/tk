@@ -142,7 +142,7 @@ struct InternalRunArgs {
     pid_file: PathBuf,
 
     /// Octal permissions for the socket.
-    #[arg(long, default_value = "600")]
+    #[arg(long)]
     socket_mode: SocketMode,
 }
 
