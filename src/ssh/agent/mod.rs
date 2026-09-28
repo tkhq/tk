@@ -42,7 +42,8 @@ pub async fn run(args: Args, options: &AuthOptions) -> Result<Outcome> {
 pub struct AgentRunning {
     pub pid: u32,
     pub socket: String,
-    pub socket_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub socket_mode: Option<SocketMode>,
     pub keys: Vec<String>,
 }
 
@@ -148,6 +149,7 @@ struct InternalRunArgs {
 #[cfg(test)]
 mod tests {
     use clap::Parser;
+    use clap::error::ErrorKind;
 
     use super::*;
 
@@ -173,11 +175,7 @@ mod tests {
             let error = AgentParser::try_parse_from(["agent", "start", "--socket-mode", value])
                 .unwrap_err();
 
-            assert_eq!(
-                error.kind(),
-                clap::error::ErrorKind::ValueValidation,
-                "{value}"
-            );
+            assert_eq!(error.kind(), ErrorKind::ValueValidation, "{value}");
         }
     }
 }

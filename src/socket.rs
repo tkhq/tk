@@ -20,7 +20,6 @@ pub struct SocketMode(u32);
 pub struct SocketModeError;
 
 impl SocketMode {
-    /// Returns the file permissions carrying these bits.
     pub fn permissions(self) -> Permissions {
         Permissions::from_mode(self.0)
     }

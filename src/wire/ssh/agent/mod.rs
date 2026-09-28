@@ -2,11 +2,13 @@
 
 use std::io::{self, ErrorKind};
 use std::os::unix::fs::FileTypeExt;
+use std::os::unix::net::UnixListener as StdUnixListener;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
+use socket2::{Domain, SockAddr, Socket, Type};
 use tokio::fs;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal::unix::{SignalKind, signal};
@@ -54,13 +56,22 @@ pub async fn run(socket: PathBuf, mode: SocketMode, keyring: Arc<dyn Keyring>) -
     remove_stale_socket(&socket).await?;
 
     let result = async {
-        let listener = UnixListener::bind(&socket)
-            .with_context(|| format!("failed to bind SSH agent socket at {}", socket.display()))?;
-        fs::set_permissions(&socket, mode.permissions())
-            .await
-            .with_context(|| {
-                format!("failed to restrict SSH agent socket at {}", socket.display())
-            })?;
+        let bind_context = || format!("failed to bind SSH agent socket at {}", socket.display());
+        let listener = (|| -> io::Result<Socket> {
+            let listener = Socket::new(Domain::UNIX, Type::STREAM, None)?;
+            listener.set_nonblocking(true)?;
+            listener.bind(&SockAddr::unix(&socket)?)?;
+            Ok(listener)
+        })()
+        .with_context(bind_context)?;
+        std::fs::set_permissions(&socket, mode.permissions()).with_context(|| {
+            format!("failed to restrict SSH agent socket at {}", socket.display())
+        })?;
+        let listener = (|| -> io::Result<UnixListener> {
+            listener.listen(128)?;
+            UnixListener::from_std(StdUnixListener::from(listener))
+        })()
+        .with_context(bind_context)?;
         let mut interrupt =
             signal(SignalKind::interrupt()).context("failed to install SIGINT handler")?;
         let mut terminate =

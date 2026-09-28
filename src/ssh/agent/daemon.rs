@@ -72,9 +72,11 @@ impl Keyring for RegistryKeyring {
 }
 
 #[derive(Deserialize, Serialize)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct AgentMetadata {
     pid: u32,
-    socket_mode: SocketMode,
+    // Absent in pid files written by daemons that predate socket_mode.
+    socket_mode: Option<SocketMode>,
     keys: Vec<String>,
 }
 
@@ -153,7 +155,7 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
             Ok(Outcome::AgentStarted(AgentRunning {
                 pid: metadata.pid,
                 socket: socket.display().to_string(),
-                socket_mode: metadata.socket_mode.to_string(),
+                socket_mode: metadata.socket_mode,
                 keys: metadata.keys,
             }))
         }
@@ -214,7 +216,7 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
     Ok(Outcome::AgentStatusReport(AgentRunning {
         pid: metadata.pid,
         socket: socket.display().to_string(),
-        socket_mode: metadata.socket_mode.to_string(),
+        socket_mode: metadata.socket_mode,
         keys: metadata.keys,
     }))
 }
@@ -255,7 +257,7 @@ pub async fn internal_run(args: InternalRunArgs, options: &AuthOptions) -> Resul
         .ok_or_else(|| anyhow!("ssh-agent is already running"))?;
     let metadata = AgentMetadata {
         pid: process::id(),
-        socket_mode: args.socket_mode,
+        socket_mode: Some(args.socket_mode),
         keys,
     };
     write_pid_file(&args.pid_file, &metadata).await?;
@@ -591,7 +593,7 @@ mod tests {
     fn metadata(pid: u32) -> AgentMetadata {
         AgentMetadata {
             pid,
-            socket_mode: "600".parse().unwrap(),
+            socket_mode: Some("600".parse().unwrap()),
             keys: vec!["SHA256:example".to_string()],
         }
     }
@@ -670,6 +672,23 @@ mod tests {
         };
         assert_eq!(classify(&error).code, ErrorCode::ApiError);
         assert_eq!(server.received_requests().await.unwrap().len(), 5);
+    }
+
+    #[tokio::test]
+    async fn a_pid_file_from_an_older_daemon_parses_without_a_socket_mode() {
+        let (_directory, pid_file, _socket) = agent_paths();
+        fs::write(&pid_file, br#"{"pid":4242,"keys":["SHA256:example"]}"#)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            require_metadata(&pid_file).await.unwrap(),
+            AgentMetadata {
+                pid: 4242,
+                socket_mode: None,
+                keys: vec!["SHA256:example".to_string()],
+            }
+        );
     }
 
     #[tokio::test]
