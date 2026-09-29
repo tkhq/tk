@@ -9,7 +9,7 @@ use std::{
     io::{self, ErrorKind},
     mem,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{Arc, Mutex, OnceLock, PoisonError},
     time::{Duration, SystemTime},
 };
 use tokio::{
@@ -329,6 +329,46 @@ pub fn build_turnkey_client(
         .with_reqwest_builder(transport)
         .build()
         .context("failed to build Turnkey client")
+}
+
+pub(crate) struct ReloadingClient {
+    public_key: Vec<u8>,
+    api_base_url: ApiBaseUrl,
+    client: Arc<TurnkeyClient<TurnkeyP256ApiKey>>,
+}
+
+impl ReloadingClient {
+    pub(crate) fn connect(auth: ResolvedAuth) -> Result<Self> {
+        let public_key = auth.stamper.compressed_public_key();
+        let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
+        Ok(Self {
+            public_key,
+            api_base_url: auth.api_base_url,
+            client: Arc::new(client),
+        })
+    }
+
+    pub(crate) fn client(&self) -> &Arc<TurnkeyClient<TurnkeyP256ApiKey>> {
+        &self.client
+    }
+
+    pub(crate) async fn reload(
+        cached: &Mutex<Self>,
+        options: &AuthOptions,
+        organization_id: Uuid,
+    ) -> Result<Arc<TurnkeyClient<TurnkeyP256ApiKey>>> {
+        let auth = LoadedRegistry::load()
+            .await?
+            .resolve_for_organization(options, organization_id)
+            .await?;
+        let mut cached = cached.lock().unwrap_or_else(PoisonError::into_inner);
+        if auth.stamper.compressed_public_key() != cached.public_key
+            || auth.api_base_url != cached.api_base_url
+        {
+            *cached = Self::connect(auth)?;
+        }
+        Ok(Arc::clone(&cached.client))
+    }
 }
 
 pub(crate) async fn whoami(
@@ -822,6 +862,18 @@ pub async fn open_gpg_key(
     options: &AuthOptions,
     key: Option<KeyName>,
 ) -> Result<Result<(GpgKeyEntry, TurnkeyClient<TurnkeyP256ApiKey>), SelectError>> {
+    let (entry, auth) = match resolve_gpg_key(options, key).await? {
+        Ok(resolved) => resolved,
+        Err(error) => return Ok(Err(error)),
+    };
+    let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
+    Ok(Ok((entry, client)))
+}
+
+pub async fn resolve_gpg_key(
+    options: &AuthOptions,
+    key: Option<KeyName>,
+) -> Result<Result<(GpgKeyEntry, ResolvedAuth), SelectError>> {
     let mut registry = LoadedRegistry::load().await?;
     let entry = match registry.take_gpg_keys()?.select(key) {
         Ok(entry) => entry,
@@ -836,8 +888,7 @@ pub async fn open_gpg_key(
                 entry.fingerprint()
             )
         })?;
-    let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
-    Ok(Ok((entry, client)))
+    Ok(Ok((entry, auth)))
 }
 
 pub async fn register_gpg_key(entry: GpgKeyEntry) -> Result<()> {

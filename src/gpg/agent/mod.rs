@@ -9,7 +9,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixListener as StdUnixListener;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::wire::openpgp::entity::{ArmoredSignature, SigningKey, armored_detached_signature};
@@ -30,10 +30,10 @@ use turnkey_client::TurnkeyClient;
 use uuid::Uuid;
 
 use self::protocol::{Failure, SignRequest};
-use super::registry::SigningKeyName;
+use super::registry::{KeyName, SigningKeyName};
 use super::signer::TurnkeySigner;
-use super::{select_registered, unix_now};
-use crate::auth::{AuthOptions, config_dir};
+use super::{selection_error, unix_now};
+use crate::auth::{self, AuthOptions, CredentialSource, ReloadingClient, config_dir};
 use crate::outcome::{MachineOnly, Outcome};
 use crate::socket::SocketMode;
 
@@ -76,7 +76,27 @@ struct State {
     signing_key: SigningKey,
     fingerprint: Fingerprint,
     organization_id: Uuid,
-    client: TurnkeyClient<TurnkeyP256ApiKey>,
+    credential: Credential,
+}
+
+enum Credential {
+    Fixed(Arc<TurnkeyClient<TurnkeyP256ApiKey>>),
+    FromRegistry {
+        options: AuthOptions,
+        cached: Mutex<ReloadingClient>,
+    },
+}
+
+impl State {
+    async fn client(&self) -> Result<Arc<TurnkeyClient<TurnkeyP256ApiKey>>> {
+        let (options, cached) = match &self.credential {
+            Credential::Fixed(client) => return Ok(Arc::clone(client)),
+            Credential::FromRegistry { options, cached } => (options, cached),
+        };
+        ReloadingClient::reload(cached, options, self.organization_id)
+            .await
+            .with_context(|| format!("reload the credential for OpenPGP key {}", self.fingerprint))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -167,11 +187,11 @@ impl SocketIdentity {
 
 pub(super) async fn run(args: Args, options: &AuthOptions) -> Result<Outcome> {
     match args.command {
-        Command::Serve(args) => serve(args, options).await,
+        Command::Serve(args) => serve(args, options.clone()).await,
     }
 }
 
-async fn serve(args: ServeArgs, options: &AuthOptions) -> Result<Outcome> {
+async fn serve(args: ServeArgs, options: AuthOptions) -> Result<Outcome> {
     let socket = match args.socket {
         Some(socket) => socket,
         None => SocketPath::try_from(
@@ -180,7 +200,22 @@ async fn serve(args: ServeArgs, options: &AuthOptions) -> Result<Outcome> {
                 .join("gpg-agent.sock"),
         )?,
     };
-    let (entry, client) = select_registered(options, Some(args.key)).await?;
+    let (entry, auth) = auth::resolve_gpg_key(&options, Some(KeyName::from(args.key)))
+        .await?
+        .map_err(|error| selection_error(error, "name one with --key"))?;
+    let environment = match auth.source {
+        CredentialSource::Environment => true,
+        CredentialSource::Profile(_) => false,
+    };
+    let cached = ReloadingClient::connect(auth)?;
+    let credential = if environment {
+        Credential::Fixed(Arc::clone(cached.client()))
+    } else {
+        Credential::FromRegistry {
+            options,
+            cached: Mutex::new(cached),
+        }
+    };
     let mut terminate = signal(SignalKind::terminate()).context("listen for SIGTERM")?;
     let mut interrupt = signal(SignalKind::interrupt()).context("listen for SIGINT")?;
     let signing_key = entry.key.signing;
@@ -188,7 +223,7 @@ async fn serve(args: ServeArgs, options: &AuthOptions) -> Result<Outcome> {
         signing_key,
         fingerprint: signing_key.fingerprint(),
         organization_id: entry.organization_id,
-        client,
+        credential,
     });
 
     let guard = acquire_socket(&socket, args.socket_mode).await?;
@@ -417,7 +452,11 @@ async fn handle(mut stream: UnixStream, state: Arc<State>) {
             warn!("OpenPGP agent could not read the system clock");
             Failure::SigningFailed
         })?;
-        let signer = TurnkeySigner::new(&state.client, state.organization_id);
+        let client = state.client().await.map_err(|error| {
+            warn!(?error, "OpenPGP agent could not reload its credential");
+            Failure::SigningFailed
+        })?;
+        let signer = TurnkeySigner::new(&client, state.organization_id);
         match timeout(
             SIGN_TIMEOUT,
             armored_detached_signature(state.signing_key, &payload, &signer, created),

@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 
+use assert_cmd::Command as TkCommand;
 use tempfile::TempDir;
-use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 
 use crate::gpg::{add_key, create_key, create_occupied_wallet, import_public_key, openpgp_config};
 use crate::policy_helpers::SignScope;
@@ -20,9 +20,9 @@ struct Agent<'r> {
 }
 
 impl<'r> Agent<'r> {
-    fn start(run: &'r Run, key: &TurnkeyP256ApiKey, fingerprint: &str, socket: PathBuf) -> Self {
+    fn start(run: &'r Run, bundle: TkCommand, fingerprint: &str, socket: PathBuf) -> Self {
         let mut command = Command::new(env!("CARGO_BIN_EXE_tk"));
-        run.inherit_environment(run.as_user(key), &mut command);
+        run.inherit_environment(bundle, &mut command);
         let child = command
             .args(["gpg", "agent", "serve", "--key", fingerprint, "--socket"])
             .arg(&socket)
@@ -119,7 +119,7 @@ fn foreground_agent_signs_for_a_credential_free_git_client() {
         exported["armored"].as_str().unwrap(),
     );
     let socket = run.home().join("gpg-agent-e2e.sock");
-    let _agent = Agent::start(&run, &broker, fingerprint, socket.clone());
+    let _agent = Agent::start(&run, run.as_user(&broker), fingerprint, socket.clone());
     let tk = Path::new(env!("CARGO_BIN_EXE_tk"));
     let client = |socket: Option<&Path>, signing_key: Option<&str>, cmd: &mut Command| {
         cmd.env_clear()
@@ -167,4 +167,70 @@ fn foreground_agent_signs_for_a_credential_free_git_client() {
         "unexpected refusal: {refused_stderr}"
     );
     assert!(!refused_stderr.contains("SIG_CREATED"));
+
+    let profile = run.name("broker");
+    run.login_as(&profile, &broker);
+    let mut profiled_bundle = run.cli();
+    profiled_bundle.env("TK_PROFILE", &profile);
+    let profiled_socket = run.home().join("gpg-agent-profiled.sock");
+    let _profiled = Agent::start(&run, profiled_bundle, fingerprint, profiled_socket.clone());
+    let sign_through = |socket: &Path, message: &str| {
+        let output = Run::git(
+            &git_executable,
+            &repository,
+            |cmd| client(Some(socket), Some(fingerprint), cmd),
+            &signed_commit(message),
+        );
+        assert_redacted(&run, message, &output);
+        output
+    };
+
+    let next_key = run.key();
+    let next_public_key = hex::encode(next_key.compressed_public_key());
+    run.register_api_key(&broker_id, &run.name("broker-next"), &next_public_key);
+    let next_key_file = run.write_key_file(
+        &format!("{profile}-next.json"),
+        &next_public_key,
+        &hex::encode(next_key.private_key()),
+    );
+    run.ok(run
+        .cli()
+        .args([
+            "profile",
+            "set",
+            "--profile-name",
+            &profile,
+            "--api-key-file",
+        ])
+        .arg(&next_key_file));
+    let old_id = run.api_key_id(&broker_id, &hex::encode(broker.compressed_public_key()));
+    run.submit(
+        run.admin().args([
+            "api-key",
+            "delete",
+            "--user-id",
+            &broker_id,
+            "--id",
+            &old_id,
+        ]),
+        "api-key.delete",
+    );
+
+    let stale = sign_through(&socket, "the environment credential was revoked");
+    assert!(
+        !stale.status.success(),
+        "a broker holding the revoked credential still signed"
+    );
+    let rotated = sign_through(&profiled_socket, "signed after the broker rotated");
+    assert!(
+        rotated.status.success(),
+        "the profiled broker did not pick up the rotated credential: {}",
+        run.redact(&rotated.stderr)
+    );
+    run.git_ok(
+        &git_executable,
+        &repository,
+        unsigned,
+        &["verify-commit", "HEAD"],
+    );
 }

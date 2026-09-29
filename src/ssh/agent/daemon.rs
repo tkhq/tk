@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::{self, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::wire::ssh::Ed25519PublicKey;
@@ -16,7 +16,6 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
 use tokio::time::{sleep, timeout};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::TurnkeyClient;
@@ -26,10 +25,7 @@ use super::lock::{AgentLock, is_lock_held_by_other, resolve_lock_file};
 use super::{
     AgentNotRunning, AgentPathArgs, AgentRunning, AgentStopped, InternalRunArgs, StartArgs,
 };
-use crate::auth::{
-    self, ApiBaseUrl, AuthOptions, CredentialSource, LoadedRegistry, ResolvedAuth,
-    build_turnkey_client,
-};
+use crate::auth::{self, AuthOptions, CredentialSource, LoadedRegistry, ReloadingClient};
 use crate::errors::InvalidInput;
 use crate::outcome::{MachineOnly, Outcome};
 use crate::socket::SocketMode;
@@ -42,29 +38,11 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(4);
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 const PROBE_TIMEOUT: Duration = Duration::from_millis(250);
 
-struct OrganizationClient {
-    public_key: Vec<u8>,
-    api_base_url: ApiBaseUrl,
-    client: Arc<TurnkeyClient<TurnkeyP256ApiKey>>,
-}
-
-impl OrganizationClient {
-    fn connect(auth: ResolvedAuth) -> Result<Self> {
-        let public_key = auth.stamper.compressed_public_key();
-        let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
-        Ok(Self {
-            public_key,
-            api_base_url: auth.api_base_url,
-            client: Arc::new(client),
-        })
-    }
-}
-
 enum CredentialReload {
     Fixed(Arc<TurnkeyClient<TurnkeyP256ApiKey>>),
     FromRegistry {
         options: AuthOptions,
-        clients: BTreeMap<Uuid, Mutex<OrganizationClient>>,
+        clients: BTreeMap<Uuid, Mutex<ReloadingClient>>,
     },
 }
 
@@ -92,28 +70,12 @@ impl Keyring for RegistryKeyring {
             let client = match &self.reload {
                 CredentialReload::Fixed(client) => Arc::clone(client),
                 CredentialReload::FromRegistry { options, clients } => {
-                    let mut cached = clients
-                        .get(&organization_id)
-                        .ok_or(SignError::UnknownKey)?
-                        .lock()
-                        .await;
-                    async {
-                        let auth = LoadedRegistry::load()
-                            .await?
-                            .resolve_for_organization(options, organization_id)
-                            .await?;
-                        if auth.stamper.compressed_public_key() != cached.public_key
-                            || auth.api_base_url != cached.api_base_url
-                        {
-                            *cached = OrganizationClient::connect(auth)?;
-                        }
-                        anyhow::Ok(())
-                    }
-                    .await
-                    .with_context(|| {
-                        format!("reload the credential for SSH organization {organization_id}")
-                    })?;
-                    Arc::clone(&cached.client)
+                    let cached = clients.get(&organization_id).ok_or(SignError::UnknownKey)?;
+                    ReloadingClient::reload(cached, options, organization_id)
+                        .await
+                        .with_context(|| {
+                            format!("reload the credential for SSH organization {organization_id}")
+                        })?
                 }
             };
             TurnkeySigner::new(
@@ -306,9 +268,9 @@ pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result
                 CredentialSource::Environment => true,
                 CredentialSource::Profile(_) => false,
             };
-            let cached = OrganizationClient::connect(auth)?;
+            let cached = ReloadingClient::connect(auth)?;
             if environment {
-                fixed = Some(Arc::clone(&cached.client));
+                fixed = Some(Arc::clone(cached.client()));
             }
             slot.insert(Mutex::new(cached));
         }
@@ -619,6 +581,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
+    use crate::auth::{ResolvedAuth, build_turnkey_client};
     use crate::errors::{ErrorCode, classify};
     use crate::ssh::registry::PrivateKeyId;
 
