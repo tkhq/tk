@@ -32,6 +32,7 @@ use crate::auth::{
 };
 use crate::errors::InvalidInput;
 use crate::outcome::{MachineOnly, Outcome};
+use crate::socket::SocketMode;
 use crate::ssh::registry::{SelectError, SshKeyEntry, SshKeyName};
 use crate::ssh::selection_error;
 use crate::ssh::signer::{BACKOFF, TurnkeySigner};
@@ -129,8 +130,10 @@ impl Keyring for RegistryKeyring {
 }
 
 #[derive(Deserialize, Serialize)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct AgentMetadata {
     pid: u32,
+    socket_mode: SocketMode,
     keys: Vec<String>,
 }
 
@@ -168,6 +171,9 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
     }
     command.arg("--socket").arg(&socket);
     command.arg("--pid-file").arg(&pid_file);
+    command
+        .arg("--socket-mode")
+        .arg(args.socket_mode.to_string());
     for requested in &requested {
         command.arg("--key").arg(requested.to_string());
     }
@@ -202,11 +208,16 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
 
     match wait_for_startup(&socket, &mut child).await {
         Ok(()) => {
-            let metadata = require_metadata(&pid_file).await?;
+            let AgentMetadata {
+                pid,
+                socket_mode,
+                keys,
+            } = require_metadata(&pid_file).await?;
             Ok(Outcome::AgentStarted(AgentRunning {
-                pid: metadata.pid,
+                pid,
                 socket: socket.display().to_string(),
-                keys: metadata.keys,
+                socket_mode,
+                keys,
             }))
         }
         Err(error) => {
@@ -252,21 +263,26 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
         return Err(anyhow!("ssh-agent is not running"));
     }
 
-    let metadata = require_metadata(&pid_file).await?;
-    if !is_process_alive(metadata.pid) {
-        return Err(anyhow!("ssh-agent pid {} is not running", metadata.pid));
+    let AgentMetadata {
+        pid,
+        socket_mode,
+        keys,
+    } = require_metadata(&pid_file).await?;
+    if !is_process_alive(pid) {
+        return Err(anyhow!("ssh-agent pid {} is not running", pid));
     }
     if probe_agent_socket(&socket).await.is_err() {
         return Err(anyhow!(
             "ssh-agent pid {} is marked running but socket {} is not serving requests",
-            metadata.pid,
+            pid,
             socket.display()
         ));
     }
     Ok(Outcome::AgentStatusReport(AgentRunning {
-        pid: metadata.pid,
+        pid,
         socket: socket.display().to_string(),
-        keys: metadata.keys,
+        socket_mode,
+        keys,
     }))
 }
 
@@ -315,11 +331,12 @@ pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result
         .ok_or_else(|| anyhow!("ssh-agent is already running"))?;
     let metadata = AgentMetadata {
         pid: process::id(),
+        socket_mode: args.socket_mode,
         keys,
     };
     write_pid_file(&args.pid_file, &metadata).await?;
 
-    let result = agent::run(args.socket, keyring).await;
+    let result = agent::run(args.socket, args.socket_mode, keyring).await;
     let _ = fs::remove_file(&args.pid_file).await;
     result.map(|()| Outcome::AgentDaemonExited(MachineOnly {}))
 }
@@ -650,6 +667,7 @@ mod tests {
     fn metadata(pid: u32) -> AgentMetadata {
         AgentMetadata {
             pid,
+            socket_mode: "600".parse().unwrap(),
             keys: vec!["SHA256:example".to_string()],
         }
     }

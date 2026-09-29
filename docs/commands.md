@@ -288,6 +288,7 @@ tk ssh agent start [OPTIONS]
 | `--key <KEY> (repeatable)` |  | Serve only this registered key |
 | `--socket <PATH>` |  | Unix socket path for SSH agent connections |
 | `--pid-file <PATH>` |  | PID file path of the background SSH agent |
+| `--socket-mode <SOCKET_MODE>` | default `600` | Octal permissions for the socket |
 
 ##### `tk ssh agent stop`
 

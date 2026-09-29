@@ -46,6 +46,9 @@ tk ssh agent start --profile agent
 # Move the socket and pid file off their defaults under ~/.config/turnkey/.
 # `status` and `stop` take the same two flags.
 tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid
+
+# Open the socket to a supplemental group.
+tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid --socket-mode 660
 ```
 
 Restart after adding or removing keys:

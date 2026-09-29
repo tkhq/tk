@@ -37,7 +37,8 @@ fn cli_help_lists_registry_ssh_commands() {
         .success()
         .stdout(predicate::str::contains("--key"))
         .stdout(predicate::str::contains("--socket"))
-        .stdout(predicate::str::contains("--pid-file"));
+        .stdout(predicate::str::contains("--pid-file"))
+        .stdout(predicate::str::contains("--socket-mode <SOCKET_MODE>"));
 
     let mut gpg = Command::new(env!("CARGO_BIN_EXE_tk"));
     gpg.args(["gpg", "agent", "serve", "--help"])

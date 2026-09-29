@@ -14,6 +14,7 @@ mod resources;
 mod secrets;
 mod sessions;
 mod skills;
+mod socket;
 mod ssh;
 mod wallets;
 mod wire;
