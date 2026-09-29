@@ -6,6 +6,7 @@ use tempfile::TempDir;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 
 use crate::gpg::{add_key, create_key, create_occupied_wallet, import_public_key, openpgp_config};
+use crate::policy_helpers::SignScope;
 use crate::run::{Run, signed_commit};
 use crate::ssh::locate;
 
@@ -95,11 +96,7 @@ fn foreground_agent_signs_for_a_credential_free_git_client() {
     let wallet = create_occupied_wallet(&run);
     let broker_tag = run.create_tag(BROKER_TAG);
     let (broker_id, broker) = run.create_tagged_user("broker", BROKER_TAG);
-    run.allow_tag_signing(
-        "brokers-sign-gpg",
-        &broker_tag,
-        &format!("activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == '{wallet}'"),
-    );
+    run.allow_user_signing("brokers-sign-gpg", &broker_id, SignScope::Wallet(&wallet));
     run.deny_agent_credentials(&broker_tag);
     let created = create_key(&run, &wallet, USER_ID);
     let fingerprint = created["fingerprint"].as_str().unwrap();

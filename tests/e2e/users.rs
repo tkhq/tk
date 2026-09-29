@@ -1,5 +1,6 @@
+use crate::policy_helpers::{SignScope, allow_once};
 use crate::run::{
-    AGENT_TAG, HUMAN_TAG, Run, allow_once, created_user_id, id_of, one_api_key, result, user_params,
+    AGENT_TAG, HUMAN_TAG, Run, created_user_id, id_of, one_api_key, result, user_params,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -237,7 +238,7 @@ const SECRET_NAMES: Recipe = Recipe {
 };
 const POLICIES: Recipe = Recipe {
     example: "inspecting.policies",
-    filter: r#".data.policies[] | select((.consensus // "") + (.condition // "") | contains($tag)) | {policyId, policyName, effect}"#,
+    filter: r#".data.policies[] | select((.consensus // "") + (.condition // "") | contains($tag) or contains($user)) | {policyId, policyName, effect}"#,
 };
 const MINTED_BY: Recipe = Recipe {
     example: "inspecting.minted-by",
@@ -331,6 +332,13 @@ fn inspecting_agents_jq_recipes_answer_live_records() {
         &allow_once(&agent_tag, &human_tag),
         "activity.type == 'ACTIVITY_TYPE_CREATE_USER_TAG'",
     );
+    let signing_suffix = "agents-sign-ssh";
+    let signing_id = run.allow_user_signing(
+        signing_suffix,
+        &agent_one_id,
+        SignScope::PrivateKey(&Uuid::new_v4().to_string()),
+    );
+    let signing_name = run.name(signing_suffix);
 
     let pending = run.ok(run.as_user(&agent_one).args([
         "user",
@@ -529,13 +537,35 @@ fn inspecting_agents_jq_recipes_answer_live_records() {
     );
 
     let policies = run.ok(run.admin().args(["policy", "list"]));
+    let mentioning = |tag: &str, user: &str| {
+        let mut found = jq_values(
+            &policies,
+            &["--arg", "tag", tag, "--arg", "user", user, POLICIES.filter],
+        );
+        found.sort_by_key(|policy| policy["policyName"].to_string());
+        found
+    };
+    let tag_policy =
+        json!({"policyId": policy_id, "policyName": policy_name, "effect": "EFFECT_ALLOW"});
+    let signing_policy =
+        json!({"policyId": signing_id, "policyName": signing_name, "effect": "EFFECT_ALLOW"});
     assert_eq!(
-        jq_values(&policies, &["--arg", "tag", &agent_tag, POLICIES.filter]),
-        [json!({"policyId": policy_id, "policyName": policy_name, "effect": "EFFECT_ALLOW"})],
+        mentioning(&agent_tag, &agent_one_id),
+        [tag_policy.clone(), signing_policy.clone()],
         "{policies}"
     );
     assert_eq!(
-        jq_values(&policies, &["--arg", "tag", &agent_two_id, POLICIES.filter]),
+        mentioning(&agent_tag, &agent_two_id),
+        [tag_policy],
+        "{policies}"
+    );
+    assert_eq!(
+        mentioning(&agent_two_id, &agent_one_id),
+        [signing_policy],
+        "{policies}"
+    );
+    assert_eq!(
+        mentioning(&agent_two_id, &agent_two_id),
         [] as [Value; 0],
         "{policies}"
     );

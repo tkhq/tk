@@ -20,6 +20,7 @@
 // Test helpers may panic.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod config;
+mod policy_helpers;
 mod run;
 
 mod activities;

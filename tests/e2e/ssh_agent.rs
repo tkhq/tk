@@ -9,7 +9,8 @@ use assert_cmd::Command as TkCommand;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::run::{Run, bare_cli, result};
+use crate::policy_helpers::SignScope;
+use crate::run::{AGENT_TAG, Run, bare_cli, result};
 use crate::ssh::{
     check_signature, create_ed25519_key, generate_local_key, locate, register_key, text,
 };
@@ -27,7 +28,7 @@ impl<'r> Agent<'r> {
         run: &'r Run,
         command: &mut TkCommand,
         keys: &[&str],
-        paths: &[(&str, &Path)],
+        paths: Option<(&Path, &Path)>,
     ) -> Self {
         Self::start_with(run, command, keys, paths, &[])
     }
@@ -36,13 +37,17 @@ impl<'r> Agent<'r> {
         run: &'r Run,
         command: &mut TkCommand,
         keys: &[&str],
-        paths: &[(&str, &Path)],
+        paths: Option<(&Path, &Path)>,
         start_args: &[&str],
     ) -> Self {
-        let paths: Vec<String> = paths
-            .iter()
-            .flat_map(|(flag, path)| [flag.to_string(), path.display().to_string()])
-            .collect();
+        let paths = paths.map_or_else(Vec::new, |(socket, pid_file)| {
+            vec![
+                "--socket".to_string(),
+                socket.display().to_string(),
+                "--pid-file".to_string(),
+                pid_file.display().to_string(),
+            ]
+        });
         let started = run.ok(command
             .args(["ssh", "agent", "start"])
             .args(keys.iter().flat_map(|key| ["--key", key]))
@@ -127,6 +132,14 @@ impl Drop for Agent<'_> {
     }
 }
 
+fn agent_paths(run: &Run, name: &str) -> (PathBuf, PathBuf) {
+    let dir = run.home().join("agent");
+    (
+        dir.join(format!("{name}.sock")),
+        dir.join(format!("{name}.pid")),
+    )
+}
+
 fn public_key_file(run: &Run, name: &str, registered: &Value) -> PathBuf {
     let path = run.home().join(name);
     fs::write(&path, format!("{}\n", text(&registered["publicKey"]))).unwrap();
@@ -179,7 +192,7 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
     );
 
     // Default paths live beside the registry.
-    let agent = Agent::start(&run, &mut run.admin(), &[], &[]);
+    let agent = Agent::start(&run, &mut run.admin(), &[], None);
     let expected_fingerprints = json!(sorted(vec![
         text(&first["fingerprint"]).to_string(),
         text(&second["fingerprint"]).to_string(),
@@ -289,7 +302,7 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
     assert!(!run.home().join(".config/turnkey/ssh-agent.pid").exists());
 
     // Without the first key the restarted agent serves the rest.
-    let restarted = Agent::start(&run, &mut run.admin(), &[], &[]);
+    let restarted = Agent::start(&run, &mut run.admin(), &[], None);
     assert_eq!(
         restarted.listed_keys(&ssh_add),
         vec![advertised(&second, &second_id)]
@@ -316,13 +329,12 @@ fn agent_start_narrows_by_key_profile_and_organization() {
     let signature = run.home().join("payload.txt.sig");
     let first_public_key = public_key_file(&run, "first.pub", &first);
     let second_public_key = public_key_file(&run, "second.pub", &second);
-    let socket = run.home().join("agent/narrowed.sock");
-    let pid_file = run.home().join("agent/narrowed.pid");
-    let paths: [(&str, &Path); 2] = [("--socket", &socket), ("--pid-file", &pid_file)];
+    let (socket, pid_file) = agent_paths(&run, "narrowed");
+    let paths = Some((socket.as_path(), pid_file.as_path()));
     let unregistered = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     // A named key serves only that key, by fingerprint or private key ID.
-    let narrowed = Agent::start(&run, &mut run.admin(), &[&first_fingerprint], &paths);
+    let narrowed = Agent::start(&run, &mut run.admin(), &[&first_fingerprint], paths);
     assert_eq!(narrowed.fingerprints(), &json!([first_fingerprint]));
     assert_eq!(
         narrowed.listed_keys(&ssh_add),
@@ -347,7 +359,7 @@ fn agent_start_narrows_by_key_profile_and_organization() {
         &run,
         &mut run.admin(),
         &[&second_id, &second_fingerprint],
-        &paths,
+        paths,
     );
     assert_eq!(by_id.fingerprints(), &json!([second_fingerprint]));
     assert_eq!(by_id.stop(), json!({"reason": "agent_stopped"}));
@@ -363,10 +375,12 @@ fn agent_start_narrows_by_key_profile_and_organization() {
             pid_file.display()
         );
     };
-    let path_args: Vec<String> = paths
-        .iter()
-        .flat_map(|(flag, path)| [flag.to_string(), path.display().to_string()])
-        .collect();
+    let path_args = vec![
+        "--socket".to_string(),
+        socket.display().to_string(),
+        "--pid-file".to_string(),
+        pid_file.display().to_string(),
+    ];
     no_agent(
         run.err(
             run.admin_offline()
@@ -393,12 +407,7 @@ fn agent_start_narrows_by_key_profile_and_organization() {
 
     // A profile in the key's organization is the credential for the set.
     let login = run.login_admin();
-    let profiled = Agent::start(
-        &run,
-        run.cli().args(["--profile", &login.name]),
-        &[],
-        &paths,
-    );
+    let profiled = Agent::start(&run, run.cli().args(["--profile", &login.name]), &[], paths);
     assert_eq!(
         profiled.fingerprints(),
         &json!(sorted(vec![
@@ -463,7 +472,7 @@ fn using_ssh_register_serve_sign() {
     let ssh_add = locate("ssh-add").expect("using-ssh needs ssh-add on PATH");
     let ssh_keygen = locate("ssh-keygen").expect("using-ssh needs ssh-keygen on PATH");
     let run = Run::new();
-    let (agent_tag, agent_id, agent_key) = run.create_agent();
+    let (_, agent_id, agent_key) = run.create_agent();
     let create_key = |label: &str| {
         let name = run.name(label);
         let created = run.ok_created_or_reregistered(
@@ -495,19 +504,16 @@ fn using_ssh_register_serve_sign() {
     };
     let served_id = create_key("agent-ssh");
     let unserved_id = create_key("agent-ssh-unserved");
-    run.allow_tag_signing(
+    run.allow_user_signing(
         "agents-sign-ssh",
-        &agent_tag,
-        &format!(
-            "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == '{served_id}'"
-        ),
+        &agent_id,
+        SignScope::PrivateKey(&served_id),
     );
     let payload = run.home().join("payload.txt");
     fs::write(&payload, b"signed through the agent's tk ssh agent\n").unwrap();
     let signature = run.home().join("payload.txt.sig");
-    let socket = run.home().join("agent/ssh.sock");
-    let pid_file = run.home().join("agent/ssh.pid");
-    let paths: [(&str, &Path); 2] = [("--socket", &socket), ("--pid-file", &pid_file)];
+    let (socket, pid_file) = agent_paths(&run, "ssh");
+    let paths = Some((socket.as_path(), pid_file.as_path()));
 
     let served = register_key(&run, &mut run.as_user(&agent_key), &served_id);
     assert_eq!(served["privateKeyId"], served_id, "{served}");
@@ -529,20 +535,18 @@ fn using_ssh_register_serve_sign() {
         &run,
         &mut run.as_user(&agent_key),
         &[],
-        &paths,
+        paths,
         &["--socket-mode", "660"],
     );
     assert_eq!(
         fs::metadata(&agent.socket).unwrap().permissions().mode() & 0o777,
         0o660
     );
-    assert_eq!(
-        agent.listed_keys(&ssh_add),
-        sorted(vec![
-            advertised(&served, &served_id),
-            advertised(&unserved, &unserved_id)
-        ])
-    );
+    let advertised_keys = sorted(vec![
+        advertised(&served, &served_id),
+        advertised(&unserved, &unserved_id),
+    ]);
+    assert_eq!(agent.listed_keys(&ssh_add), advertised_keys);
     assert_eq!(
         agent.status(),
         json!({
@@ -576,18 +580,31 @@ fn using_ssh_register_serve_sign() {
     );
     assert!(!signature.exists());
 
+    let (_, outsider_key) = run.create_tagged_user("agent-outsider", AGENT_TAG);
+    let (outsider_socket, outsider_pid_file) = agent_paths(&run, "outsider");
+    let outsider = Agent::start(
+        &run,
+        &mut run.as_user(&outsider_key),
+        &[],
+        Some((&outsider_socket, &outsider_pid_file)),
+    );
+    assert_eq!(outsider.listed_keys(&ssh_add), advertised_keys);
+    let refused = outsider.sign(&ssh_keygen, &served_public_key, &payload);
+    assert!(
+        !refused.status.success(),
+        "a same-tag user outside the policy consensus signed"
+    );
+    assert!(!signature.exists());
+    assert_eq!(outsider.stop(), json!({"reason": "agent_stopped"}));
+
     let profile = run.name("agent");
     run.login_as(&profile, &agent_key);
-    let profiled_socket = run.home().join("agent/profiled.sock");
-    let profiled_pid_file = run.home().join("agent/profiled.pid");
+    let (profiled_socket, profiled_pid_file) = agent_paths(&run, "profiled");
     let profiled = Agent::start(
         &run,
         run.cli().args(["--profile", &profile]),
         &[],
-        &[
-            ("--socket", &profiled_socket),
-            ("--pid-file", &profiled_pid_file),
-        ],
+        Some((&profiled_socket, &profiled_pid_file)),
     );
     let registry = fs::read(run.registry_path()).unwrap();
     fs::write(run.registry_path(), b"version = ").unwrap();

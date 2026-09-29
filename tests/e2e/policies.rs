@@ -1,4 +1,5 @@
-use crate::run::{AGENT_TAG, Run, id_of, result, tag_consensus};
+use crate::policy_helpers::tag_consensus;
+use crate::run::{AGENT_TAG, Run, id_of, result};
 use serde_json::json;
 
 #[test]

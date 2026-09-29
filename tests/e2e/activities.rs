@@ -1,4 +1,5 @@
-use crate::run::{AGENT_TAG, HUMAN_TAG, Run, allow_once, id_of, result};
+use crate::policy_helpers::allow_once;
+use crate::run::{AGENT_TAG, HUMAN_TAG, Run, id_of, result};
 use serde_json::{Value, json};
 
 #[test]

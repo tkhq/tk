@@ -10,8 +10,8 @@ Ed25519 key that exists only inside Turnkey. `tk ssh agent` answers the
 OpenSSH agent protocol on a Unix socket and turns each challenge into a
 policy-checked signing activity under the agent's own credential.
 
-Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
-(`AGENT_TAG`), and the host or git host that will hold the public key.
+Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
+(`AGENT_USER_ID`), and the host or git host that will hold the public key.
 
 ## Reference
 
@@ -43,7 +43,7 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
   trust in the server.
 - When a signing broker holds signing for this deployment, do not create
   `agents-sign-*` policies. Run this workflow as the broker principal instead:
-  the step 2 policy names `BROKER_TAG` in place of `AGENT_TAG`, step 4 runs
+  the step 2 policy names `BROKER_USER_ID` in place of `AGENT_USER_ID`, step 4 runs
   `tk ssh agent start --key SSH_FINGERPRINT` under the broker's `HOME`, and
   the application receives only the socket, never the broker's profile.
 
@@ -66,7 +66,7 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
    <!-- example: ssh.policy -->
    ```sh
    tk --profile admin --message-format json policy create --name agents-sign-ssh --effect allow \
-     --consensus "approvers.any(user, user.tags.contains('AGENT_TAG'))" \
+     --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
      --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == 'PRIVATE_KEY_ID'"
    ```
 
@@ -155,7 +155,7 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
   As root, run
   `tk --profile admin --message-format json policy evaluations ACTIVITY_ID`
   on it; the usual cause is a policy scoped to a different `private_key.id`
-  or a consensus that names the wrong tag. Do not start the daemon as root
+  or a consensus that names the wrong user. Do not start the daemon as root
   instead.
 - No `SIGN_RAW_PAYLOAD` activity exists: the daemon, started from a profile,
   could not reload its credential for that signature. The registry under

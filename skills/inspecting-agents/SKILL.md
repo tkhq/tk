@@ -1,6 +1,6 @@
 ---
 name: inspecting-agents
-description: Answer operational questions about an organization's Turnkey agents with tk list filters, explicit pagination, and jq: what is pending and for how long, who voted, which users carry a tag, which keys each agent holds and when they expire, which secrets carry which properties, which policies mention a tag, who minted a key. Use for audits and "what is the state of X" questions; not for changing anything.
+description: Answer operational questions about an organization's Turnkey agents with tk list filters, explicit pagination, and jq: what is pending and for how long, who voted, which users carry a tag, which keys each agent holds and when they expire, which secrets carry which properties, which policies mention a tag or user, who minted a key. Use for audits and "what is the state of X" questions; not for changing anything.
 ---
 
 # Inspecting agents
@@ -42,9 +42,9 @@ states its provenance: the command, the pages read, and the field.
   `createUsersIntentV4.users[].apiKeys[]`). When no activity in the pages
   you traversed matches, the answer is "unknown". Do not infer a minter from
   voters on other activities.
-- A textual search of policy `consensus` and `condition` for a tag id is a
-  candidate list, not a parsed dependency graph. Read each candidate before
-  claiming it governs the tag.
+- A textual search of policy `consensus` and `condition` for a tag id or
+  user id is a candidate list, not a parsed dependency graph. Read each
+  candidate before claiming it governs the tag or user.
 
 ## Instructions
 
@@ -129,15 +129,17 @@ or ids the question is about. Every command below prints one JSON record;
    `staticProperties[]` is `key` and `value`; values of the secrets
    themselves are never listed.
 
-7. **Which policies mention a tag.**
+7. **Which policies mention a tag or user.** Take the agent's `userId` from
+   step 2 into `$AGENT_USER_ID`; signing grants name the user, not the tag:
 
    <!-- example: inspecting.policies -->
    ```sh
-   tk --profile admin --message-format json policy list | jq --arg tag "$AGENT_TAG" '.data.policies[] | select((.consensus // "") + (.condition // "") | contains($tag)) | {policyId, policyName, effect}'
+   tk --profile admin --message-format json policy list | jq --arg tag "$AGENT_TAG" --arg user "$AGENT_USER_ID" '.data.policies[] | select((.consensus // "") + (.condition // "") | contains($tag) or contains($user)) | {policyId, policyName, effect}'
    ```
 
    These are candidates. Read each one's `consensus` and `condition` to say
-   whether the tag is an approver, a target, or both.
+   whether the tag or user is an approver, a target, or both. An empty
+   `$AGENT_TAG` or `$AGENT_USER_ID` matches every policy; set both first.
 
 8. **Who minted a key.** Take the key's `credential.publicKey` from step 3
    into `$KEY_PUBLIC_KEY`, then join it against each page of the activities
