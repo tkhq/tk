@@ -61,6 +61,40 @@ tk ssh agent start
 To sign Git commits with a registered key, see
 [git signing](./git-signing.md).
 
+## Destination constraints
+
+```bash
+# Record the host keys of the servers the agent may sign for.
+ssh-keyscan github.com > ~/.config/turnkey/ssh-allowed-hosts
+
+# Sign SSH connections only to those host keys, and nothing else.
+tk ssh agent start --allowed-hosts-file ~/.config/turnkey/ssh-allowed-hosts
+
+# Also sign Git commits and tags, which Git with `gpg.format=ssh` and
+# `gpg.ssh.program=ssh-keygen` signs through `ssh-keygen -Y sign -n git`.
+tk ssh agent start --allowed-hosts-file ~/.config/turnkey/ssh-allowed-hosts --allow-namespace git
+
+# Or, if you forward or relay the login socket, keep `--allow-namespace` off it
+# and sign Git from a second daemon on its own socket.
+tk ssh agent start --allowed-hosts-file ~/.config/turnkey/ssh-allowed-hosts
+tk ssh agent start --allowed-hosts-file ~/.config/turnkey/ssh-allowed-hosts --allow-namespace git --socket ~/.config/turnkey/ssh-git.sock
+```
+
+The agent signs an SSH connection only after an OpenSSH 8.9+ client binds it
+with `session-bind@openssh.com` to a host key in the file, so it refuses older
+clients and every hop of an agent that such a client forwards. OpenSSH's own
+agent never signs `ssh-keygen -Y sign` with a destination-constrained key, so
+`--allow-namespace` is a tk extension: the agent signs one only on a connection
+with no bind, which rules out every hop that an 8.9+ client forwards, and signs
+nothing on a connection whose bind failed. A socket relay, such as `ssh -R`,
+`socat`, or a forward from a pre-8.9 client, sends no bind, so the agent cannot
+tell a relayed request from local use: anything that can reach an
+`--allow-namespace` socket can sign Git commits and tags. Share it only with
+the one boundary that should, such as another OS user or one container or VM
+through a mount, and never forward it over SSH or relay it beyond that
+boundary. It matches host keys only; the hostnames in the file are reported,
+never matched.
+
 ## Skills
 
 - [sidecar-patterns](../skills/sidecar-patterns/SKILL.md): serving keys from a socket under the agent's `HOME` beside the renewal loop.

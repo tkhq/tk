@@ -14,7 +14,7 @@ const WORKFLOW_SECTIONS: [&str; 6] = [
     "## Troubleshooting",
     "## Related Skills",
 ];
-const MAX_WORKFLOW_LINES: usize = 200;
+const MAX_WORKFLOW_LINES: usize = 220;
 const MAX_DESCRIPTION_CHARS: usize = 1024;
 
 fn repo_root() -> PathBuf {

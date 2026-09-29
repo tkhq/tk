@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::policy_helpers::SignScope;
-use crate::run::{Run, bare_cli, result, signed_commit};
+use crate::run::{Run, bare_cli, result, signed_commit, skip};
 
 pub(crate) fn locate(binary: &str) -> Option<PathBuf> {
     env::var_os("PATH").and_then(|path| {
@@ -326,7 +326,7 @@ fn ssh_key_registration_rejects_other_curves_and_unknown_ids() {
 #[ignore]
 fn git_signing_selects_the_public_key_git_names() {
     let (Some(git), Some(ssh_keygen)) = (locate("git"), locate("ssh-keygen")) else {
-        eprintln!("skipping the SSH git-signing test: git or ssh-keygen is not on PATH");
+        skip("the SSH git-signing test: git or ssh-keygen is not on PATH");
         return;
     };
     let run = Run::new();
@@ -385,7 +385,7 @@ fn git_signing_selects_the_public_key_git_names() {
 #[ignore]
 fn passthrough_signing_errors_name_the_key_and_git_sign_signs() {
     let Some(ssh_keygen) = locate("ssh-keygen") else {
-        eprintln!("skipping the SSH passthrough test: ssh-keygen is not on PATH");
+        skip("the SSH passthrough test: ssh-keygen is not on PATH");
         return;
     };
     let run = Run::new();

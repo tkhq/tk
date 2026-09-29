@@ -1,5 +1,6 @@
 //! Live SSH agent coverage: serving the registry, narrowing, and lifecycle.
 
+use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -10,17 +11,17 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::policy_helpers::SignScope;
-use crate::run::{AGENT_TAG, Run, bare_cli, result};
+use crate::run::{AGENT_TAG, Run, bare_cli, result, skip};
 use crate::ssh::{
     check_signature, create_ed25519_key, generate_local_key, locate, register_key, text,
 };
 
 /// Stops the agent when the test ends, whether or not it passed.
-struct Agent<'r> {
+pub(crate) struct Agent<'r> {
     run: &'r Run,
-    socket: PathBuf,
+    pub(crate) socket: PathBuf,
     paths: Vec<String>,
-    started: Value,
+    pub(crate) started: Value,
 }
 
 impl<'r> Agent<'r> {
@@ -33,7 +34,7 @@ impl<'r> Agent<'r> {
         Self::start_with(run, command, keys, paths, &[])
     }
 
-    fn start_with(
+    pub(crate) fn start_with(
         run: &'r Run,
         command: &mut TkCommand,
         keys: &[&str],
@@ -48,6 +49,16 @@ impl<'r> Agent<'r> {
                 pid_file.display().to_string(),
             ]
         });
+        Self::spawn(run, command, keys, paths, start_args)
+    }
+
+    pub(crate) fn spawn(
+        run: &'r Run,
+        command: &mut TkCommand,
+        keys: &[&str],
+        paths: Vec<String>,
+        start_args: &[&str],
+    ) -> Self {
         let started = run.ok(command
             .args(["ssh", "agent", "start"])
             .args(keys.iter().flat_map(|key| ["--key", key]))
@@ -64,11 +75,11 @@ impl<'r> Agent<'r> {
         }
     }
 
-    fn fingerprints(&self) -> &Value {
+    pub(crate) fn fingerprints(&self) -> &Value {
         &self.started["keys"]
     }
 
-    fn status(&self) -> Value {
+    pub(crate) fn status(&self) -> Value {
         self.run.ok(self
             .run
             .admin_offline()
@@ -78,7 +89,7 @@ impl<'r> Agent<'r> {
 
     /// The `ssh-ed25519 <base64> turnkey:<private-key-id>` lines the agent
     /// advertises, sorted.
-    fn listed_keys(&self, ssh_add: &Path) -> Vec<String> {
+    pub(crate) fn listed_keys(&self, ssh_add: &Path) -> Vec<String> {
         let listed = Command::new(ssh_add)
             .arg("-L")
             .env("SSH_AUTH_SOCK", &self.socket)
@@ -98,9 +109,19 @@ impl<'r> Agent<'r> {
     }
 
     /// Signs through the agent with the key in `public_key_path`.
-    fn sign(&self, ssh_keygen: &Path, public_key_path: &Path, payload: &Path) -> Output {
+    pub(crate) fn sign(&self, ssh_keygen: &Path, public_key_path: &Path, payload: &Path) -> Output {
+        self.sign_in(ssh_keygen, "git", public_key_path, payload)
+    }
+
+    pub(crate) fn sign_in(
+        &self,
+        ssh_keygen: &Path,
+        namespace: &str,
+        public_key_path: &Path,
+        payload: &Path,
+    ) -> Output {
         Command::new(ssh_keygen)
-            .args(["-Y", "sign", "-n", "git", "-U", "-f"])
+            .args(["-Y", "sign", "-n", namespace, "-U", "-f"])
             .arg(public_key_path)
             .arg(payload)
             .env("SSH_AUTH_SOCK", &self.socket)
@@ -108,7 +129,7 @@ impl<'r> Agent<'r> {
             .expect("ssh-keygen should run")
     }
 
-    fn stop(self) -> Value {
+    pub(crate) fn stop(self) -> Value {
         let stopped = self.run.ok(self
             .run
             .admin_offline()
@@ -132,7 +153,7 @@ impl Drop for Agent<'_> {
     }
 }
 
-fn agent_paths(run: &Run, name: &str) -> (PathBuf, PathBuf) {
+pub(crate) fn agent_paths(run: &Run, name: &str) -> (PathBuf, PathBuf) {
     let dir = run.home().join("agent");
     (
         dir.join(format!("{name}.sock")),
@@ -140,7 +161,7 @@ fn agent_paths(run: &Run, name: &str) -> (PathBuf, PathBuf) {
     )
 }
 
-fn public_key_file(run: &Run, name: &str, registered: &Value) -> PathBuf {
+pub(crate) fn public_key_file(run: &Run, name: &str, registered: &Value) -> PathBuf {
     let path = run.home().join(name);
     fs::write(&path, format!("{}\n", text(&registered["publicKey"]))).unwrap();
     path
@@ -148,7 +169,7 @@ fn public_key_file(run: &Run, name: &str, registered: &Value) -> PathBuf {
 
 /// The line the agent should advertise for a registered key: its OpenSSH
 /// public key followed by the comment naming the Turnkey private key.
-fn advertised(registered: &Value, private_key_id: &str) -> String {
+pub(crate) fn advertised(registered: &Value, private_key_id: &str) -> String {
     format!(
         "{} turnkey:{private_key_id}",
         text(&registered["publicKey"])
@@ -164,7 +185,7 @@ fn sorted(mut lines: Vec<String>) -> Vec<String> {
 #[ignore]
 fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
     let (Some(ssh_add), Some(ssh_keygen)) = (locate("ssh-add"), locate("ssh-keygen")) else {
-        eprintln!("skipping the SSH agent test: ssh-add or ssh-keygen is not on PATH");
+        skip("the SSH agent test: ssh-add or ssh-keygen is not on PATH");
         return;
     };
     let run = Run::new();
@@ -252,6 +273,42 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
     );
     assert!(!signature.exists());
 
+    let askpass = run.home().join("askpass");
+    fs::write(
+        &askpass,
+        r#"#!/bin/sh
+echo passphrase
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&askpass, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let refuses = |ssh_add_args: &[&OsStr]| {
+        let output = Command::new(&ssh_add)
+            .args(ssh_add_args)
+            .env("SSH_AUTH_SOCK", &agent.socket)
+            .env("SSH_ASKPASS", &askpass)
+            .env("SSH_ASKPASS_REQUIRE", "force")
+            .output()
+            .expect("ssh-add should run");
+        assert!(
+            !output.status.success(),
+            "the agent accepted ssh-add {ssh_add_args:?}"
+        );
+    };
+
+    refuses(&["-D".as_ref()]);
+    refuses(&["-d".as_ref(), second_public_key.as_os_str()]);
+    refuses(&[run.home().join("unregistered_ed25519").as_os_str()]);
+    refuses(&["-x".as_ref()]);
+    assert_eq!(
+        agent.listed_keys(&ssh_add),
+        sorted(vec![
+            advertised(&first, &first_id),
+            advertised(&second, &second_id)
+        ])
+    );
+
     // A second start is refused while the first agent holds the socket.
     let duplicate = run.err(run.admin().args(["ssh", "agent", "start"]));
     assert_eq!(duplicate["code"], "command_error");
@@ -259,6 +316,66 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
         duplicate["message"],
         format!("ssh-agent is already running on {}", agent.socket.display())
     );
+
+    // A second agent given only a socket keeps its pid file beside that socket.
+    let beside_socket = run.home().join("agent/beside.sock");
+    let beside_pid_file = run.home().join("agent/beside.sock.pid");
+    let beside = Agent::spawn(
+        &run,
+        &mut run.admin(),
+        &[],
+        vec!["--socket".to_string(), beside_socket.display().to_string()],
+        &[],
+    );
+    assert_eq!(beside.socket, beside_socket);
+    assert!(beside_pid_file.exists());
+    assert_eq!(
+        beside.status(),
+        json!({
+            "reason": "agent_status_report",
+            "pid": beside.started["pid"],
+            "socket": beside.started["socket"],
+            "socketMode": "600",
+            "keys": expected_fingerprints,
+        })
+    );
+    assert_eq!(beside.stop(), json!({"reason": "agent_stopped"}));
+    assert!(!beside_pid_file.exists());
+
+    // An explicit pid file overrides the one beside the socket.
+    let explicit_socket = run.home().join("agent/explicit.sock");
+    let explicit_pid_file = run.home().join("agent/explicit-custom.pid");
+    let explicit = Agent::start(
+        &run,
+        &mut run.admin(),
+        &[],
+        Some((&explicit_socket, &explicit_pid_file)),
+    );
+    assert_eq!(
+        explicit.started,
+        json!({
+            "reason": "agent_started",
+            "pid": explicit.started["pid"],
+            "socket": explicit_socket.display().to_string(),
+            "socketMode": "600",
+            "keys": expected_fingerprints,
+        })
+    );
+    assert!(explicit_pid_file.exists());
+    assert!(!run.home().join("agent/explicit.sock.pid").exists());
+    assert_eq!(
+        explicit.status(),
+        json!({
+            "reason": "agent_status_report",
+            "pid": explicit.started["pid"],
+            "socket": explicit.started["socket"],
+            "socketMode": "600",
+            "keys": expected_fingerprints,
+        })
+    );
+    assert_eq!(explicit.stop(), json!({"reason": "agent_stopped"}));
+    assert!(!explicit_pid_file.exists());
+    assert_eq!(agent.status(), status);
 
     // Registry edits do not reach the running agent, and the human output
     // says so.
@@ -314,7 +431,7 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
 #[ignore]
 fn agent_start_narrows_by_key_profile_and_organization() {
     let (Some(ssh_add), Some(ssh_keygen)) = (locate("ssh-add"), locate("ssh-keygen")) else {
-        eprintln!("skipping the SSH agent narrowing test: ssh-add or ssh-keygen is not on PATH");
+        skip("the SSH agent narrowing test: ssh-add or ssh-keygen is not on PATH");
         return;
     };
     let run = Run::new();

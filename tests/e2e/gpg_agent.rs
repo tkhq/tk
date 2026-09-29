@@ -7,7 +7,7 @@ use tempfile::TempDir;
 
 use crate::gpg::{add_key, create_key, create_occupied_wallet, import_public_key, openpgp_config};
 use crate::policy_helpers::SignScope;
-use crate::run::{Run, signed_commit};
+use crate::run::{Run, signed_commit, skip};
 use crate::ssh::locate;
 
 const USER_ID: &str = "tk gpg agent e2e <tk-gpg-agent-e2e@example.com>";
@@ -89,7 +89,7 @@ stderr: {stderr}"#
 #[ignore]
 fn foreground_agent_signs_for_a_credential_free_git_client() {
     let (Some(gpg), Some(git_executable)) = (locate("gpg"), locate("git")) else {
-        eprintln!("skipping the GPG agent test: gpg or git is not on PATH");
+        skip("the GPG agent test: gpg or git is not on PATH");
         return;
     };
     let run = Run::new();

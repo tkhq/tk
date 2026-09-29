@@ -1,4 +1,9 @@
 //! Per-test runner; each [`Run`] owns an isolated Turnkey sub-organization.
+mod readiness;
+mod skip;
+
+pub(crate) use skip::skip;
+
 use crate::config::E2eConfig;
 use crate::policy_helpers::user_consensus;
 use assert_cmd::Command;
@@ -7,12 +12,11 @@ use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::net::UnixStream;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::process::{self, Child};
+use std::process;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use uuid::Uuid;
@@ -295,30 +299,6 @@ impl Run {
             text = text.replace(secret, "<redacted>");
         }
         text
-    }
-
-    pub(crate) fn wait_for_child_socket(
-        &self,
-        child: &mut Option<Child>,
-        path: &Path,
-        process: &str,
-        readiness: &str,
-    ) {
-        let deadline = Instant::now() + CHILD_READINESS_TIMEOUT;
-        while UnixStream::connect(path).is_err() {
-            if child.as_mut().unwrap().try_wait().unwrap().is_some() {
-                let output = child.take().unwrap().wait_with_output().unwrap();
-                panic!(
-                    "{process} exited before {readiness}: {}",
-                    self.redact(&output.stderr)
-                );
-            }
-            assert!(
-                Instant::now() < deadline,
-                "{process} did not finish {readiness}"
-            );
-            thread::sleep(CHILD_READINESS_POLL_INTERVAL);
-        }
     }
 
     /// Runs the binary once, redacting tracked secrets from both streams.

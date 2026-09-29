@@ -32,6 +32,16 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
   key registry from `HOME`. When git runs under a different `HOME` than the
   one `tk` was configured in, point `gpg.program` (or `gpg.ssh.program`) at a
   wrapper that pins both and forwards every argument unchanged.
+- SSH signing has two paths. Direct: `gpg.ssh.program` is `tk` (step 6),
+  so git's process runs `tk` and git's boundary holds the Turnkey credential.
+  Agent: `gpg.ssh.program` is `ssh-keygen` with `SSH_AUTH_SOCK` on the
+  agent socket carrying `--allow-namespace git`
+  ([using-ssh](../using-ssh/SKILL.md) step 4), so the daemon keeps the
+  credential under another OS user, container, or VM
+  ([sidecar-patterns](../sidecar-patterns/SKILL.md)) and
+  git's boundary holds only the socket and the public key. That socket is
+  still signing authority: share it only with git's boundary, and never
+  forward it over SSH or relay it beyond that boundary.
 - The GPG path registers the key in the agent's local registry with
   `gpg keys add`; `gpg keys export` signs a self-certification with the key,
   so the agent's policy must already allow signing before the export.
@@ -186,15 +196,17 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
 - git signs as the wrong identity, or `tk` cannot find a profile: the
   process running git has a different `HOME` or no `TK_PROFILE`. Use the
   wrapper from step 5 and confirm it is the configured `gpg.program`.
-- git reports it cannot run the SSH signing program: `gpg.ssh.program` must
-  be an absolute path to `tk` or the wrapper, and `ssh-keygen` must be on
+- git reports it cannot run the SSH signing program: on the direct path
+  `gpg.ssh.program` must be an absolute path to `tk` or the wrapper; on the
+  agent path it is `ssh-keygen` with `SSH_AUTH_SOCK` on the agent socket
+  carrying `--allow-namespace git`. Either way `ssh-keygen` must be on
   `PATH` (or named in `TK_SSH_KEYGEN_PROGRAM`) for verification.
 - Signing hangs or asks for approval: the policy is allow-once. Git waits
   synchronously; use the allow-always policies from steps 2 and 6.
 
 ## Related Skills
 
-- [using-ssh](../using-ssh/SKILL.md): register the Ed25519 key the SSH signing path uses.
+- [using-ssh](../using-ssh/SKILL.md): register the Ed25519 key the SSH signing path uses, or sign through its agent socket with `gpg.ssh.program=ssh-keygen` (step 4).
 - [managing-policies](../managing-policies/SKILL.md): inspect a denied signing activity with `policy evaluations`.
 - [provisioning-agent-identity](../provisioning-agent-identity/SKILL.md): the tagged agent user and profile that runs git.
 - [deploying-signing-broker](../deploying-signing-broker/SKILL.md): serving this key over a socket to a boundary that holds no credential.
