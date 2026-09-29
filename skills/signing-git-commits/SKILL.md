@@ -22,7 +22,7 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
   under an empty wallet; SSH signing uses a Turnkey Ed25519 private key. Never
   print key material; verify by exit code and `git verify-commit`.
 - Signing waits synchronously, so the policy is allow-always for the agent
-  tag, scoped to the exact resource: `wallet.id` for GPG, `private_key.id`
+  user, scoped to the exact resource: `wallet.id` for GPG, `private_key.id`
   for SSH. See [policy-patterns.md](../references/policy-patterns.md#signing-key-policies).
 - Local verification is the success criterion. A hosting provider's "Verified" badge
   is an external step: it needs the public key uploaded there and a matching
@@ -44,8 +44,8 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
 
 ## Instructions
 
-Inputs: the root profile (`admin`), the agent's profile (`agent`), the agent
-tag (`AGENT_TAG`), and the committer identity as `Name <email>`. GnuPG for
+Inputs: the root profile (`admin`), the agent's profile (`agent`), the agent's
+user id (`AGENT_USER_ID`), and the committer identity as `Name <email>`. GnuPG for
 the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
 
 1. **Create an empty wallet.** Root. The wallet holds only signing accounts.
@@ -57,13 +57,13 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
 
    Wait on a `pending` record with `activity wait` and read the id from it.
 
-2. **Allow the agent tag to sign with that wallet.** Root.
+2. **Allow the agent user to sign with that wallet.** Root.
 
    <!-- shared: agents-sign-gpg -->
    <!-- example: signing.policy-gpg -->
    ```sh
    tk --profile admin --message-format json policy create --name agents-sign-gpg --effect allow \
-     --consensus "approvers.any(user, user.tags.contains('AGENT_TAG'))" \
+     --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
      --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
    ```
 
@@ -127,7 +127,7 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
    <!-- example: signing.policy-ssh -->
    ```sh
    tk --profile admin --message-format json policy create --name agents-sign-ssh --effect allow \
-     --consensus "approvers.any(user, user.tags.contains('AGENT_TAG'))" \
+     --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
      --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == 'PRIVATE_KEY_ID'"
    ```
 
@@ -177,8 +177,8 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
   `user.signingkey` to the exact fingerprint from step 3. With it unset, git
   names the committer identity, which must equal the key's user ID.
 - `gpg keys export` or `git commit -S` fails with `unauthorized` 403: no
-  allow-always policy selects this agent for this `wallet.id`. Check the
-  agent's tag and the wallet id in the condition; do not switch to root.
+  allow-always policy selects this agent for this `wallet.id`. Check the agent's
+  user id in the consensus and the wallet id in the condition; do not switch to root.
 - `git verify-commit` fails after a successful commit: for GPG, the public key
   is not in the `GNUPGHOME` git reads, or its ownertrust was not imported; for
   SSH, the `allowed_signers` line does not pair the committer email with the

@@ -1,7 +1,5 @@
-use crate::run::{
-    AGENT_TAG, HUMAN_TAG, Run, allow_once, assert_unauthenticated, created_user_id, result,
-    tag_consensus,
-};
+use crate::policy_helpers::{allow_once, tag_consensus};
+use crate::run::{AGENT_TAG, HUMAN_TAG, Run, assert_unauthenticated, created_user_id, result};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::fs;

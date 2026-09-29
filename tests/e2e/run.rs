@@ -1,5 +1,6 @@
 //! Per-test runner; each [`Run`] owns an isolated Turnkey sub-organization.
 use crate::config::E2eConfig;
+use crate::policy_helpers::user_consensus;
 use assert_cmd::Command;
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -119,18 +120,6 @@ pub(crate) fn one_api_key(run: &Run, label: &str) -> Value {
         "publicKey": hex::encode(key.compressed_public_key()),
         "curveType": "API_KEY_CURVE_P256",
     }])
-}
-
-pub(crate) fn tag_consensus(tag: &str) -> String {
-    format!("approvers.any(user, user.tags.contains('{tag}'))")
-}
-
-pub(crate) fn allow_once(agent_tag: &str, human_tag: &str) -> String {
-    format!(
-        "{} && {}",
-        tag_consensus(agent_tag),
-        tag_consensus(human_tag)
-    )
 }
 
 pub(crate) fn signed_commit(message: &str) -> [&str; 6] {
@@ -623,7 +612,7 @@ impl Run {
         self.create_policy(json!({
             "policyName": self.name("provisioners-mint"),
             "effect": "EFFECT_ALLOW",
-            "consensus": format!("approvers.any(user, user.id == '{provisioner_id}')"),
+            "consensus": user_consensus(&provisioner_id),
             "condition": "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2'",
             "notes": ""
         }));
@@ -717,30 +706,6 @@ impl Run {
             .as_str()
             .unwrap()
             .to_string()
-    }
-
-    pub(crate) fn deny_agent_credentials(&self, agent_tag: &str) {
-        self.create_policy_from_flags(
-            &self.name("agents-no-credentials"),
-            "deny",
-            &tag_consensus(agent_tag),
-            "activity.resource == 'CREDENTIAL'",
-        );
-    }
-
-    pub(crate) fn allow_tag_signing(&self, name: &str, tag: &str, condition: &str) {
-        self.create_policy_from_flags(&self.name(name), "allow", &tag_consensus(tag), condition);
-    }
-
-    pub(crate) fn allow_agent_export(&self, consensus: &str, level: &str) {
-        self.create_policy_from_flags(
-            &self.name(&format!("agents-export-{level}")),
-            "allow",
-            consensus,
-            &format!(
-                "activity.type == 'ACTIVITY_TYPE_EXPORT_SECRETS' && secret.static_properties['consensus'] == '{level}'"
-            ),
-        );
     }
 
     pub(crate) fn import_secret_from_file(&self, name: &str, level: &str, value: &str) -> String {

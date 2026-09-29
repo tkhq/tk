@@ -40,9 +40,7 @@ already exists (a `broker` tag, or a running `tk gpg agent serve`), commit
 signing routes through
 [deploying-signing-broker](deploying-signing-broker/SKILL.md), which is GPG
 only. SSH through a broker runs [using-ssh](using-ssh/SKILL.md) as the broker
-principal: its signing policy names `BROKER_TAG` in place of `AGENT_TAG`,
-`tk ssh agent start --key SSH_FINGERPRINT` runs under the broker's `HOME`, and
-the application receives only the socket. Run as the agent itself,
+principal; its broker rule lists the substitutions. Run as the agent itself,
 [using-ssh](using-ssh/SKILL.md) and
 [signing-git-commits](signing-git-commits/SKILL.md) grant the agent signing
 authority and are for deployments that intend that.
@@ -61,7 +59,7 @@ with the user's authorization.
 |---|---|
 | [cli-convention.md](references/cli-convention.md) | always, once |
 | [policy-language.md](references/policy-language.md) | writing or debugging a `condition` or `consensus` |
-| [policy-patterns.md](references/policy-patterns.md) | applying the tag- and property-based policy set |
+| [policy-patterns.md](references/policy-patterns.md) | applying the fleet and signing-key policy set |
 | [approval-models.md](references/approval-models.md) | choosing how much a human approves |
 | [commands.md](../docs/commands.md) | checking an exact flag; generated from the parser |
 
@@ -73,7 +71,7 @@ with the user's authorization.
 | agent | a non-root user tagged `agent`; holds only the credentials its route needs |
 | provisioner | a non-root user tagged `provisioner`; proposes expiring API keys for an explicit set of agent users |
 | human-approver | tag on the people who approve `allow-once` activities |
-| allow-always | ALLOW policy whose consensus is the agent tag alone |
+| allow-always | ALLOW policy the agent's own vote satisfies alone |
 | allow-once | ALLOW policy whose consensus also requires a distinct `human-approver`; approval is per activity |
 | `consensus=unilateral`, `consensus=approval` | static properties on Secrets choosing which export policy applies |
 | long-lived route | agent with one non-expiring API key, scoped by policy |

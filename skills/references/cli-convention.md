@@ -130,8 +130,8 @@ definitions in `cargo test`, with these substitutions:
 | Placeholder | Stands for |
 |---|---|
 | `ORG_UUID`, `USER_ID`, `TAG_ID`, `POLICY_ID`, `SECRET_ID`, `WALLET_ID`, `API_KEY_ID`, `PRIVATE_KEY_ID`, `ACCOUNT_ID` | a UUID of that resource |
-| `AGENT_USER_ID`, `HUMAN_USER_ID`, `PROVISIONER_USER_ID` | the UUID of a user in that role |
-| `AGENT_TAG`, `HUMAN_APPROVER_TAG`, `PROVISIONER_TAG` | the UUID of that user tag |
+| `AGENT_USER_ID`, `BROKER_USER_ID`, `HUMAN_USER_ID`, `PROVISIONER_USER_ID` | the UUID of a user in that role |
+| `AGENT_TAG`, `BROKER_TAG`, `HUMAN_APPROVER_TAG`, `PROVISIONER_TAG` | the UUID of that user tag |
 | `ACTIVITY_ID` | an activity UUID |
 | `PUBLIC_KEY`, `02…` | a compressed P-256 public key, 66 hex characters starting `02` or `03` |
 | `SSH_FINGERPRINT`, `FINGERPRINT` | an opaque key fingerprint |

@@ -9,8 +9,7 @@ Result: three isolation boundaries with separate authority. The application requ
 signatures from one OpenPGP key through a Unix socket; the broker alone holds
 that key's profile; the provisioner renews the broker's key but cannot sign.
 This skill is GPG only. SSH through a broker runs [using-ssh](../using-ssh/SKILL.md)
-as the broker principal, with `BROKER_TAG` in place of `AGENT_TAG` in its signing
-policy.
+as the broker principal; its broker rule lists the substitutions.
 
 ## Reference
 
@@ -27,7 +26,8 @@ policy.
   the shared-uid socket model the application and broker share a numeric uid and
   nothing else, and the application mounts the runtime read-only. Publish no ports.
 - The broker is its own principal: tag `BROKER_TAG`, profile `broker`, one
-  signing ALLOW scoped to `WALLET_ID`, one credential DENY, no export policy.
+  signing ALLOW naming its user id and scoped to `WALLET_ID`, one credential
+  DENY, no export policy.
 - The application gets the runtime and public key read-only and never the broker's
   profile, registry, credential, or provisioner state; an application profile, if one
   exists, has no signing policy on this wallet. The provisioner gets neither the broker
@@ -45,15 +45,7 @@ agent policy), the broker tag (`BROKER_TAG`, created like the agent tag), the
 `broker` and `provisioner` profiles, the socket model (group `10000` in step 3,
 or a shared uid), and the session lifetime.
 
-1. **Authorize the broker tag.** Root. These two policies are its whole GPG policy set:
-
-   <!-- shared: brokers-sign-gpg -->
-   <!-- example: signing-broker.policy-sign -->
-   ```sh
-   tk --profile admin --message-format json policy create --name brokers-sign-gpg --effect allow \
-     --consensus "approvers.any(user, user.tags.contains('BROKER_TAG'))" \
-     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
-   ```
+1. **Create and authorize the broker.** Before any broker key exists, root denies its tag credentials:
 
    <!-- example: signing-broker.policy-deny -->
    ```sh
@@ -62,11 +54,19 @@ or a shared uid), and the session lifetime.
      --condition "activity.resource == 'CREDENTIAL'"
    ```
 
-   Create the broker user and provision its expiring key with
-   [provisioning-session-agent](../provisioning-session-agent/SKILL.md) steps 1, 2, 4,
-   and 5, tag `BROKER_TAG`, profile `broker`. Keep all three provisioner policies from
-   its step 3 (`provisioners-mint-agent-keys` extended with `BROKER_USER_ID`,
-   `provisioners-nothing-else`, `provisioners-no-self-keys`); skip only its export policy: the broker gets none.
+   Then create the broker user and provision its expiring key with [provisioning-session-agent](../provisioning-session-agent/SKILL.md)
+   steps 1, 2, 4, and 5, tag `BROKER_TAG`, profile `broker`; save its user id as `BROKER_USER_ID`.
+   Keep all three provisioner policies from its step 3 (`provisioners-mint-agent-keys` extended with
+   `BROKER_USER_ID`, `provisioners-nothing-else`, `provisioners-no-self-keys`); skip only its export
+   policy: the broker gets none. Root then completes the broker's GPG policy set:
+
+   <!-- shared: brokers-sign-gpg -->
+   <!-- example: signing-broker.policy-sign -->
+   ```sh
+   tk --profile admin --message-format json policy create --name brokers-sign-gpg --effect allow \
+     --consensus "approvers.any(user, user.id == 'BROKER_USER_ID')" \
+     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
+   ```
 
 2. **Lay out host state.** Create mode-`0700` homes for the application, broker, and
    provisioner, owned by their uids; the application's writable worktree; a runtime directory
@@ -188,8 +188,8 @@ client, refuses an unserved key, cannot register a credential, and removes its s
 - The application gets `permission denied`: its gid does not match the runtime
   and socket group, the runtime directory lacks group execute, or the two uids differ under the shared-uid model.
 - Signing reports the agent is unavailable: the path is not a socket on both sides, or the broker left the foreground.
-- `gpg keys export` or signing fails `unauthorized`: the broker user lacks
-  `BROKER_TAG`, or the ALLOW names another wallet. Do not export as root.
+- `gpg keys export` or signing fails `unauthorized`: the ALLOW names another
+  user id or another wallet. Do not export as root.
 - `tk whoami` in the application resolves to the broker user, or it can sign
   or export with the broker's profile: the broker's credential crossed over.
 

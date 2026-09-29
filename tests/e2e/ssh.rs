@@ -10,6 +10,7 @@ use assert_cmd::Command as TkCommand;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::policy_helpers::SignScope;
 use crate::run::{Run, bare_cli, result, signed_commit};
 
 pub(crate) fn locate(binary: &str) -> Option<PathBuf> {
@@ -538,15 +539,13 @@ fn signing_git_commits_ssh_signing_with_scoped_policy() {
     let ssh_keygen = locate("ssh-keygen")
         .expect("ssh-keygen must be on PATH: the signing-git-commits gate needs OpenSSH");
     let run = Run::new();
-    let (agent_tag, _, agent) = run.create_agent();
+    let (_, agent_id, agent) = run.create_agent();
     let allowed_id = create_ed25519_key(&run);
     let other_id = create_ed25519_key(&run);
-    run.allow_tag_signing(
+    run.allow_user_signing(
         "agents-sign-ssh",
-        &agent_tag,
-        &format!(
-            "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == '{allowed_id}'"
-        ),
+        &agent_id,
+        SignScope::PrivateKey(&allowed_id),
     );
 
     let allowed = register_key(&run, &mut run.as_user(&agent), &allowed_id);

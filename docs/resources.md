@@ -49,8 +49,8 @@ tk policy create --input-file - <<'EOF'
   "policyName": "agents-sign-only",
   "effect": "EFFECT_ALLOW",
   "condition": "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'",
-  "consensus": "approvers.any(user, user.tags.contains('TAG_ID'))",
-  "notes": "agents may sign with one wallet"
+  "consensus": "approvers.any(user, user.id == 'USER_ID')",
+  "notes": "the agent user may sign with one wallet"
 }
 EOF
 tk policy create-batch --input-file ./policies.json
@@ -124,4 +124,4 @@ activity ID; see [activities](./activities.md).
 - [provisioning-session-agent](../skills/provisioning-session-agent/SKILL.md): the agent, provisioner, and containment policies for expiring keys.
 - [using-ssh](../skills/using-ssh/SKILL.md): the allow-always policy scoped to the Ed25519 key an agent serves over SSH.
 - [signing-git-commits](../skills/signing-git-commits/SKILL.md): the empty wallet and the allow-always policies scoped to a signing wallet or private key.
-- [deploying-signing-broker](../skills/deploying-signing-broker/SKILL.md): the broker tag's scoped signing ALLOW and credential DENY.
+- [deploying-signing-broker](../skills/deploying-signing-broker/SKILL.md): the broker user's scoped signing ALLOW and the broker tag's credential DENY.

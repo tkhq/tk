@@ -1,8 +1,9 @@
 # Policy patterns for agents
 
-Policies here reference **user tags** and **secret static properties**, so
-adding an agent is a user create plus a tag and adding a secret is one import.
-The two exceptions that must name ids are noted where they appear. Read
+Fleet policies here reference **user tags** and **secret static properties**,
+so adding an agent is a user create plus a tag and adding a secret is one
+import. Per-agent resources — signing keys — and the other places that must
+name ids are noted where they appear. Read
 [policy-language.md](policy-language.md) for the grammar and
 [approval-models.md](approval-models.md) to choose which of these to apply.
 
@@ -45,7 +46,7 @@ re-import under the same name; see the secrets workflow.
 
 | Pattern | `consensus` |
 |---|---|
-| allow-always | `approvers.any(user, user.tags.contains('AGENT_TAG'))` |
+| allow-always | `approvers.any(user, user.tags.contains('AGENT_TAG'))`; a [signing-key policy](#signing-key-policies) names `user.id` instead |
 | allow-once | `approvers.any(user, user.tags.contains('AGENT_TAG')) && approvers.any(user, user.tags.contains('HUMAN_APPROVER_TAG'))` |
 
 Approval is per activity. The agent's submission counts as its own vote; the
@@ -124,15 +125,17 @@ self DENY per provisioner user. The language has no negation, so a single
 
 An agent that pushes over SSH or signs commits holds no key material. The
 SSH key is a Turnkey private key served by `tk ssh agent`; the OpenPGP key is a
-wallet account signed through `tk gpg`. Scope by the exact resource. These
-are allow-always by necessity: Git and SSH wait for a signature synchronously,
-so an approval-gated variant needs a different design.
+wallet account signed through `tk gpg`. Scope by the exact resource, and name
+the one user that serves the key in the consensus: a tag consensus would let
+every tagged agent sign with it. A fleet gets one key and one policy per
+agent. These are allow-always by necessity: Git and SSH wait for a signature
+synchronously, so an approval-gated variant needs a different design.
 
 <!-- shared: agents-sign-ssh -->
 <!-- example: policy-patterns.agents-sign-ssh -->
 ```sh
 tk --profile admin --message-format json policy create --name agents-sign-ssh --effect allow \
-  --consensus "approvers.any(user, user.tags.contains('AGENT_TAG'))" \
+  --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
   --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == 'PRIVATE_KEY_ID'"
 ```
 
@@ -140,19 +143,20 @@ tk --profile admin --message-format json policy create --name agents-sign-ssh --
 <!-- example: policy-patterns.agents-sign-gpg -->
 ```sh
 tk --profile admin --message-format json policy create --name agents-sign-gpg --effect allow \
-  --consensus "approvers.any(user, user.tags.contains('AGENT_TAG'))" \
+  --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
   --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
 ```
 
 A signing broker that serves the key over a socket to a credential-free
-application is its own principal: a `broker` tag with this ALLOW and the
-credential DENY above, no export ALLOW, and no `agent` ALLOW on its wallet.
+application is its own principal: a broker user named in this ALLOW, a
+`broker` tag with the credential DENY above, no export ALLOW, and no `agent`
+ALLOW on its wallet.
 
 <!-- shared: brokers-sign-gpg -->
 <!-- example: policy-patterns.brokers-sign-gpg -->
 ```sh
 tk --profile admin --message-format json policy create --name brokers-sign-gpg --effect allow \
-  --consensus "approvers.any(user, user.tags.contains('BROKER_TAG'))" \
+  --consensus "approvers.any(user, user.id == 'BROKER_USER_ID')" \
   --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
 ```
 
@@ -173,7 +177,7 @@ cross-agent denial to the acceptance test of any multi-agent organization.
 {
   "policyName": "agents-sign-anything",
   "effect": "EFFECT_ALLOW",
-  "consensus": "approvers.any(user, user.tags.contains('AGENT_TAG'))",
+  "consensus": "approvers.any(user, user.id == 'AGENT_USER_ID')",
   "condition": "activity.action == 'SIGN'"
 }
 ```

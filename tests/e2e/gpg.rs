@@ -10,6 +10,7 @@ use assert_cmd::Command;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::policy_helpers::SignScope;
 use crate::run::{AdminLogin, Run, result, signed_commit};
 
 const USER_ID: &str = "tk e2e <tk-e2e@example.com>";
@@ -474,14 +475,10 @@ fn signing_git_commits_gpg_with_scoped_policy() {
     let gpg = locate("gpg").expect("gpg must be on PATH: the signing-git-commits gate needs GnuPG");
     let git = locate("git").expect("git must be on PATH: the signing-git-commits gate needs git");
     let run = Run::new();
-    let (agent_tag, _, agent) = run.create_agent();
+    let (_, agent_id, agent) = run.create_agent();
     let wallet = create_wallet(&run, "gpg", json!([]));
     let other_wallet = create_wallet(&run, "gpg-outside-scope", json!([]));
-    run.allow_tag_signing(
-        "agents-sign-gpg",
-        &agent_tag,
-        &format!("activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == '{wallet}'"),
-    );
+    run.allow_user_signing("agents-sign-gpg", &agent_id, SignScope::Wallet(&wallet));
 
     let created = create_key(&run, &wallet, USER_ID);
     let fingerprint = created["fingerprint"].as_str().unwrap().to_string();
