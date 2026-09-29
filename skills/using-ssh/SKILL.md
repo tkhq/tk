@@ -1,6 +1,6 @@
 ---
 name: using-ssh
-description: Give an agent SSH access (git over SSH, remote hosts) with a Turnkey-held Ed25519 key served by tk ssh agent, so no private key is on disk. Use to register a key, start the agent, point git or ssh at the socket, or restart it after a credential rotation; not for commit signing (signing-git-commits).
+description: Give an agent SSH access (git over SSH, remote hosts) with a Turnkey-held Ed25519 key served by tk ssh agent, so no private key is on disk. Use to register a key, start the agent, or point git or ssh at the socket; not for commit signing (signing-git-commits).
 ---
 
 # Using SSH
@@ -32,9 +32,9 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
 - Socket access is signing authority. The socket lives in the principal's own
   home and is never forwarded off the host; under the broker path it is
   shared with the application alone, read-only, and nothing else crosses.
-- The daemon resolves its API credential once, at start. After the agent's
-  API key changes, stop and start the daemon; a running daemon keeps signing
-  with the old key until that key is revoked, then every signature fails.
+- Rotating the agent's API key needs no daemon restart when the daemon
+  runs from a profile; one started from the `TURNKEY_*` environment must
+  be restarted.
 - The registry is `~/.config/turnkey/tk.config.toml` under the `HOME` of the
   process that runs `ssh keys add` and `ssh agent start`. Pin `HOME` and
   `--profile` explicitly where the daemon runs; a service with a different
@@ -125,21 +125,7 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
    The sign step writes `payload.txt.sig` through the socket; the check
    step accepts it. Both exit `0` or the key is not usable yet.
 
-6. **Restart after a credential rotation.** After the agent's API key
-   changed (`profile set --api-key-file`, or `session activate` on the
-   session route), as the agent:
-
-   <!-- example: ssh.rotate -->
-   ```sh
-   tk --profile agent --message-format json ssh agent stop
-   tk --profile agent --message-format json ssh agent start
-   ```
-
-   `agent_stopped` then `agent_started`. Restart before the old key is
-   deleted; the old daemon signs until then and fails afterwards with no
-   local symptom other than refused connections.
-
-7. **Hand off.** Report `PRIVATE_KEY_ID`, the fingerprint and public key
+6. **Hand off.** Report `PRIVATE_KEY_ID`, the fingerprint and public key
    line, the policy id, the socket path, and the exact `start` command the
    agent's process runs. Stop.
 
@@ -147,7 +133,7 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
 
 | Examples | Test |
 |---|---|
-| ssh.create-key, ssh.policy, ssh.register, ssh.agent-start, ssh.verify, ssh.rotate | ssh_agent::using_ssh_register_serve_sign |
+| ssh.create-key, ssh.policy, ssh.register, ssh.agent-start, ssh.verify | ssh_agent::using_ssh_register_serve_sign |
 | ssh.agent-start | ssh_agent::agent_serves_every_registered_key_and_reports_its_lifecycle |
 | ssh.register | ssh::ssh_key_register_list_print_and_remove_by_every_name |
 
@@ -163,14 +149,21 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
   running on": stop that one first, or start on another `--socket` and
   `--pid-file`.
 - `ssh-keygen -Y sign` or `ssh` fails with "agent refused operation" while
-  `ssh-add -L` lists the key: Turnkey denied the signature. As root, run
-  `tk --profile admin --message-format json activity list --limit 5`
-  and `tk --profile admin --message-format json policy evaluations ACTIVITY_ID`
-  on the failed `SIGN_RAW_PAYLOAD` activity; the usual cause is a policy
-  scoped to a different `private_key.id` or a consensus that names the
-  wrong tag. Do not start the daemon as root instead.
-- Signatures were refused right after the agent's API key changed: the
-  daemon still holds the old credential. Run step 6.
+  `ssh-add -L` lists the key: check for the signing activity first. As root,
+  run `tk --profile admin --message-format json activity list --limit 5`.
+- A failed `SIGN_RAW_PAYLOAD` activity exists: Turnkey denied the signature.
+  As root, run
+  `tk --profile admin --message-format json policy evaluations ACTIVITY_ID`
+  on it; the usual cause is a policy scoped to a different `private_key.id`
+  or a consensus that names the wrong tag. Do not start the daemon as root
+  instead.
+- No `SIGN_RAW_PAYLOAD` activity exists: the daemon, started from a profile,
+  could not reload its credential for that signature. The registry under
+  its `HOME` is unreadable or does not parse, its `--profile` was deleted or
+  no longer selects a credential for the key's organization, or the
+  profile's API key file is unreadable. In the daemon's `HOME`, run
+  `tk --profile agent --message-format json whoami`; the daemon signs again
+  once that succeeds, with no restart.
 - `ssh keys add` exits `1` with `invalid_input` naming another curve: the
   id is an existing non-Ed25519 key. Create one with step 1.
 - The key is served but the server rejects it: the public key line is not
@@ -181,11 +174,10 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
 - [signing-git-commits](../signing-git-commits/SKILL.md): sign commits with
   the same registered key, or with an OpenPGP key.
 - [managing-identities](../managing-identities/SKILL.md): the agent user,
-  its profile, and the credential rotation that requires step 6.
+  its profile, and rotating its API key.
 - [managing-policies](../managing-policies/SKILL.md): debugging the
   `agents-sign-ssh` scope with `policy evaluations`.
 - [provisioning-session-agent](../provisioning-session-agent/SKILL.md):
-  when the agent's key expires and renews, and the daemon restart that
-  follows each renewal.
+  when the agent's key expires and renews.
 - [sidecar-patterns](../sidecar-patterns/SKILL.md): where the daemon and
   socket live when the agent runs in its own OS user or container.

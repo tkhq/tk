@@ -1,4 +1,7 @@
-use crate::run::{AGENT_TAG, HUMAN_TAG, Run, allow_once, created_user_id, result, tag_consensus};
+use crate::run::{
+    AGENT_TAG, HUMAN_TAG, Run, allow_once, assert_unauthenticated, created_user_id, result,
+    tag_consensus,
+};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::fs;
@@ -111,8 +114,7 @@ fn managing_identities_rotate_and_revoke() {
         json!([old_id])
     );
     let revoked = run.err(run.as_user(&first_key).arg("whoami"));
-    assert_eq!(revoked["code"], "unauthorized", "{revoked}");
-    assert_eq!(revoked["httpStatus"], 401, "{revoked}");
+    assert_unauthenticated(&revoked);
     run.ok(run.cli().args(["--profile", &profile, "whoami"]));
 
     let got = run.ok(run.admin().args(["user", "get", &user_id]));

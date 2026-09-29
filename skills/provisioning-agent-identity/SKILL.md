@@ -154,7 +154,7 @@ runs on. There is no minting row here: the one key never expires.
 - `user create` fails with `not_found` for `--tag-name agent`: the tags
   from bootstrapping do not exist in this organization. Create them first;
   do not substitute `--tag` with a guessed id.
-- `login` fails with `unauthorized` 401: the create activity is pending or
+- `login` fails with `unauthorized` 401 or 403: the create activity is pending or
   rejected, or `PUBLIC_KEY` was mistyped. Compare
   `tk --profile admin --message-format json api-key list --user-id AGENT_USER_ID`
   with `data.publicKey` from step 1.
