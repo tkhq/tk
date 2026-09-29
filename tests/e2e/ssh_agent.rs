@@ -1,6 +1,7 @@
 //! Live SSH agent coverage: serving the registry, narrowing, and lifecycle.
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -146,12 +147,6 @@ fn sorted(mut lines: Vec<String>) -> Vec<String> {
     lines
 }
 
-fn socket_permissions(socket: &Path) -> u32 {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::metadata(socket).unwrap().permissions().mode() & 0o777
-}
-
 #[test]
 #[ignore]
 fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
@@ -196,7 +191,10 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
     );
     assert!(run.home().join(".config/turnkey/ssh-agent.pid").exists());
     assert_eq!(agent.started["socketMode"], "600", "{}", agent.started);
-    assert_eq!(socket_permissions(&agent.socket), 0o600);
+    assert_eq!(
+        fs::metadata(&agent.socket).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 
     assert_eq!(
         agent.listed_keys(&ssh_add),
@@ -534,7 +532,10 @@ fn using_ssh_register_serve_sign() {
         &paths,
         &["--socket-mode", "660"],
     );
-    assert_eq!(socket_permissions(&agent.socket), 0o660);
+    assert_eq!(
+        fs::metadata(&agent.socket).unwrap().permissions().mode() & 0o777,
+        0o660
+    );
     assert_eq!(
         agent.listed_keys(&ssh_add),
         sorted(vec![

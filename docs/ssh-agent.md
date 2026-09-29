@@ -47,12 +47,9 @@ tk ssh agent start --profile agent
 # `status` and `stop` take the same two flags.
 tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid
 
-# Open the socket to a supplemental group; the default mode is 600.
+# Open the socket to a supplemental group.
 tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid --socket-mode 660
 ```
-
-The `agent_started` and `agent_status_report` records name the applied mode in
-`socketMode`.
 
 Restart after adding or removing keys:
 

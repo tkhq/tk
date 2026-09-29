@@ -1,5 +1,3 @@
-//! Unix socket permissions shared by the agent daemons.
-
 use std::fmt::{self, Display, Formatter};
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
@@ -9,12 +7,10 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
-/// Octal permission bits applied to an agent socket after it is bound.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct SocketMode(u32);
 
-/// The error reported when a socket mode is not a valid octal value.
 #[derive(Debug, Error)]
 #[error("socket mode must be an octal value from 000 through 777")]
 pub struct SocketModeError;

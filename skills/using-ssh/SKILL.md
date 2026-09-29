@@ -95,11 +95,10 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
    tk --profile agent --message-format json ssh agent status
    ```
 
-   `agent_started` carries `pid`, `socket`, `socketMode` (the applied socket
-   permissions), and the `keys` fingerprints it serves; `agent_status_report`
-   repeats them while it runs. An unattended deployment passes `--key
-   SSH_FINGERPRINT` so the daemon serves one key; custom socket and pid-file
-   paths are in [ssh](../../docs/ssh-agent.md#agent).
+   `agent_started` carries `pid`, `socket`, and the `keys` fingerprints it
+   serves; `agent_status_report` repeats them while it runs. An unattended
+   deployment passes `--key SSH_FINGERPRINT` so the daemon serves one key;
+   custom socket and pid-file paths are in [ssh](../../docs/ssh-agent.md#agent).
 
 5. **Point clients at the socket and verify.** Per repository, or per
    connection:
