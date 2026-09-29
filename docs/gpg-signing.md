@@ -19,7 +19,7 @@ tk gpg keys export | gpg --import
 echo "$FINGERPRINT:6:" | gpg --import-ownertrust
 
 # Sign a file, or stdin.
-tk gpg sign ./release.tar.gz --output ./release.tar.gz.asc
+tk gpg sign --file ./release.tar.gz --output ./release.tar.gz.asc
 echo hello | tk gpg sign
 ```
 
@@ -34,7 +34,8 @@ tk gpg keys list
 tk gpg keys list --wallet-id WALLET_ID
 tk gpg keys add --wallet-id WALLET_ID --key FINGERPRINT
 tk gpg keys export --key FINGERPRINT
-tk gpg keys remove FINGERPRINT   # forgets the key; the wallet account stays
+# Forget the key. The wallet account stays.
+tk gpg keys remove --key FINGERPRINT
 ```
 
 ```bash

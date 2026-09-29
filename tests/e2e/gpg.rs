@@ -280,7 +280,7 @@ fn gpg_keys_create_list_export_sign_remove_and_add() {
     fs::write(&payload, b"signed by the tk e2e suite\n").unwrap();
     let signed = run.ok(run
         .admin()
-        .args(["gpg", "sign", "--key", &fingerprint])
+        .args(["gpg", "sign", "--key", &fingerprint, "--file"])
         .arg(&payload));
     assert_eq!(signed["reason"], "gpg_signature_created");
     assert_eq!(signed["fingerprint"], fingerprint);
@@ -288,9 +288,10 @@ fn gpg_keys_create_list_export_sign_remove_and_add() {
     let signature = signed["armored"].as_str().unwrap();
     assert!(signature.starts_with("-----BEGIN PGP SIGNATURE-----\n"));
 
-    let removed = run.ok(run
-        .admin_offline()
-        .args(["gpg", "keys", "remove", &second_fingerprint]));
+    let removed =
+        run.ok(run
+            .admin_offline()
+            .args(["gpg", "keys", "remove", "--key", &second_fingerprint]));
     let mut expected_removed = registered(&run, &wallet, &second, second_account_id);
     expected_removed["reason"] = json!("gpg_key_removed");
     assert_eq!(removed, expected_removed);
@@ -302,7 +303,7 @@ fn gpg_keys_create_list_export_sign_remove_and_add() {
             "keys": [registered(&run, &wallet, &created, account_id)],
         })
     );
-    let unnamed = run.ok(run.admin().args(["gpg", "sign"]).arg(&payload));
+    let unnamed = run.ok(run.admin().args(["gpg", "sign", "--file"]).arg(&payload));
     assert_eq!(unnamed["fingerprint"], fingerprint);
     assert_eq!(wallet_accounts(&run, &wallet).len(), 3);
 
@@ -360,13 +361,19 @@ fn gpg_key_organization_selects_the_profile() {
 
     let payload = run.home.path().join("payload.txt");
     fs::write(&payload, b"signed through the key's organization\n").unwrap();
-    let signed = run.ok(run.cli().args(["gpg", "sign"]).arg(&payload));
+    let signed = run.ok(run.cli().args(["gpg", "sign", "--file"]).arg(&payload));
     assert_eq!(signed["reason"], "gpg_signature_created");
     assert_eq!(signed["fingerprint"], fingerprint);
 
     let mismatched = run.err(
         run.cli()
-            .args(["--organization-id", &Uuid::nil().to_string(), "gpg", "sign"])
+            .args([
+                "--organization-id",
+                &Uuid::nil().to_string(),
+                "gpg",
+                "sign",
+                "--file",
+            ])
             .arg(&payload),
     );
     assert_eq!(mismatched["code"], "invalid_input");
@@ -550,7 +557,7 @@ fn signing_git_commits_gpg_with_scoped_policy() {
     fs::write(&payload, b"outside the policy scope\n").unwrap();
     run.err_unauthorized(
         run.as_user(&agent)
-            .args(["gpg", "sign", "--key", &other_fingerprint])
+            .args(["gpg", "sign", "--key", &other_fingerprint, "--file"])
             .arg(&payload),
     );
 

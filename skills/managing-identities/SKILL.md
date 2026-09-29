@@ -92,7 +92,7 @@ for a new key the machine that will hold it.
 
    <!-- example: identities.switch -->
    ```sh
-   tk --message-format json profile set agent --api-key-file ./next-key.json
+   tk --message-format json profile set --profile-name agent --api-key-file ./next-key.json
    tk --profile agent --message-format json whoami
    ```
 
@@ -107,7 +107,7 @@ for a new key the machine that will hold it.
    <!-- example: identities.revoke-key -->
    ```sh
    tk --profile admin --message-format json api-key list --user-id USER_ID
-   tk --profile admin --message-format json api-key delete --user-id USER_ID API_KEY_ID
+   tk --profile admin --message-format json api-key delete --user-id USER_ID --id API_KEY_ID
    ```
 
    `data.apiKeys[].credential.publicKey` identifies each key;
@@ -121,8 +121,8 @@ delete the user; key deletion alone leaves any other credential valid.
 
 <!-- example: identities.revoke-user -->
 ```sh
-tk --profile admin --message-format json user get USER_ID
-tk --profile admin --message-format json user delete USER_ID
+tk --profile admin --message-format json user get --id USER_ID
+tk --profile admin --message-format json user delete --id USER_ID
 ```
 
 Proceed only when `data.user.userName` and `data.user.userTags` match the
@@ -147,7 +147,7 @@ intended user and the user is not a root quorum member. Deletion is final.
   user needs one persistent credential. Add `--anchor-key`.
 - `login` fails with `unauthorized` right after `user create`: the create
   activity is still pending or was rejected. Inspect it with
-  `tk --profile admin --message-format json activity get ACTIVITY_ID`.
+  `tk --profile admin --message-format json activity get --id ACTIVITY_ID`.
 - `api-key delete` fails with `unauthorized` when run as the user itself: a
   credential DENY is in force, which is intended. Run it as root.
 - `whoami` fails after `profile set`: the registration has not completed.

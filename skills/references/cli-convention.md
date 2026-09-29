@@ -88,8 +88,8 @@ Resume by id, never by resubmitting:
 
 <!-- example: convention.resume -->
 ```sh
-tk --message-format json activity get ACTIVITY_ID
-tk --message-format json activity wait ACTIVITY_ID --timeout 60
+tk --message-format json activity get --id ACTIVITY_ID
+tk --message-format json activity wait --id ACTIVITY_ID --timeout 60
 ```
 
 `wait` exits `1` with `code: "wait_timeout"` and `details.activity` when the

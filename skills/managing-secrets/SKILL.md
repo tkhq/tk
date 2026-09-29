@@ -38,8 +38,8 @@ must already exist.
 
    <!-- example: secrets.import -->
    ```sh
-   tk --profile admin --message-format json secret import service/API_TOKEN --property consensus=unilateral --from-file ./api-token.txt
-   tk --profile admin --message-format json secret import service/DEPLOY_KEY --property consensus=approval --from-file ./deploy-key.txt
+   tk --profile admin --message-format json secret import --name service/API_TOKEN --property consensus=unilateral --from-file ./api-token.txt
+   tk --profile admin --message-format json secret import --name service/DEPLOY_KEY --property consensus=approval --from-file ./deploy-key.txt
    ```
 
    Each record is `command: "secret.import"` with `data.secretId`,
@@ -80,7 +80,7 @@ must already exist.
    <!-- example: secrets.export-approved -->
    ```sh
    tk --profile agent --message-format json secret export --name service/DEPLOY_KEY --out ./deploy-key
-   tk --profile approver --message-format json activity approve ACTIVITY_ID
+   tk --profile approver --message-format json activity approve --id ACTIVITY_ID
    tk --profile agent --message-format json secret export --name service/DEPLOY_KEY --out ./deploy-key
    ```
 
@@ -96,7 +96,7 @@ must already exist.
    <!-- example: secrets.rotate -->
    ```sh
    tk --profile admin --message-format json secret delete --name service/API_TOKEN
-   tk --profile admin --message-format json secret import service/API_TOKEN --property consensus=unilateral --from-file ./api-token-new.txt
+   tk --profile admin --message-format json secret import --name service/API_TOKEN --property consensus=unilateral --from-file ./api-token-new.txt
    ```
 
    Wait for a `pending` deletion before importing. The new secret has a new
@@ -130,7 +130,7 @@ cannot wait.
   startup path, or approve each `details.pending[].activityId` and rerun.
 - `secret export` fails with `unauthorized` 403: no export policy selects
   this user for this secret's properties. Inspect
-  `tk --profile admin --message-format json policy evaluations ACTIVITY_ID`
+  `tk --profile admin --message-format json policy evaluations --activity-id ACTIVITY_ID`
   when the error carries an activity; otherwise compare the user's tags
   with the policy consensus. Do not switch to root.
 - `secret export` fails with `api_error` and `details.activity`: the export

@@ -13,18 +13,18 @@ tk activity list --status pending
 tk activity list --type 'ACTIVITY_TYPE_CREATE_USER_TAG'
 # Keep only activities created in the last day.
 tk activity list --since 24h --limit 100
-tk activity get ACTIVITY_ID
+tk activity get --id ACTIVITY_ID
 ```
 
 Consensus:
 
 ```bash
 # Approver: one vote per command.
-tk --profile approver activity approve ACTIVITY_ID
-tk --profile approver activity reject ACTIVITY_ID
+tk --profile approver activity approve --id ACTIVITY_ID
+tk --profile approver activity reject --id ACTIVITY_ID
 
 # Submitter: block until the activity ends.
-tk activity wait ACTIVITY_ID --timeout 60
+tk activity wait --id ACTIVITY_ID --timeout 60
 ```
 
 `wait` fails with `api_error` when the activity ends rejected or failed and
@@ -34,7 +34,7 @@ resume.
 To see which policies decided an activity:
 
 ```bash
-tk policy evaluations ACTIVITY_ID
+tk policy evaluations --activity-id ACTIVITY_ID
 ```
 
 ## Skills

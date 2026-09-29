@@ -19,17 +19,17 @@ Several profiles can share one machine:
 
 ```bash
 tk profile list
-tk profile show agent
-tk profile use agent
+tk profile show --profile-name agent
+tk profile use --profile-name agent
 tk --profile agent whoami
 export TK_PROFILE=agent
 
 # Change a profile's organization, API endpoint, or credential file.
-tk profile set agent --organization-id OTHER_ORG_UUID
-tk profile set agent --api-key-file ~/.config/turnkey/tk/api-keys/02….json
+tk profile set --profile-name agent --organization-id OTHER_ORG_UUID
+tk profile set --profile-name agent --api-key-file ~/.config/turnkey/tk/api-keys/02….json
 
 # Forget a profile. Credential files are kept.
-tk profile delete agent
+tk profile delete --profile-name agent
 tk auth logout
 ```
 

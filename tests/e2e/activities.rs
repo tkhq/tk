@@ -13,7 +13,7 @@ fn activity_list_paginates_and_get_and_wait_inspect_a_completed_activity() {
     );
     let activity_id = id_of(&created);
 
-    let got = run.ok(run.admin().args(["activity", "get", &activity_id]));
+    let got = run.ok(run.admin().args(["activity", "get", "--id", &activity_id]));
     assert_eq!(got["command"], "activity.get");
     assert_eq!(got["status"], "completed");
     assert_eq!(
@@ -22,7 +22,7 @@ fn activity_list_paginates_and_get_and_wait_inspect_a_completed_activity() {
     );
     assert_eq!(got["data"]["activity"]["id"], activity_id);
 
-    let waited = run.ok(run.admin().args(["activity", "wait", &activity_id]));
+    let waited = run.ok(run.admin().args(["activity", "wait", "--id", &activity_id]));
     assert_eq!(waited["command"], "activity.wait");
     assert_eq!(waited["status"], "completed");
     assert_eq!(waited["activity"], got["activity"]);
@@ -98,7 +98,9 @@ fn monitoring_activities_approve_reject_wait() {
     assert_eq!(item["status"], "ACTIVITY_STATUS_CONSENSUS_NEEDED");
     assert_eq!(item["type"], "ACTIVITY_TYPE_CREATE_USER_TAG");
 
-    let got = run.ok(run.as_user(&human).args(["activity", "get", &activity]));
+    let got = run.ok(run
+        .as_user(&human)
+        .args(["activity", "get", "--id", &activity]));
     assert_eq!(got["status"], "pending");
     assert_eq!(
         votes(&got),
@@ -106,20 +108,26 @@ fn monitoring_activities_approve_reject_wait() {
         "{got}"
     );
 
-    let approved = run.ok(run.as_user(&human).args(["activity", "approve", &activity]));
+    let approved = run.approve(&human, &activity);
     assert_eq!(approved["command"], "activity.approve");
     assert_eq!(approved["activity"]["id"], activity);
-    let waited =
-        run.ok(run
-            .as_user(&agent)
-            .args(["activity", "wait", &activity, "--timeout", "60"]));
+    let waited = run.ok(run.as_user(&agent).args([
+        "activity",
+        "wait",
+        "--id",
+        &activity,
+        "--timeout",
+        "60",
+    ]));
     assert_eq!(waited["command"], "activity.wait");
     assert_eq!(waited["status"], "completed");
     assert!(
         result(&waited, "createUserTagResult")["userTagId"].is_string(),
         "{waited}"
     );
-    let got = run.ok(run.as_user(&agent).args(["activity", "get", &activity]));
+    let got = run.ok(run
+        .as_user(&agent)
+        .args(["activity", "get", "--id", &activity]));
     let voters = votes(&got);
     assert_eq!(voters.len(), 2, "{got}");
     assert!(
@@ -135,14 +143,13 @@ fn monitoring_activities_approve_reject_wait() {
     ]));
     assert_eq!(pending["status"], "pending");
     let rejected_activity = id_of(&pending);
-    let rejected = run.ok(run
-        .as_user(&human)
-        .args(["activity", "reject", &rejected_activity]));
+    let rejected = run.reject(&human, &rejected_activity);
     assert_eq!(rejected["command"], "activity.reject");
     assert_eq!(rejected["status"], "rejected");
     let failed = run.err(run.as_user(&agent).args([
         "activity",
         "wait",
+        "--id",
         &rejected_activity,
         "--timeout",
         "60",
@@ -154,7 +161,7 @@ fn monitoring_activities_approve_reject_wait() {
     );
     let got = run.ok(run
         .as_user(&human)
-        .args(["activity", "get", &rejected_activity]));
+        .args(["activity", "get", "--id", &rejected_activity]));
     assert!(
         votes(&got)
             .iter()

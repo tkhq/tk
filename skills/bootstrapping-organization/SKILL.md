@@ -107,7 +107,7 @@ which human approves. The organization id comes from step 1.
    ```
 
    `userTagIds` replaces the user's tag set. Confirm with
-   `tk --profile admin --message-format json user get HUMAN_USER_ID`, whose
+   `tk --profile admin --message-format json user get --id HUMAN_USER_ID`, whose
    `data.user.userTags` lists the tag id. A root approver also satisfies the
    root quorum, so consensus behavior is tested later with a non-root
    approver.
@@ -142,7 +142,7 @@ which human approves. The organization id comes from step 1.
 - `user tag create` fails with `api_error` and a 400: a tag with that name
   already exists. Read the id from `tk --profile admin --message-format json user tag list`.
 - `user update` returns `status: "pending"`: an existing policy gates user
-  updates. Resume with `tk activity wait ACTIVITY_ID --timeout 60`; do not
+  updates. Resume with `tk activity wait --id ACTIVITY_ID --timeout 60`; do not
   resubmit.
 - Any command fails with `invalid_input` about the environment bundle: a
   partial `TURNKEY_*` bundle is set in the shell. Unset it or pass

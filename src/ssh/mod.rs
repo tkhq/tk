@@ -68,6 +68,7 @@ pub struct AddArgs {
 #[derive(Debug, Args)]
 pub struct RemoveArgs {
     /// Fingerprint, public key line, or Turnkey private key ID.
+    #[arg(long)]
     key: SshKeyName,
 }
 
@@ -244,7 +245,7 @@ pub async fn run(command: SshCommand, options: &AuthOptions) -> Result<Outcome> 
         } => {
             let removed = auth::remove_ssh_key(key)
                 .await?
-                .map_err(|error| selection_error(error, "name the key positionally"))?;
+                .map_err(|error| selection_error(error, "name one with --key"))?;
             let mut record = RegisteredKey::from(removed);
             record.agent_running = agent::is_default_running().await;
             Ok(Outcome::SshKeyRemoved(record))

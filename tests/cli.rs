@@ -169,7 +169,7 @@ fn usage_errors_follow_the_json_protocol() {
 fn profile_set_requires_a_change_and_agent_keys_repeat() {
     let mut profile = Command::new(env!("CARGO_BIN_EXE_tk"));
     profile
-        .args(["profile", "set", "work"])
+        .args(["profile", "set", "--profile-name", "work"])
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
@@ -181,7 +181,7 @@ fn profile_set_requires_a_change_and_agent_keys_repeat() {
         .args(["ssh", "keys", "remove"])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("<KEY>"));
+        .stderr(predicate::str::contains("--key <KEY>"));
 
     let directory = tempfile::tempdir().expect("temporary directory");
     let mut agent = Command::new(env!("CARGO_BIN_EXE_tk"));

@@ -101,7 +101,7 @@ runs on. There is no minting row here: the one key never expires.
    ```sh
    tk --profile agent --message-format json secret export --name service/API_TOKEN --out ./api-token
    tk --profile agent --message-format json secret export --name service/DEPLOY_KEY --out ./deploy-key
-   tk --profile approver --message-format json activity approve ACTIVITY_ID
+   tk --profile approver --message-format json activity approve --id ACTIVITY_ID
    tk --profile agent --message-format json secret export --name service/DEPLOY_KEY --out ./deploy-key
    tk --profile agent --message-format json api-key register --input-json '{"userId":"AGENT_USER_ID","apiKeys":[{"apiKeyName":"escape","publicKey":"PUBLIC_KEY","curveType":"API_KEY_CURVE_P256"}]}'
    tk --profile agent --message-format json api-key list --user-id AGENT_USER_ID
@@ -161,7 +161,7 @@ runs on. There is no minting row here: the one key never expires.
 - The unilateral export fails with `unauthorized` 403: no export policy
   selects this tag for this property. Check the secret carries
   `consensus=unilateral` and the policy's `AGENT_TAG` is the id, not the
-  name; `policy evaluations ACTIVITY_ID` shows the clause when an activity
+  name; `policy evaluations --activity-id ACTIVITY_ID` shows the clause when an activity
   exists.
 - The approval export returns `completed` without a human vote: the
   approver is root, or the secret carries `consensus=unilateral`. Fix the

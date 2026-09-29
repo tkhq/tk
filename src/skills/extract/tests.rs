@@ -574,8 +574,8 @@ tk policy create --input-file - <<'EOF'
 {"policyName": "p", "effect": "EFFECT_DENY"}
 EOF
 tk secret export --name api-token --out ./file.txt 2>/dev/null >> log
-tk --profile "$PROFILE_ID" --organization-id ORG_UUID user get USER_ID
-tk activity wait ACTIVITY_ID --timeout 60; tk activity get ACTIVITY_ID
+tk --profile "$PROFILE_ID" --organization-id ORG_UUID user get --id USER_ID
+tk activity wait --id ACTIVITY_ID --timeout 60; tk activity get --id ACTIVITY_ID
 "#;
     let script = script(Path::new("test.md"), 1, body, &PUBLIC_KEY).unwrap();
     let argv: Vec<Vec<&str>> = script
@@ -642,10 +642,19 @@ tk activity wait ACTIVITY_ID --timeout 60; tk activity get ACTIVITY_ID
                 UUID_FIXTURE,
                 "user",
                 "get",
+                "--id",
                 UUID_FIXTURE,
             ],
-            vec!["tk", "activity", "wait", UUID_FIXTURE, "--timeout", "60"],
-            vec!["tk", "activity", "get", UUID_FIXTURE],
+            vec![
+                "tk",
+                "activity",
+                "wait",
+                "--id",
+                UUID_FIXTURE,
+                "--timeout",
+                "60"
+            ],
+            vec!["tk", "activity", "get", "--id", UUID_FIXTURE],
         ]
     );
     assert_eq!(
@@ -735,8 +744,8 @@ fn extractor_sees_through_control_flow_head_words() {
         vec![vec!["tk", "whoami"]]
     );
     assert_eq!(
-        invocations("while ! tk activity wait ACTIVITY_ID; do :; done"),
-        vec![vec!["tk", "activity", "wait", UUID_FIXTURE]]
+        invocations("while ! tk activity wait --id ACTIVITY_ID; do :; done"),
+        vec![vec!["tk", "activity", "wait", "--id", UUID_FIXTURE]]
     );
     assert_eq!(
         invocations("nohup tk ssh agent start &"),
@@ -846,7 +855,7 @@ tk policy create --input-json "$BODY" <<< x
     assert_eq!(here_string.line, 4);
     assert_eq!(here_string.message, "here-string <<< is not supported");
 
-    let activity_type = unsupported(1, "tk user get ACTIVITY_TYPE_CREATE_USER_TAG");
+    let activity_type = unsupported(1, "tk user get --id ACTIVITY_TYPE_CREATE_USER_TAG");
     assert_eq!(
         activity_type.message,
         "unknown placeholder ACTIVITY_TYPE_CREATE_USER_TAG"
@@ -920,13 +929,13 @@ tk whoami
         "line continuation followed by a comment"
     );
 
-    let unknown = unsupported(1, "tk user get MYSTERY_VALUE");
+    let unknown = unsupported(1, "tk user get --id MYSTERY_VALUE");
     assert_eq!(unknown.message, "unknown placeholder MYSTERY_VALUE");
 
-    let unknown_var = unsupported(1, r#"tk user get "$WHO""#);
+    let unknown_var = unsupported(1, r#"tk user get --id "$WHO""#);
     assert_eq!(unknown_var.message, "unknown shell variable $WHO");
 
-    let braced_var = unsupported(1, "tk user get ${WHO}");
+    let braced_var = unsupported(1, "tk user get --id ${WHO}");
     assert_eq!(braced_var.message, "bare $ is not a supported construct");
 
     let subshell = unsupported(1, "(cd dir && tk whoami)");
@@ -960,14 +969,14 @@ tk whoami
     );
 
     assert_eq!(
-        invocations("tk user get UNKNOWN_THING_ID"),
-        vec![vec!["tk", "user", "get", UUID_FIXTURE]]
+        invocations("tk user get --id UNKNOWN_THING_ID"),
+        vec![vec!["tk", "user", "get", "--id", UUID_FIXTURE]]
     );
 }
 
 #[test]
 fn extractor_output_is_checked_by_the_real_parser() {
-    let bad = invocations("tk user get USER_ID --no-such-flag");
+    let bad = invocations("tk user get --id USER_ID --no-such-flag");
     assert_eq!(
         parse(&bad[0]).unwrap_err().kind(),
         ErrorKind::UnknownArgument
@@ -981,7 +990,7 @@ fn extractor_output_is_checked_by_the_real_parser() {
 #[test]
 fn inline_spans_select_full_invocations_only() {
     let spans = document(
-        r#"Use `tk secret env` at startup, or `tk activity wait ACTIVITY_ID --timeout 60`.
+        r#"Use `tk secret env` at startup, or `tk activity wait --id ACTIVITY_ID --timeout 60`.
 ```sh
 `tk --fenced`
 ```
@@ -989,7 +998,7 @@ fn inline_spans_select_full_invocations_only() {
     )
     .spans;
     let texts: Vec<&str> = spans.iter().map(|span| span.text.as_str()).collect();
-    assert_eq!(texts, ["tk activity wait ACTIVITY_ID --timeout 60"]);
+    assert_eq!(texts, ["tk activity wait --id ACTIVITY_ID --timeout 60"]);
     assert_eq!(spans[0].line, 1);
 }
 

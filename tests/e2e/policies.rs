@@ -22,7 +22,7 @@ fn policy_lifecycle_and_update_field_names() {
         .unwrap()
         .to_string();
 
-    let got = run.ok(run.admin().args(["policy", "get", &policy_id]));
+    let got = run.ok(run.admin().args(["policy", "get", "--id", &policy_id]));
     assert_eq!(got["command"], "policy.get");
     assert_eq!(got["data"]["policy"]["policyId"], policy_id);
     assert_eq!(got["data"]["policy"]["policyName"], name);
@@ -43,7 +43,7 @@ fn policy_lifecycle_and_update_field_names() {
         updated["data"]["activity"]["type"],
         "ACTIVITY_TYPE_UPDATE_POLICY_V2"
     );
-    let got = run.ok(run.admin().args(["policy", "get", &policy_id]));
+    let got = run.ok(run.admin().args(["policy", "get", "--id", &policy_id]));
     assert_eq!(got["data"]["policy"]["notes"], "updated by tk e2e");
     assert_eq!(got["data"]["policy"]["policyName"], name);
     let list = run.ok(run.admin().args(["policy", "list"]));
@@ -72,14 +72,14 @@ fn policy_lifecycle_and_update_field_names() {
     );
 
     let deleted = run.submit(
-        run.admin().args(["policy", "delete", &policy_id]),
+        run.admin().args(["policy", "delete", "--id", &policy_id]),
         "policy.delete",
     );
     assert_eq!(
         result(&deleted, "deletePolicyResult")["policyId"],
         policy_id
     );
-    let missing = run.err(run.admin().args(["policy", "get", &policy_id]));
+    let missing = run.err(run.admin().args(["policy", "get", "--id", &policy_id]));
     assert_eq!(missing["code"], "not_found");
 }
 
@@ -124,6 +124,7 @@ fn quorum_approval_completes_and_rejection_fails_a_consensus_activity() {
     let timed_out = run.err(run.as_user(&approver).args([
         "activity",
         "wait",
+        "--id",
         &tag_activity,
         "--timeout",
         "10",
@@ -132,9 +133,7 @@ fn quorum_approval_completes_and_rejection_fails_a_consensus_activity() {
     assert_eq!(timed_out["code"], "wait_timeout");
     assert_eq!(timed_out["details"]["activity"], pending["activity"]);
 
-    let approved = run.ok(run
-        .as_user(&approver)
-        .args(["activity", "approve", &tag_activity]));
+    let approved = run.approve(&approver, &tag_activity);
     assert_eq!(approved["command"], "activity.approve");
     assert_eq!(approved["activity"]["id"], tag_activity);
     assert!(
@@ -155,9 +154,12 @@ fn quorum_approval_completes_and_rejection_fails_a_consensus_activity() {
             .iter()
             .any(|tag| tag["tagId"] == tag_id)
     );
-    let evaluations = run.ok(run
-        .as_user(&approver)
-        .args(["policy", "evaluations", &tag_activity]));
+    let evaluations = run.ok(run.as_user(&approver).args([
+        "policy",
+        "evaluations",
+        "--activity-id",
+        &tag_activity,
+    ]));
     assert_eq!(evaluations["command"], "policy.evaluations");
     assert!(
         !evaluations["data"]["policyEvaluations"]
@@ -175,28 +177,28 @@ fn quorum_approval_completes_and_rejection_fails_a_consensus_activity() {
     ]));
     assert_eq!(pending["status"], "pending");
     let rejected_activity = id_of(&pending);
-    let rejected = run.ok(run
-        .as_user(&approver)
-        .args(["activity", "reject", &rejected_activity]));
+    let rejected = run.reject(&approver, &rejected_activity);
     assert_eq!(rejected["command"], "activity.reject");
     assert_eq!(rejected["status"], "rejected");
     assert_eq!(
         rejected["activity"],
         json!({"id": rejected_activity, "status": "ACTIVITY_STATUS_REJECTED"})
     );
-    let failed = run.err(
-        run.as_user(&submitter)
-            .args(["activity", "wait", &rejected_activity]),
-    );
+    let failed =
+        run.err(
+            run.as_user(&submitter)
+                .args(["activity", "wait", "--id", &rejected_activity]),
+        );
     assert_eq!(failed["reason"], "command_error");
     assert_eq!(failed["code"], "api_error");
     assert_eq!(
         failed["details"]["activity"],
         json!({"id": rejected_activity, "status": "ACTIVITY_STATUS_REJECTED"})
     );
-    let inspected = run.ok(run
-        .as_user(&approver)
-        .args(["activity", "get", &rejected_activity]));
+    let inspected =
+        run.ok(run
+            .as_user(&approver)
+            .args(["activity", "get", "--id", &rejected_activity]));
     assert_eq!(inspected["status"], "rejected");
 }
 
@@ -226,7 +228,7 @@ fn policy_create_from_flags_stores_effect_condition_consensus_and_notes() {
         .as_str()
         .unwrap()
         .to_string();
-    let got = run.ok(run.admin().args(["policy", "get", &policy_id]));
+    let got = run.ok(run.admin().args(["policy", "get", "--id", &policy_id]));
     assert_eq!(got["data"]["policy"]["policyName"], name);
     assert_eq!(got["data"]["policy"]["effect"], "EFFECT_DENY");
     assert_eq!(
@@ -252,7 +254,7 @@ fn managing_policies_crud_and_evaluations() {
     let condition = "activity.type == 'ACTIVITY_TYPE_CREATE_USER_TAG'";
     let policy_id = run.create_policy_from_flags(&name, "allow", &consensus, condition);
 
-    let got = run.ok(run.admin().args(["policy", "get", &policy_id]));
+    let got = run.ok(run.admin().args(["policy", "get", "--id", &policy_id]));
     assert_eq!(got["command"], "policy.get");
     assert_eq!(got["data"]["policy"]["policyName"], name);
     assert_eq!(got["data"]["policy"]["effect"], "EFFECT_ALLOW");
@@ -274,9 +276,10 @@ fn managing_policies_crud_and_evaluations() {
         "user.tag.create",
     );
     let allowed_activity = id_of(&allowed);
-    let evaluations = run.ok(run
-        .admin()
-        .args(["policy", "evaluations", &allowed_activity]));
+    let evaluations =
+        run.ok(run
+            .admin()
+            .args(["policy", "evaluations", "--activity-id", &allowed_activity]));
     assert_eq!(evaluations["command"], "policy.evaluations");
     let outcomes: Vec<(&str, &str)> = evaluations["data"]["policyEvaluations"]
         .as_array()
@@ -321,15 +324,15 @@ fn managing_policies_crud_and_evaluations() {
         updated["data"]["activity"]["type"],
         "ACTIVITY_TYPE_UPDATE_POLICY_V2"
     );
-    let got = run.ok(run.admin().args(["policy", "get", &policy_id]));
+    let got = run.ok(run.admin().args(["policy", "get", "--id", &policy_id]));
     assert_eq!(got["data"]["policy"]["notes"], "revised");
     assert_eq!(got["data"]["policy"]["condition"], condition);
 
     run.submit(
-        run.admin().args(["policy", "delete", &policy_id]),
+        run.admin().args(["policy", "delete", "--id", &policy_id]),
         "policy.delete",
     );
-    let missing = run.err(run.admin().args(["policy", "get", &policy_id]));
+    let missing = run.err(run.admin().args(["policy", "get", "--id", &policy_id]));
     assert_eq!(missing["code"], "not_found", "{missing}");
     let denied = run.err(run.as_user(&agent).args([
         "user",

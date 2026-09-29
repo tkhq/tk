@@ -17,6 +17,7 @@ fn secret_import_list_and_export_round_trip() {
             .args([
                 "secret",
                 "import",
+                "--name",
                 &name,
                 "--property",
                 "env=prod",
@@ -134,7 +135,7 @@ fn secret_import_list_and_export_round_trip() {
 
     let duplicate = run.err(
         run.admin()
-            .args(["secret", "import", &name])
+            .args(["secret", "import", "--name", &name])
             .write_stdin("other"),
     );
     assert_eq!(duplicate["reason"], "command_error");
@@ -225,9 +226,7 @@ fn secret_export_with_consensus_finishes_by_rerunning_the_command() {
         "re-run must not create a second activity"
     );
 
-    let approved = run.ok(run
-        .as_user(&approver)
-        .args(["activity", "approve", &activity]));
+    let approved = run.approve(&approver, &activity);
     assert_eq!(approved["activity"]["id"], activity);
     run.wait(&activity);
 
@@ -252,9 +251,7 @@ fn secret_export_with_consensus_finishes_by_rerunning_the_command() {
     let rejected_activity = pending["activity"]["id"].as_str().unwrap().to_string();
     assert_ne!(rejected_activity, activity);
     assert!(state.exists(), "a pending export keeps its recovery key");
-    let rejected = run.ok(run
-        .as_user(&approver)
-        .args(["activity", "reject", &rejected_activity]));
+    let rejected = run.reject(&approver, &rejected_activity);
     assert_eq!(rejected["status"], "rejected");
 
     let failed = run.err(
@@ -381,6 +378,7 @@ fn secret_env_exports_matching_secrets_as_dotenv() {
                 .args([
                     "secret",
                     "import",
+                    "--name",
                     &format!("{prefix}/{var}"),
                     "--property",
                     "consensus=unilateral",
@@ -394,6 +392,7 @@ fn secret_env_exports_matching_secrets_as_dotenv() {
             .args([
                 "secret",
                 "import",
+                "--name",
                 &format!("{prefix}/OTHER"),
                 "--property",
                 "consensus=approval",

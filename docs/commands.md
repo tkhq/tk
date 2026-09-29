@@ -119,48 +119,48 @@ tk activity list [OPTIONS]
 Fetch one activity by ID
 
 ```
-tk activity get [OPTIONS] <ID>
+tk activity get [OPTIONS] --id <ID>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<ID>` | required | Activity ID |
+| `--id <ID>` | required | Activity ID |
 
 #### `tk activity approve`
 
 Approve a `pending` activity by ID
 
 ```
-tk activity approve [OPTIONS] <ID>
+tk activity approve [OPTIONS] --id <ID>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<ID>` | required | Activity ID |
+| `--id <ID>` | required | Activity ID |
 
 #### `tk activity reject`
 
 Reject a `pending` activity by ID
 
 ```
-tk activity reject [OPTIONS] <ID>
+tk activity reject [OPTIONS] --id <ID>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<ID>` | required | Activity ID |
+| `--id <ID>` | required | Activity ID |
 
 #### `tk activity wait`
 
 Poll one activity until it reaches a terminal status
 
 ```
-tk activity wait [OPTIONS] <ID>
+tk activity wait [OPTIONS] --id <ID>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<ID>` | required | Activity ID |
+| `--id <ID>` | required | Activity ID |
 | `--timeout <TIMEOUT>` | default `60` | Seconds to poll before failing with `wait_timeout` |
 
 ### `tk ssh`
@@ -230,12 +230,12 @@ tk ssh keys list [OPTIONS]
 Forget a registered key without changing the Turnkey private key
 
 ```
-tk ssh keys remove [OPTIONS] <KEY>
+tk ssh keys remove [OPTIONS] --key <KEY>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<KEY>` | required | Fingerprint, public key line, or Turnkey private key ID |
+| `--key <KEY>` | required | Fingerprint, public key line, or Turnkey private key ID |
 
 #### `tk ssh public-key`
 
@@ -370,12 +370,12 @@ tk user list [OPTIONS]
 Fetch one user by ID
 
 ```
-tk user get [OPTIONS] <ID>
+tk user get [OPTIONS] --id <ID>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<ID>` | required | User ID |
+| `--id <ID>` | required | User ID |
 
 #### `tk user create`
 
@@ -423,12 +423,12 @@ Constraints:
 Delete users by ID
 
 ```
-tk user delete [OPTIONS] <IDS>...
+tk user delete [OPTIONS] --id <IDS>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<IDS>...` | required | User IDs |
+| `--id <IDS> (repeatable)` | required | User IDs |
 
 #### `tk user tag`
 
@@ -493,12 +493,12 @@ Constraints:
 Delete tags by ID
 
 ```
-tk user tag delete [OPTIONS] <IDS>...
+tk user tag delete [OPTIONS] --id <IDS>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<IDS>...` | required | Tag IDs |
+| `--id <IDS> (repeatable)` | required | Tag IDs |
 
 ### `tk policy`
 
@@ -531,12 +531,12 @@ tk policy list [OPTIONS]
 Fetch one policy by ID
 
 ```
-tk policy get [OPTIONS] <ID>
+tk policy get [OPTIONS] --id <ID>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<ID>` | required | Policy ID |
+| `--id <ID>` | required | Policy ID |
 
 #### `tk policy create`
 
@@ -599,24 +599,24 @@ Constraints:
 Delete policies by ID
 
 ```
-tk policy delete [OPTIONS] <IDS>...
+tk policy delete [OPTIONS] --id <IDS>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<IDS>...` | required | Policy IDs |
+| `--id <IDS> (repeatable)` | required | Policy IDs |
 
 #### `tk policy evaluations`
 
 List the policy evaluations recorded for one activity
 
 ```
-tk policy evaluations [OPTIONS] <ACTIVITY_ID>
+tk policy evaluations [OPTIONS] --activity-id <ACTIVITY_ID>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<ACTIVITY_ID>` | required | Activity ID |
+| `--activity-id <ACTIVITY_ID>` | required | Activity ID |
 
 ### `tk api-key`
 
@@ -688,13 +688,13 @@ Constraints:
 Delete API keys of one user by ID
 
 ```
-tk api-key delete [OPTIONS] --user-id <USER_ID> <IDS>...
+tk api-key delete [OPTIONS] --user-id <USER_ID> --id <IDS>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
 | `--user-id <USER_ID>` | required | User who owns the keys |
-| `<IDS>...` | required | API key IDs |
+| `--id <IDS> (repeatable)` | required | API key IDs |
 
 ### `tk wallet`
 
@@ -725,12 +725,12 @@ tk wallet list [OPTIONS]
 Fetch one wallet by ID
 
 ```
-tk wallet get [OPTIONS] <ID>
+tk wallet get [OPTIONS] --id <ID>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<ID>` | required | Wallet ID |
+| `--id <ID>` | required | Wallet ID |
 
 #### `tk wallet create`
 
@@ -893,12 +893,12 @@ tk secret list [OPTIONS]
 Encrypt and import a new named secret
 
 ```
-tk secret import [OPTIONS] <NAME>
+tk secret import [OPTIONS] --name <NAME>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<NAME>` | required | Name of the new secret |
+| `--name <NAME>` | required | Name of the new secret |
 | `--from-file <FROM_FILE>` |  | File holding the secret value |
 | `--property <KEY=VALUE> (repeatable)` |  | Policy-visible property bound to the secret |
 
@@ -1084,12 +1084,12 @@ tk gpg keys add [OPTIONS] --wallet-id <WALLET_ID>
 Forget a registered key
 
 ```
-tk gpg keys remove [OPTIONS] <KEY>
+tk gpg keys remove [OPTIONS] --key <KEY>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<KEY>` | required | Fingerprint or long key ID of the key |
+| `--key <KEY>` | required | Fingerprint or long key ID of the key |
 
 ##### `tk gpg keys list`
 
@@ -1120,13 +1120,13 @@ tk gpg keys export [OPTIONS]
 Write an armored detached signature for a file
 
 ```
-tk gpg sign [OPTIONS] [FILE]
+tk gpg sign [OPTIONS]
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
 | `--key <KEY>` |  | Fingerprint or long key ID of the key |
-| `<FILE>` |  | File to sign; with no file, tk reads stdin |
+| `--file <FILE>` |  | File to sign; with no file, tk reads stdin |
 | `--output <OUTPUT>` |  | Write the armored signature here instead of stdout |
 
 #### `tk gpg agent`
@@ -1315,46 +1315,46 @@ tk profile list [OPTIONS]
 Show one saved profile
 
 ```
-tk profile show [OPTIONS] <NAME>
+tk profile show [OPTIONS] --profile-name <NAME>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<NAME>` | required | Saved profile to show |
+| `--profile-name <NAME>` | required | Saved profile to show |
 
 #### `tk profile use`
 
 Select a saved profile after checking its credential file
 
 ```
-tk profile use [OPTIONS] <NAME>
+tk profile use [OPTIONS] --profile-name <NAME>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<NAME>` | required | Saved profile to select |
+| `--profile-name <NAME>` | required | Saved profile to select |
 
 #### `tk profile delete`
 
 Remove a saved profile
 
 ```
-tk profile delete [OPTIONS] <NAME>
+tk profile delete [OPTIONS] --profile-name <NAME>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<NAME>` | required | Saved profile to remove |
+| `--profile-name <NAME>` | required | Saved profile to remove |
 
 #### `tk profile set`
 
 Update a saved profile
 
 ```
-tk profile set [OPTIONS] <NAME>
+tk profile set [OPTIONS] --profile-name <NAME>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
-| `<NAME>` | required | Saved profile to update |
+| `--profile-name <NAME>` | required | Saved profile to update |
 | `--api-key-file <API_KEY_FILE>` |  | Existing P256 credential JSON file to use from now on |

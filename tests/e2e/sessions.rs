@@ -202,7 +202,9 @@ fn session_loop_rotates_an_agent_profile_and_reports_status() {
         );
     assert_eq!(not_yet["code"], "unauthorized", "{not_yet}");
     assert_eq!(
-        run.ok(run.cli().args(["profile", "show", &agent_profile]))["data"]["profile"]["api_key_file"],
+        run.ok(run
+            .cli()
+            .args(["profile", "show", "--profile-name", &agent_profile]))["data"]["profile"]["api_key_file"],
         fs::canonicalize(&first_key_file).unwrap().to_str().unwrap()
     );
 
@@ -222,7 +224,9 @@ fn session_loop_rotates_an_agent_profile_and_reports_status() {
     assert_eq!(activated["data"]["identity"]["userId"], agent_id);
     assert!(first_key_file.exists());
     assert_eq!(
-        run.ok(run.cli().args(["profile", "show", &agent_profile]))["data"]["profile"]["api_key_file"],
+        run.ok(run
+            .cli()
+            .args(["profile", "show", "--profile-name", &agent_profile]))["data"]["profile"]["api_key_file"],
         new_key_file
     );
     assert!(
@@ -417,7 +421,7 @@ fn provisioning_session_agent_cell(human_mint: bool, human_export: bool) {
         assert_eq!(
             pending["data"]["nextStep"],
             format!(
-                "approve activity {activity_id} (expiring key for user {agent_id}, lifetime 2h), then re-run this command or tk activity wait {activity_id}"
+                "approve activity {activity_id} (expiring key for user {agent_id}, lifetime 2h), then re-run this command or tk activity wait --id {activity_id}"
             ),
             "{pending}"
         );
@@ -528,6 +532,7 @@ fn provisioning_session_agent_provisioner_cannot_self_mint() {
         "delete",
         "--user-id",
         &agent_id,
+        "--id",
         &agent_key_id,
     ]));
 }
@@ -597,8 +602,14 @@ fn provisioning_session_agent_recovers_after_expiry() {
     // sleep: the profile's credential no longer identifies the agent.
     let first_key_id = run.api_key_id(&agent_id, &hex::encode(agent_key.compressed_public_key()));
     run.submit(
-        run.admin()
-            .args(["api-key", "delete", "--user-id", &agent_id, &first_key_id]),
+        run.admin().args([
+            "api-key",
+            "delete",
+            "--user-id",
+            &agent_id,
+            "--id",
+            &first_key_id,
+        ]),
         "api-key.delete",
     );
     let expired = run.err(run.cli().args(["--profile", &profile, "whoami"]));
@@ -633,9 +644,7 @@ fn provisioning_session_agent_recovers_after_expiry() {
     let pending = run.ok(&mut provision);
     assert_eq!(pending["status"], "pending", "{pending}");
     let rejected_activity = id_of(&pending);
-    let rejected = run.ok(run
-        .as_user(&human)
-        .args(["activity", "reject", &rejected_activity]));
+    let rejected = run.reject(&human, &rejected_activity);
     assert_eq!(rejected["status"], "rejected", "{rejected}");
     let resubmitted = run.ok(&mut provision);
     assert_eq!(resubmitted["status"], "pending", "{resubmitted}");

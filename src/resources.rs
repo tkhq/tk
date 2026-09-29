@@ -36,6 +36,7 @@ pub enum UserCommand {
     /// Fetch one user by ID.
     Get {
         /// User ID.
+        #[arg(long)]
         id: Uuid,
     },
     /// Create a user from flags, or one or more users from a
@@ -46,7 +47,7 @@ pub enum UserCommand {
     /// Delete users by ID.
     Delete {
         /// User IDs.
-        #[arg(required = true, num_args = 1..)]
+        #[arg(long = "id", required = true)]
         ids: Vec<Uuid>,
     },
     /// Manage user tags.
@@ -67,7 +68,7 @@ pub enum TagCommand {
     /// Delete tags by ID.
     Delete {
         /// Tag IDs.
-        #[arg(required = true, num_args = 1..)]
+        #[arg(long = "id", required = true)]
         ids: Vec<Uuid>,
     },
 }
@@ -79,6 +80,7 @@ pub enum PolicyCommand {
     /// Fetch one policy by ID.
     Get {
         /// Policy ID.
+        #[arg(long)]
         id: Uuid,
     },
     /// Create a policy from flags, or from a `CreatePolicyIntentV3` parameters
@@ -91,12 +93,13 @@ pub enum PolicyCommand {
     /// Delete policies by ID.
     Delete {
         /// Policy IDs.
-        #[arg(required = true, num_args = 1..)]
+        #[arg(long = "id", required = true)]
         ids: Vec<Uuid>,
     },
     /// List the policy evaluations recorded for one activity.
     Evaluations {
         /// Activity ID.
+        #[arg(long)]
         activity_id: Uuid,
     },
 }
@@ -129,7 +132,7 @@ pub enum ApiKeyCommand {
         #[arg(long)]
         user_id: Uuid,
         /// API key IDs.
-        #[arg(required = true, num_args = 1..)]
+        #[arg(long = "id", required = true)]
         ids: Vec<Uuid>,
     },
 }
@@ -964,7 +967,7 @@ mod tests {
     #[test]
     fn malformed_and_unsupported_inputs_fail_before_auth() {
         for args in [
-            vec!["user", "get", "not-a-uuid"],
+            vec!["user", "get", "--id", "not-a-uuid"],
             vec!["user", "delete"],
             vec!["policy", "delete"],
             vec!["policy", "list", "--cursor", "invented"],
@@ -1084,7 +1087,7 @@ mod tests {
                 "ACTIVITY_TYPE_UPDATE_USER",
             ),
             (
-                vec!["user", "delete", ID],
+                vec!["user", "delete", "--id", ID],
                 "delete_users",
                 "ACTIVITY_TYPE_DELETE_USERS",
             ),
@@ -1099,7 +1102,7 @@ mod tests {
                 "ACTIVITY_TYPE_UPDATE_USER_TAG",
             ),
             (
-                vec!["user", "tag", "delete", ID],
+                vec!["user", "tag", "delete", "--id", ID],
                 "delete_user_tags",
                 "ACTIVITY_TYPE_DELETE_USER_TAGS",
             ),
@@ -1119,12 +1122,12 @@ mod tests {
                 "ACTIVITY_TYPE_UPDATE_POLICY_V2",
             ),
             (
-                vec!["policy", "delete", ID],
+                vec!["policy", "delete", "--id", ID],
                 "delete_policy",
                 "ACTIVITY_TYPE_DELETE_POLICY",
             ),
             (
-                vec!["policy", "delete", ID, OTHER],
+                vec!["policy", "delete", "--id", ID, "--id", OTHER],
                 "delete_policies",
                 "ACTIVITY_TYPE_DELETE_POLICIES",
             ),
@@ -1134,7 +1137,7 @@ mod tests {
                 "ACTIVITY_TYPE_CREATE_API_KEYS_V2",
             ),
             (
-                vec!["api-key", "delete", "--user-id", ID, OTHER],
+                vec!["api-key", "delete", "--user-id", ID, "--id", OTHER],
                 "delete_api_keys",
                 "ACTIVITY_TYPE_DELETE_API_KEYS",
             ),
@@ -1262,7 +1265,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({"user": null})))
             .mount(&server)
             .await;
-        let result = prepare(&["user", "get", ID])
+        let result = prepare(&["user", "get", "--id", ID])
             .unwrap()
             .run(auth(&server))
             .await;
@@ -1334,7 +1337,7 @@ mod tests {
                 .expect(0)
                 .mount(&server)
                 .await;
-            let error = prepare(&["user", "delete", ID])
+            let error = prepare(&["user", "delete", "--id", ID])
                 .unwrap()
                 .run(auth(&server))
                 .await

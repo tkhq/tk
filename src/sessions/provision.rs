@@ -109,7 +109,7 @@ pub(super) async fn run(auth: ResolvedAuth, args: ProvisionArgs) -> Result<Opera
         Some(activity_id) => (
             None,
             Some(format!(
-                "approve activity {activity_id} (expiring key for user {user_id}, lifetime {expires_in}), then re-run this command or tk activity wait {activity_id}"
+                "approve activity {activity_id} (expiring key for user {user_id}, lifetime {expires_in}), then re-run this command or tk activity wait --id {activity_id}"
             )),
         ),
         None => {

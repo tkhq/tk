@@ -111,7 +111,7 @@ or ids the question is about. Every command below prints one JSON record;
 
    <!-- example: inspecting.votes -->
    ```sh
-   tk --profile admin --message-format json activity get ACTIVITY_ID | jq '.data.activity.votes[] | {userId, selection}'
+   tk --profile admin --message-format json activity get --id ACTIVITY_ID | jq '.data.activity.votes[] | {userId, selection}'
    ```
 
    `selection` is `VOTE_SELECTION_APPROVED` or `VOTE_SELECTION_REJECTED`.
@@ -180,7 +180,7 @@ or ids the question is about. Every command below prints one JSON record;
 - A page has zero items but the previous page had a cursor: the previous
   page was exactly `--limit` long. That empty page is the end.
 - `activity list --status pending` shows nothing but a command reported
-  `pending`: the vote may have landed since. `activity get ACTIVITY_ID`
+  `pending`: the vote may have landed since. `activity get --id ACTIVITY_ID`
   shows the current status of that one activity.
 - Step 8 finds no match: widen the traversal to every page, and drop
   `--since` if you added it, before saying "unknown"; an activity older than
