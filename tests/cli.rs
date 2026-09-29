@@ -1,5 +1,7 @@
 //! Tests for top-level CLI parsing.
 
+use std::fs;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{Value, json};
@@ -78,7 +80,7 @@ fn config_command_is_unknown() {
 fn config_path_flag_is_unknown_and_environment_is_ignored() {
     let home = tempfile::tempdir().expect("temporary home");
     let alternate = home.path().join("alternate.toml");
-    std::fs::write(&alternate, "malformed alternate registry").expect("write alternate registry");
+    fs::write(&alternate, "malformed alternate registry").expect("write alternate registry");
 
     let mut flag = Command::new(env!("CARGO_BIN_EXE_tk"));
     let output = flag
@@ -191,4 +193,79 @@ fn profile_set_requires_a_change_and_agent_keys_repeat() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("registry holds no SSH keys"));
+}
+
+#[test]
+fn agent_start_rejects_bad_destination_constraint_inputs() {
+    let home = tempfile::tempdir().expect("temporary home");
+    let start = |arguments: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tk"));
+        command
+            .env("HOME", home.path())
+            .args(["--message-format=json", "ssh", "agent", "start"])
+            .args(arguments);
+        command
+    };
+    let record = |command: &mut Command, code: i32| -> Value {
+        let output = command.assert().code(code).get_output().stdout.clone();
+        serde_json::from_slice(&output).expect("the failure is JSON")
+    };
+
+    let namespace_only = record(&mut start(&["--allow-namespace", "git"]), 2);
+    assert_eq!(namespace_only["code"], "usage_error");
+    assert_eq!(
+        namespace_only["message"],
+        r#"error: the following required arguments were not provided:
+  --allowed-hosts-file <PATH>
+
+Usage: tk ssh agent start --allowed-hosts-file <PATH> --allow-namespace <NAMESPACE>
+
+For more information, try '--help'."#,
+        "{namespace_only}"
+    );
+
+    let hosts = home.path().join("allowed-hosts");
+    let hosts_flag = hosts.display().to_string();
+    let reject = |contents: &str| -> Value {
+        fs::write(&hosts, contents).expect("write allowed hosts");
+        let refused = record(&mut start(&["--allowed-hosts-file", &hosts_flag]), 1);
+        assert_eq!(refused["code"], "invalid_input", "{refused}");
+        refused
+    };
+    let exact = |contents: &str, expected: &str| {
+        let refused = reject(contents);
+        assert_eq!(refused["message"], expected, "{refused}");
+    };
+    exact(
+        "|1|salt|hash ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPZL8okQwaCTLTWjnEyGGCF3HFTXJa2KRQPGoWvDKdF7",
+        &format!(
+            "{hosts_flag}:1: hashed hostnames are not supported; regenerate the file with ssh-keyscan"
+        ),
+    );
+    exact(
+        "@revoked github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPZL8okQwaCTLTWjnEyGGCF3HFTXJa2KRQPGoWvDKdF7",
+        &format!(
+            "{hosts_flag}:1: marker entries such as @revoked and @cert-authority are not supported; list plain host keys"
+        ),
+    );
+    exact(
+        "github.com ssh-ed25519",
+        &format!("{hosts_flag}:1: expected known_hosts fields: hostnames, key type, base64 key"),
+    );
+    exact(
+        r#"# comments only
+
+"#,
+        &format!("{hosts_flag} names no host keys; add entries with ssh-keyscan HOST"),
+    );
+
+    // The message tail is the ssh-key crate's error text, so only the prefix
+    // is ours to assert exactly.
+    let invalid = reject("github.com ssh-ed25519 not-base64!");
+    assert!(
+        invalid["message"].as_str().is_some_and(
+            |message| message.starts_with(&format!("{hosts_flag}:1: invalid host key: "))
+        ),
+        "{invalid}"
+    );
 }

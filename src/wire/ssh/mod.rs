@@ -62,8 +62,10 @@ impl Ed25519PublicKey {
 
     /// Returns the OpenSSH SHA-256 fingerprint.
     pub fn fingerprint(&self) -> String {
-        let digest = Sha256::digest(self.blob());
-        format!("SHA256:{}", STANDARD_NO_PAD.encode(digest))
+        format!(
+            "SHA256:{}",
+            STANDARD_NO_PAD.encode(Sha256::digest(self.blob()))
+        )
     }
 }
 

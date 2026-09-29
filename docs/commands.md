@@ -286,6 +286,8 @@ tk ssh agent start [OPTIONS]
 | Argument | Notes | Description |
 |---|---|---|
 | `--key <KEY> (repeatable)` |  | Serve only this registered key |
+| `--allowed-hosts-file <PATH>` |  | Sign SSH connections only for host keys in this `known_hosts` file |
+| `--allow-namespace <NAMESPACE> (repeatable)` |  | Also sign `ssh-keygen -Y sign` requests in this `SSHSIG` namespace |
 | `--socket <PATH>` |  | Unix socket path for SSH agent connections |
 | `--pid-file <PATH>` |  | PID file path of the background SSH agent |
 | `--socket-mode <SOCKET_MODE>` | default `600` | Octal permissions for the socket |

@@ -1,5 +1,6 @@
 //! Background SSH agent lifecycle and registry-backed key serving.
 
+mod allowed_hosts;
 mod daemon;
 mod lock;
 
@@ -39,10 +40,19 @@ pub async fn run(args: Args, options: &AuthOptions) -> Result<Outcome> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunning {
-    pub pid: u32,
-    pub socket: String,
-    pub socket_mode: SocketMode,
-    pub keys: Vec<String>,
+    pid: u32,
+    socket: String,
+    socket_mode: SocketMode,
+    keys: Vec<String>,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    constraints: Option<DestinationConstraints>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DestinationConstraints {
+    allowed_hosts: Vec<String>,
+    allowed_namespaces: Vec<String>,
 }
 
 #[cfg(test)]
@@ -53,6 +63,7 @@ impl Default for AgentRunning {
             socket: String::new(),
             socket_mode: "600".parse().unwrap(),
             keys: Vec::new(),
+            constraints: None,
         }
     }
 }
@@ -64,6 +75,16 @@ impl Display for AgentRunning {
             "ssh-agent running with pid {} on {}",
             self.pid, self.socket
         )?;
+        if let Some(DestinationConstraints {
+            allowed_hosts,
+            allowed_namespaces,
+        }) = &self.constraints
+        {
+            write!(f, "\nallowed hosts: {}", allowed_hosts.join(", "))?;
+            if !allowed_namespaces.is_empty() {
+                write!(f, "\nallowed namespaces: {}", allowed_namespaces.join(", "))?;
+            }
+        }
         for key in &self.keys {
             write!(f, "\n{key}")?;
         }
@@ -107,9 +128,8 @@ enum Command {
 
 #[derive(Debug, ClapArgs)]
 struct StartArgs {
-    /// Serve only this registered key.
-    #[arg(long, value_name = "KEY")]
-    key: Vec<SshKeyName>,
+    #[command(flatten)]
+    serving: ServingArgs,
 
     /// Unix socket path for SSH agent connections.
     #[arg(long, value_name = "PATH")]
@@ -127,6 +147,26 @@ struct StartArgs {
 }
 
 #[derive(Debug, ClapArgs)]
+struct ServingArgs {
+    /// Serve only this registered key.
+    #[arg(long, value_name = "KEY")]
+    key: Vec<SshKeyName>,
+
+    /// Sign SSH connections only for host keys in this `known_hosts` file.
+    ///
+    /// Requires clients that bind connections with `session-bind@openssh.com`
+    /// (OpenSSH 8.9+). Every other request is refused, except `SSHSIG`
+    /// payloads in an `--allow-namespace` namespace, which are signed on
+    /// unbound connections too.
+    #[arg(long, value_name = "PATH")]
+    allowed_hosts_file: Option<PathBuf>,
+
+    /// Also sign `ssh-keygen -Y sign` requests in this `SSHSIG` namespace.
+    #[arg(long, value_name = "NAMESPACE", requires = "allowed_hosts_file")]
+    allow_namespace: Vec<String>,
+}
+
+#[derive(Debug, ClapArgs)]
 struct AgentPathArgs {
     /// Unix socket path for SSH agent connections.
     #[arg(long, value_name = "PATH")]
@@ -139,9 +179,8 @@ struct AgentPathArgs {
 
 #[derive(Debug, ClapArgs)]
 struct InternalRunArgs {
-    /// Serve only this registered key.
-    #[arg(long, value_name = "KEY")]
-    key: Vec<SshKeyName>,
+    #[command(flatten)]
+    serving: ServingArgs,
 
     /// Unix socket path for SSH agent connections.
     #[arg(long, value_name = "PATH")]

@@ -100,6 +100,17 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
    deployment passes `--key SSH_FINGERPRINT` so the daemon serves one key;
    custom socket and pid-file paths are in [ssh](../../docs/ssh-agent.md#agent).
 
+   Optionally pin the destinations the daemon signs for; no Turnkey policy can see the host a
+   challenge came from. `ssh-keyscan` trusts the network it runs on, so compare what it wrote
+   against the host's published fingerprints. A forwarded socket needs OpenSSH 8.9+ wherever
+   `ssh` runs with it, or a hop can get signatures; see [ssh](../../docs/ssh-agent.md#destination-constraints):
+
+   <!-- example: ssh.constrain -->
+   ```sh
+   ssh-keyscan github.com > ~/.config/turnkey/ssh-allowed-hosts
+   tk --profile agent --message-format json ssh agent start --allowed-hosts-file ~/.config/turnkey/ssh-allowed-hosts --allow-namespace git
+   ```
+
 5. **Point clients at the socket and verify.** Per repository, or per
    connection:
 
@@ -135,6 +146,8 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
 |---|---|
 | ssh.create-key, ssh.policy, ssh.register, ssh.agent-start, ssh.verify | ssh_agent::using_ssh_register_serve_sign |
 | ssh.agent-start | ssh_agent::agent_serves_every_registered_key_and_reports_its_lifecycle |
+| ssh.constrain | ssh_agent::constrained_agent_signs_only_allowed_namespaces_and_reports_them |
+| ssh.constrain | ssh_agent::constrained_agent_gates_ssh_userauth_by_server_host_key |
 | ssh.register | ssh::ssh_key_register_list_print_and_remove_by_every_name |
 
 ## Troubleshooting
@@ -157,8 +170,11 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and tag id
   on it; the usual cause is a policy scoped to a different `private_key.id`
   or a consensus that names the wrong tag. Do not start the daemon as root
   instead.
-- No `SIGN_RAW_PAYLOAD` activity exists: the daemon, started from a profile,
-  could not reload its credential for that signature. The registry under
+- No `SIGN_RAW_PAYLOAD` activity exists: the daemon refused before asking Turnkey.
+  A `--allowed-hosts-file` daemon refused the destination: a client older than
+  OpenSSH 8.9, a forwarded hop, a host outside the file, or a namespace not
+  passed to `--allow-namespace`. Or the daemon, started from a profile, could
+  not reload its credential for that signature. The registry under
   its `HOME` is unreadable or does not parse, its `--profile` was deleted or
   no longer selects a credential for the key's organization, or the
   profile's API key file is unreadable. In the daemon's `HOME`, run

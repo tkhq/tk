@@ -39,14 +39,14 @@ something other than the agent. Every `tk` step in this workflow is a command an
   organization, agent user id, and lifetime before it mints anything.
 - The SSH socket is signing authority. Bind it under the agent's `HOME`,
   mode-restricted to that OS user, or to a supplemental group when its
-  clients run as another uid.
+  clients run as another uid. When anything else can reach the socket, add
+  the `--allowed-hosts-file` hardening step in [using-ssh](../using-ssh/SKILL.md).
 - The OpenPGP socket is signing authority too. The broker alone holds the signing
   profile, serves one fingerprint, and restarts after its own rotation. The agent's
   boundary gets the socket and the public key, never the broker's profile or
   registry, and the agent's own profile has no signing policy on that wallet.
 - Alert on expiry from the loop, not from the agent: an expired agent cannot.
-- A deployment that stages no provider secrets by hand still holds Turnkey
-  credential files. Treat the host as secret-bearing.
+- A deployment that stages no provider secrets by hand still holds Turnkey credential files; treat the host as secret-bearing.
 
 ## Instructions
 

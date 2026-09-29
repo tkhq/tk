@@ -11,14 +11,19 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::{Duration, timeout};
 
-use super::agent::AgentIdentity;
+use super::{SSHSIG_PREAMBLE, agent::AgentIdentity, read_ssh_bytes};
 
 const SSH_ED25519_ALGORITHM: &str = "ssh-ed25519";
+const SESSION_BIND_EXTENSION: &[u8] = b"session-bind@openssh.com";
+const SSH_MSG_USERAUTH_REQUEST: u8 = 50;
+const USERAUTH_PUBLICKEY: &[u8] = b"publickey";
+const USERAUTH_PUBLICKEY_HOSTBOUND: &[u8] = b"publickey-hostbound-v00@openssh.com";
 const CONNECTION_IO_TIMEOUT: Duration = Duration::from_millis(250);
 const MAX_AGENT_FRAME_SIZE: usize = 1 << 20;
 
 /// Generic SSH agent failure response message code.
 pub const SSH_AGENT_FAILURE: u8 = 5;
+pub(super) const SSH_AGENT_SUCCESS: u8 = 6;
 /// SSH agent request code for listing available identities.
 pub const SSH_AGENTC_REQUEST_IDENTITIES: u8 = 11;
 /// SSH agent response code for returning identities.
@@ -27,14 +32,37 @@ pub const SSH_AGENT_IDENTITIES_ANSWER: u8 = 12;
 pub const SSH_AGENTC_SIGN_REQUEST: u8 = 13;
 /// SSH agent response code for returning a signature.
 pub const SSH_AGENT_SIGN_RESPONSE: u8 = 14;
+pub(super) const SSH_AGENTC_EXTENSION: u8 = 27;
 
-/// Parsed fields from an SSH agent sign request.
-#[derive(Debug)]
-pub struct AgentSignRequest {
-    /// Requested public key blob in OpenSSH wire format.
-    pub public_key_blob: Vec<u8>,
-    /// Raw payload bytes to sign.
-    pub data: Vec<u8>,
+#[cfg_attr(test, derive(Debug))]
+pub(super) struct AgentSignRequest<'a> {
+    pub public_key_blob: &'a [u8],
+    pub data: &'a [u8],
+}
+
+pub(super) enum Extension<'a> {
+    SessionBind(Result<SessionBind<'a>>),
+    Unsupported(&'a [u8]),
+}
+
+pub(super) struct SessionBind<'a> {
+    pub host_key_blob: &'a [u8],
+    pub session_id: &'a [u8],
+    pub signature_blob: &'a [u8],
+    pub is_forwarding: bool,
+}
+
+#[cfg_attr(test, derive(Debug, PartialEq))]
+pub(super) enum SignedData<'a> {
+    Userauth {
+        session_id: &'a [u8],
+        public_key_blob: &'a [u8],
+        host_key_blob: Option<&'a [u8]>,
+    },
+    SshSig {
+        namespace: &'a str,
+    },
+    Unrecognized,
 }
 
 /// Encodes an SSH agent packet with the given message type and payload.
@@ -94,15 +122,7 @@ pub fn encode_request_identities_response(identities: &[AgentIdentity]) -> Vec<u
     encode_agent_frame(SSH_AGENT_IDENTITIES_ANSWER, &payload)
 }
 
-/// Parses the fields from a `SSH_AGENTC_SIGN_REQUEST` frame.
-pub fn parse_sign_request_frame(frame: &[u8]) -> Result<AgentSignRequest> {
-    let (message_type, payload) = parse_agent_frame(frame)?;
-    if message_type != SSH_AGENTC_SIGN_REQUEST {
-        return Err(anyhow!(
-            "unsupported SSH agent message type: {message_type}"
-        ));
-    }
-
+pub(super) fn parse_sign_request(payload: &[u8]) -> Result<AgentSignRequest<'_>> {
     let mut cursor = payload;
     let public_key_blob = read_ssh_bytes(&mut cursor)?;
     let data = read_ssh_bytes(&mut cursor)?;
@@ -116,6 +136,98 @@ pub fn parse_sign_request_frame(frame: &[u8]) -> Result<AgentSignRequest> {
         public_key_blob,
         data,
     })
+}
+
+pub(super) fn parse_extension(payload: &[u8]) -> Result<Extension<'_>> {
+    let mut cursor = payload;
+    let name = read_ssh_bytes(&mut cursor)?;
+    Ok(if name == SESSION_BIND_EXTENSION {
+        Extension::SessionBind(parse_session_bind(cursor))
+    } else {
+        Extension::Unsupported(name)
+    })
+}
+
+fn parse_session_bind(mut cursor: &[u8]) -> Result<SessionBind<'_>> {
+    // OpenSSH PROTOCOL.agent fixes this field order for session-bind@openssh.com.
+    let host_key_blob = read_ssh_bytes(&mut cursor)?;
+    let session_id = read_ssh_bytes(&mut cursor)?;
+    let signature_blob = read_ssh_bytes(&mut cursor)?;
+    let Some((&is_forwarding, rest)) = cursor.split_first() else {
+        return Err(anyhow!("truncated SSH agent boolean"));
+    };
+
+    if !rest.is_empty() {
+        return Err(anyhow!("unexpected trailing SSH agent session-bind data"));
+    }
+
+    Ok(SessionBind {
+        host_key_blob,
+        session_id,
+        signature_blob,
+        // RFC 4251 section 5: any nonzero byte is true.
+        is_forwarding: is_forwarding != 0,
+    })
+}
+
+pub(super) fn classify_signed_data(data: &[u8]) -> SignedData<'_> {
+    if let Some(userauth) = parse_userauth(data) {
+        return userauth;
+    }
+    if let Some(namespace) = parse_sshsig_namespace(data) {
+        return SignedData::SshSig { namespace };
+    }
+    SignedData::Unrecognized
+}
+
+fn parse_userauth(data: &[u8]) -> Option<SignedData<'_>> {
+    let mut cursor = data;
+    let session_id = read_ssh_bytes(&mut cursor).ok()?;
+    let (message_type, mut cursor) = cursor.split_first()?;
+    if *message_type != SSH_MSG_USERAUTH_REQUEST {
+        return None;
+    }
+    read_ssh_bytes(&mut cursor).ok()?;
+    if read_ssh_bytes(&mut cursor).ok()? != b"ssh-connection".as_slice() {
+        return None;
+    }
+    let method = read_ssh_bytes(&mut cursor).ok()?;
+    if method != USERAUTH_PUBLICKEY && method != USERAUTH_PUBLICKEY_HOSTBOUND {
+        return None;
+    }
+    let (has_signature, mut cursor) = cursor.split_first()?;
+    // RFC 4252 section 7 includes TRUE here in the data covered by the signature.
+    if *has_signature == 0 {
+        return None;
+    }
+    read_ssh_bytes(&mut cursor).ok()?;
+    let public_key_blob = read_ssh_bytes(&mut cursor).ok()?;
+    // OpenSSH PROTOCOL appends the server host key to hostbound userauth data.
+    let host_key_blob = if method == USERAUTH_PUBLICKEY_HOSTBOUND {
+        Some(read_ssh_bytes(&mut cursor).ok()?)
+    } else {
+        None
+    };
+    if !cursor.is_empty() {
+        return None;
+    }
+    Some(SignedData::Userauth {
+        session_id,
+        public_key_blob,
+        host_key_blob,
+    })
+}
+
+fn parse_sshsig_namespace(data: &[u8]) -> Option<&str> {
+    let mut cursor = data.strip_prefix(SSHSIG_PREAMBLE)?;
+    let namespace = read_ssh_bytes(&mut cursor).ok()?;
+    for _ in 0..3 {
+        read_ssh_bytes(&mut cursor).ok()?;
+    }
+    if !cursor.is_empty() {
+        return None;
+    }
+    str::from_utf8(namespace).ok()
 }
 
 /// Encodes a `SSH_AGENT_SIGN_RESPONSE` packet for a 64-byte Ed25519 signature.
@@ -143,7 +255,7 @@ fn encode_string(bytes: &[u8], mut output: Vec<u8>) -> Vec<u8> {
     output
 }
 
-fn parse_agent_frame(frame: &[u8]) -> Result<(u8, &[u8])> {
+pub(super) fn parse_agent_frame(frame: &[u8]) -> Result<(u8, &[u8])> {
     let Some((length, payload)) = frame.split_first_chunk::<4>() else {
         return Err(anyhow!("truncated SSH agent frame length"));
     };
@@ -159,22 +271,6 @@ fn parse_agent_frame(frame: &[u8]) -> Result<(u8, &[u8])> {
     };
 
     Ok((*kind, body))
-}
-
-fn read_ssh_bytes(cursor: &mut &[u8]) -> Result<Vec<u8>> {
-    let Some((length, rest)) = cursor.split_first_chunk::<4>() else {
-        return Err(anyhow!("truncated SSH string length"));
-    };
-    *cursor = rest;
-
-    let length = u32::from_be_bytes(*length) as usize;
-    if cursor.len() < length {
-        return Err(anyhow!("truncated SSH string body"));
-    }
-
-    let value = cursor[..length].to_vec();
-    *cursor = &cursor[length..];
-    Ok(value)
 }
 
 fn read_u32(cursor: &mut &[u8]) -> Result<u32> {

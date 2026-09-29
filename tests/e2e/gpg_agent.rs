@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 
@@ -34,11 +35,11 @@ impl<'r> Agent<'r> {
             run,
             socket,
         };
-        run.wait_for_child_socket(
+        run.wait_for_child(
             &mut agent.child,
-            &agent.socket,
             "OpenPGP agent",
             "accepting connections",
+            || UnixStream::connect(&agent.socket).is_ok(),
         );
         agent
     }

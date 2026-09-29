@@ -1,5 +1,7 @@
 //! Foreground SSH agent serving identities from a caller-provided keyring.
 
+pub mod destination;
+
 use std::io::{self, ErrorKind};
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::net::UnixListener as StdUnixListener;
@@ -16,8 +18,9 @@ use tokio::task::JoinSet;
 use tracing::{debug, warn};
 
 use super::Ed25519PublicKey;
-use super::protocol;
+use super::protocol::{self, Extension};
 use crate::socket::SocketMode;
+use destination::{DestinationPolicy, Destinations};
 
 /// One identity advertised by the SSH agent.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,7 +55,12 @@ pub trait Keyring: Send + Sync {
 }
 
 /// Runs a foreground SSH agent bound to the provided Unix socket path.
-pub async fn run(socket: PathBuf, mode: SocketMode, keyring: Arc<dyn Keyring>) -> Result<()> {
+pub async fn run(
+    socket: PathBuf,
+    mode: SocketMode,
+    keyring: Arc<dyn Keyring>,
+    policy: Arc<DestinationPolicy>,
+) -> Result<()> {
     remove_stale_socket(&socket).await?;
 
     let result = async {
@@ -83,7 +91,8 @@ pub async fn run(socket: PathBuf, mode: SocketMode, keyring: Arc<dyn Keyring>) -
                 accept_result = listener.accept() => {
                     let (stream, _) = accept_result.context("failed to accept SSH agent connection")?;
                     let keyring = Arc::clone(&keyring);
-                    connections.spawn(async move { handle_connection(stream, keyring).await });
+                    let policy = Arc::clone(&policy);
+                    connections.spawn(async move { handle_connection(stream, keyring, policy).await });
                 }
                 _ = interrupt.recv() => break,
                 _ = terminate.recv() => break,
@@ -119,28 +128,37 @@ pub async fn run(socket: PathBuf, mode: SocketMode, keyring: Arc<dyn Keyring>) -
     result
 }
 
-async fn handle_connection(mut stream: UnixStream, keyring: Arc<dyn Keyring>) -> io::Result<()> {
+async fn handle_connection(
+    mut stream: UnixStream,
+    keyring: Arc<dyn Keyring>,
+    policy: Arc<DestinationPolicy>,
+) -> io::Result<()> {
+    let mut destinations = Destinations::default();
     loop {
         let frame = match protocol::read_frame(&mut stream).await {
             Ok(Some(frame)) => frame,
             Ok(None) => return Ok(()),
             Err(error) if error.kind() == ErrorKind::InvalidData => {
-                let failure = protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[]);
-                let _ = protocol::write_frame(&mut stream, &failure).await;
+                let _ = protocol::write_frame(&mut stream, &failure_frame()).await;
                 return Ok(());
             }
             Err(error) if is_connection_error_kind(error.kind()) => return Ok(()),
             Err(error) => return Err(error),
         };
 
-        let response = match frame.get(4).copied() {
-            Some(protocol::SSH_AGENTC_REQUEST_IDENTITIES) => {
+        let response = match protocol::parse_agent_frame(&frame) {
+            Ok((protocol::SSH_AGENTC_REQUEST_IDENTITIES, _)) => {
                 protocol::encode_request_identities_response(&keyring.identities())
             }
-            Some(protocol::SSH_AGENTC_SIGN_REQUEST) => {
-                sign_response(&frame, keyring.as_ref()).await
+            Ok((protocol::SSH_AGENTC_SIGN_REQUEST, payload)) => {
+                sign_response(payload, keyring.as_ref(), &policy, &destinations).await
             }
-            Some(_) | None => protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[]),
+            Ok((protocol::SSH_AGENTC_EXTENSION, payload))
+                if matches!(policy.as_ref(), DestinationPolicy::Restricted { .. }) =>
+            {
+                bind_response(payload, &mut destinations)
+            }
+            Ok(_) | Err(_) => failure_frame(),
         };
 
         if let Err(error) = protocol::write_frame(&mut stream, &response).await {
@@ -152,36 +170,75 @@ async fn handle_connection(mut stream: UnixStream, keyring: Arc<dyn Keyring>) ->
     }
 }
 
-async fn sign_response(frame: &[u8], keyring: &dyn Keyring) -> Vec<u8> {
-    let request = match protocol::parse_sign_request_frame(frame) {
+fn bind_response(payload: &[u8], destinations: &mut Destinations) -> Vec<u8> {
+    let recorded = match protocol::parse_extension(payload) {
+        Ok(Extension::SessionBind(bind)) => {
+            destinations.bind(bind.and_then(destination::verify_session_bind))
+        }
+        Ok(Extension::Unsupported(name)) => Err(anyhow!(
+            "unsupported SSH agent extension: {}",
+            String::from_utf8_lossy(name)
+        )),
+        Err(error) => Err(error),
+    };
+    match recorded {
+        Ok(()) => protocol::encode_agent_frame(protocol::SSH_AGENT_SUCCESS, &[]),
+        Err(error) => {
+            debug!(?error, "refused an SSH agent extension");
+            failure_frame()
+        }
+    }
+}
+
+async fn sign_response(
+    payload: &[u8],
+    keyring: &dyn Keyring,
+    policy: &DestinationPolicy,
+    destinations: &Destinations,
+) -> Vec<u8> {
+    let request = match protocol::parse_sign_request(payload) {
         Ok(request) => request,
         Err(error) => {
             debug!(?error, "rejected malformed SSH agent sign request");
-            return protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[]);
+            return failure_frame();
         }
     };
-    let public_key = match Ed25519PublicKey::from_blob(&request.public_key_blob) {
+    let public_key = match Ed25519PublicKey::from_blob(request.public_key_blob) {
         Ok(public_key) => public_key,
         Err(error) => {
             debug!(
                 ?error,
                 "SSH agent sign request named an unsupported key blob"
             );
-            return protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[]);
+            return failure_frame();
+        }
+    };
+    let authorized = match policy.authorize(public_key, request.data, destinations) {
+        Ok(authorized) => authorized,
+        Err(refusal) => {
+            debug!(fingerprint = %public_key.fingerprint(), %refusal, "refused an SSH agent sign request");
+            return failure_frame();
         }
     };
 
-    match keyring.sign(&public_key, &request.data).await {
+    match keyring
+        .sign(authorized.public_key(), authorized.data())
+        .await
+    {
         Ok(signature) => protocol::encode_sign_response(&signature),
         Err(SignError::UnknownKey) => {
             debug!(fingerprint = %public_key.fingerprint(), "SSH agent sign request named an unknown key");
-            protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[])
+            failure_frame()
         }
         Err(SignError::Signer(error)) => {
             warn!(?error, fingerprint = %public_key.fingerprint(), "SSH agent signer failed");
-            protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[])
+            failure_frame()
         }
     }
+}
+
+fn failure_frame() -> Vec<u8> {
+    protocol::encode_agent_frame(protocol::SSH_AGENT_FAILURE, &[])
 }
 
 async fn remove_stale_socket(path: &Path) -> Result<()> {

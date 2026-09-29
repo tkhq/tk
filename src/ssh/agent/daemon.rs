@@ -24,7 +24,9 @@ use uuid::Uuid;
 
 use super::lock::{AgentLock, is_lock_held_by_other, resolve_lock_file};
 use super::{
-    AgentNotRunning, AgentPathArgs, AgentRunning, AgentStopped, InternalRunArgs, StartArgs,
+    AgentNotRunning, AgentPathArgs, AgentRunning, AgentStopped, DestinationConstraints,
+    InternalRunArgs, ServingArgs, StartArgs,
+    allowed_hosts::{self, AllowedHosts},
 };
 use crate::auth::{
     self, ApiBaseUrl, AuthOptions, CredentialSource, LoadedRegistry, ResolvedAuth,
@@ -36,6 +38,7 @@ use crate::socket::SocketMode;
 use crate::ssh::registry::{SelectError, SshKeyEntry, SshKeyName};
 use crate::ssh::selection_error;
 use crate::ssh::signer::{BACKOFF, TurnkeySigner};
+use crate::wire::ssh::agent::destination::DestinationPolicy;
 
 const START_TIMEOUT: Duration = Duration::from_secs(4);
 const STOP_TIMEOUT: Duration = Duration::from_secs(4);
@@ -135,6 +138,28 @@ struct AgentMetadata {
     pid: u32,
     socket_mode: SocketMode,
     keys: Vec<String>,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    constraints: Option<StoredConstraints>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
+struct StoredConstraints {
+    allowed_hosts: Vec<String>,
+    allowed_namespaces: Vec<String>,
+}
+
+impl From<StoredConstraints> for DestinationConstraints {
+    fn from(stored: StoredConstraints) -> Self {
+        let StoredConstraints {
+            allowed_hosts,
+            allowed_namespaces,
+        } = stored;
+        Self {
+            allowed_hosts,
+            allowed_namespaces,
+        }
+    }
 }
 
 struct AgentPaths {
@@ -162,7 +187,11 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
         pid_file,
         lock_file,
     } = AgentPaths::resolve(args.socket, args.pid_file)?;
-    let requested = args.key;
+    let ServingArgs {
+        key,
+        allowed_hosts_file,
+        allow_namespace,
+    } = args.serving;
 
     let mut command = Command::new(env::current_exe()?);
     command.arg("ssh").arg("agent").arg("internal-run");
@@ -174,11 +203,18 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
     command
         .arg("--socket-mode")
         .arg(args.socket_mode.to_string());
-    for requested in &requested {
-        command.arg("--key").arg(requested.to_string());
+    for key in &key {
+        command.arg("--key").arg(key.to_string());
+    }
+    if let Some(path) = &allowed_hosts_file {
+        allowed_hosts::load(path).await?;
+        command.arg("--allowed-hosts-file").arg(path);
+    }
+    for namespace in &allow_namespace {
+        command.arg("--allow-namespace").arg(namespace);
     }
     let mut registry = LoadedRegistry::load().await?;
-    select_keys(options, requested, &mut registry)?;
+    select_keys(options, key, &mut registry)?;
 
     create_parent_dir(&socket).await?;
     create_parent_dir(&pid_file).await?;
@@ -208,17 +244,8 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
 
     match wait_for_startup(&socket, &mut child).await {
         Ok(()) => {
-            let AgentMetadata {
-                pid,
-                socket_mode,
-                keys,
-            } = require_metadata(&pid_file).await?;
-            Ok(Outcome::AgentStarted(AgentRunning {
-                pid,
-                socket: socket.display().to_string(),
-                socket_mode,
-                keys,
-            }))
+            let metadata = require_metadata(&pid_file).await?;
+            Ok(Outcome::AgentStarted(agent_running(metadata, &socket)))
         }
         Err(error) => {
             remove_pid_file_owned_by(&pid_file, child_pid).await;
@@ -263,32 +290,59 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
         return Err(anyhow!("ssh-agent is not running"));
     }
 
-    let AgentMetadata {
-        pid,
-        socket_mode,
-        keys,
-    } = require_metadata(&pid_file).await?;
-    if !is_process_alive(pid) {
-        return Err(anyhow!("ssh-agent pid {} is not running", pid));
+    let metadata = require_metadata(&pid_file).await?;
+    if !is_process_alive(metadata.pid) {
+        return Err(anyhow!("ssh-agent pid {} is not running", metadata.pid));
     }
     if probe_agent_socket(&socket).await.is_err() {
         return Err(anyhow!(
             "ssh-agent pid {} is marked running but socket {} is not serving requests",
-            pid,
+            metadata.pid,
             socket.display()
         ));
     }
-    Ok(Outcome::AgentStatusReport(AgentRunning {
+    Ok(Outcome::AgentStatusReport(agent_running(metadata, &socket)))
+}
+
+fn agent_running(metadata: AgentMetadata, socket: &Path) -> AgentRunning {
+    let AgentMetadata {
+        pid,
+        socket_mode,
+        keys,
+        constraints,
+    } = metadata;
+    AgentRunning {
         pid,
         socket: socket.display().to_string(),
         socket_mode,
         keys,
-    }))
+        constraints: constraints.map(Into::into),
+    }
 }
 
 pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result<Outcome> {
+    let ServingArgs {
+        key,
+        allowed_hosts_file,
+        allow_namespace,
+    } = args.serving;
+    let (policy, constraints) = match allowed_hosts_file {
+        None => (DestinationPolicy::Unrestricted, None),
+        Some(path) => {
+            let AllowedHosts { names, keys } = allowed_hosts::load(&path).await?;
+            let policy = DestinationPolicy::Restricted {
+                hosts: keys,
+                namespaces: allow_namespace.clone(),
+            };
+            let constraints = StoredConstraints {
+                allowed_hosts: names,
+                allowed_namespaces: allow_namespace,
+            };
+            (policy, Some(constraints))
+        }
+    };
     let mut registry = LoadedRegistry::load().await?;
-    let selected = select_keys(&options, args.key, &mut registry)?;
+    let selected = select_keys(&options, key, &mut registry)?;
     let mut fixed = None;
     let mut clients = BTreeMap::new();
     let mut keys = Vec::with_capacity(selected.len());
@@ -333,10 +387,11 @@ pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result
         pid: process::id(),
         socket_mode: args.socket_mode,
         keys,
+        constraints,
     };
     write_pid_file(&args.pid_file, &metadata).await?;
 
-    let result = agent::run(args.socket, args.socket_mode, keyring).await;
+    let result = agent::run(args.socket, args.socket_mode, keyring, Arc::new(policy)).await;
     let _ = fs::remove_file(&args.pid_file).await;
     result.map(|()| Outcome::AgentDaemonExited(MachineOnly {}))
 }
@@ -664,11 +719,58 @@ mod tests {
         (directory, pid_file, socket)
     }
 
+    #[test]
+    fn metadata_keeps_its_file_shape_with_and_without_constraints() {
+        let constrained = AgentMetadata {
+            pid: 7,
+            socket_mode: "600".parse().unwrap(),
+            keys: vec!["SHA256:example".to_string()],
+            constraints: Some(StoredConstraints {
+                allowed_hosts: vec!["github.com".to_string()],
+                allowed_namespaces: vec!["git".to_string()],
+            }),
+        };
+        let constrained_json = json!({
+            "pid": 7,
+            "socket_mode": "600",
+            "keys": ["SHA256:example"],
+            "allowed_hosts": ["github.com"],
+            "allowed_namespaces": ["git"],
+        });
+        assert_eq!(
+            serde_json::to_value(&constrained).unwrap(),
+            constrained_json
+        );
+        assert_eq!(
+            serde_json::from_value::<AgentMetadata>(constrained_json).unwrap(),
+            constrained
+        );
+
+        let unconstrained_json = json!({
+            "pid": 7,
+            "socket_mode": "600",
+            "keys": ["SHA256:example"],
+        });
+        let unconstrained = AgentMetadata {
+            constraints: None,
+            ..constrained
+        };
+        assert_eq!(
+            serde_json::to_value(&unconstrained).unwrap(),
+            unconstrained_json
+        );
+        assert_eq!(
+            serde_json::from_value::<AgentMetadata>(unconstrained_json).unwrap(),
+            unconstrained
+        );
+    }
+
     fn metadata(pid: u32) -> AgentMetadata {
         AgentMetadata {
             pid,
             socket_mode: "600".parse().unwrap(),
             keys: vec!["SHA256:example".to_string()],
+            constraints: None,
         }
     }
 

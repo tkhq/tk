@@ -51,6 +51,24 @@ tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid
 tk ssh agent start --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid --socket-mode 660
 ```
 
+## Destination constraints
+
+```bash
+# Sign only for the hosts in a known_hosts file, plus `git` SSHSIG payloads.
+ssh-keyscan github.com > ~/.config/turnkey/ssh-allowed-hosts
+tk ssh agent start --allowed-hosts-file ~/.config/turnkey/ssh-allowed-hosts --allow-namespace git
+```
+
+The agent signs SSH user authentication only after an OpenSSH 8.9+ client binds
+the connection to a listed host key with `session-bind@openssh.com`, and a
+hostbound request must name that same key. A connection bound as a forwarding
+hop, or whose bind fails verification, gets no signatures. An unbound connection
+never gets user authentication, but it can get `SSHSIG` signatures in the
+allowed namespaces. A client older than OpenSSH 8.9 sends no bind, so a hop
+forwarded by one looks unbound: it can get those `SSHSIG` signatures and can
+bind itself to a listed host for user authentication. Turnkey policies never see
+the destination host, so this is the place to pin it.
+
 Restart after adding or removing keys:
 
 ```bash
