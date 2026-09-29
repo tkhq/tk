@@ -106,13 +106,14 @@ fn login_creates_registry_and_profile_commands_behave() {
         json!({"activeProfile": name, "profiles": {name.clone(): profile}})
     );
 
-    let show = run.ok(run.cli().args(["profile", "show", &name]));
+    let show = run.ok(run.cli().args(["profile", "show", "--profile-name", &name]));
     assert_eq!(show["command"], "profile.show");
     assert_eq!(show["data"], json!({"name": name, "profile": profile}));
 
     let set = run.ok(run.cli().args([
         "profile",
         "set",
+        "--profile-name",
         &name,
         "--api-base-url",
         &run.config.api_base_url,
@@ -120,9 +121,14 @@ fn login_creates_registry_and_profile_commands_behave() {
     assert_eq!(set["command"], "profile.set");
     assert_eq!(set["data"], json!({"name": name, "profile": profile}));
     let other_org = Uuid::nil().to_string();
-    let moved = run.ok(run
-        .cli()
-        .args(["profile", "set", &name, "--organization-id", &other_org]));
+    let moved = run.ok(run.cli().args([
+        "profile",
+        "set",
+        "--profile-name",
+        &name,
+        "--organization-id",
+        &other_org,
+    ]));
     let mut moved_profile = profile.clone();
     moved_profile["organization_id"] = json!(other_org);
     assert_eq!(
@@ -130,12 +136,13 @@ fn login_creates_registry_and_profile_commands_behave() {
         json!({"name": name, "profile": moved_profile})
     );
     assert_eq!(
-        run.ok(run.cli().args(["profile", "show", &name]))["data"],
+        run.ok(run.cli().args(["profile", "show", "--profile-name", &name]))["data"],
         json!({"name": name, "profile": moved_profile})
     );
     let restored = run.ok(run.cli().args([
         "profile",
         "set",
+        "--profile-name",
         &name,
         "--organization-id",
         org,
@@ -146,6 +153,7 @@ fn login_creates_registry_and_profile_commands_behave() {
     let unknown = run.err(run.cli().args([
         "profile",
         "set",
+        "--profile-name",
         "no-such-profile",
         "--organization-id",
         org,
@@ -155,13 +163,14 @@ fn login_creates_registry_and_profile_commands_behave() {
     let malformed = run.err(run.cli().args([
         "profile",
         "set",
+        "--profile-name",
         &name,
         "--api-base-url",
         "ftp://api.turnkey.com",
     ]));
     assert_eq!(malformed["code"], "invalid_input");
     assert_eq!(
-        run.ok(run.cli().args(["profile", "show", &name]))["data"],
+        run.ok(run.cli().args(["profile", "show", "--profile-name", &name]))["data"],
         json!({"name": name, "profile": profile})
     );
 
@@ -174,7 +183,7 @@ fn login_creates_registry_and_profile_commands_behave() {
     let no_identity = run.err(run.cli().args(["auth", "status"]));
     assert_eq!(no_identity["code"], "invalid_input");
 
-    let used = run.ok(run.cli().args(["profile", "use", &name]));
+    let used = run.ok(run.cli().args(["profile", "use", "--profile-name", &name]));
     assert_eq!(used["command"], "profile.use");
     assert_eq!(used["data"], json!({"activeProfile": name}));
     assert_eq!(
@@ -182,7 +191,9 @@ fn login_creates_registry_and_profile_commands_behave() {
         name
     );
 
-    let deleted = run.ok(run.cli().args(["profile", "delete", &name]));
+    let deleted = run.ok(run
+        .cli()
+        .args(["profile", "delete", "--profile-name", &name]));
     assert_eq!(deleted["command"], "profile.delete");
     assert_eq!(
         deleted["data"],
@@ -330,7 +341,7 @@ fn profile_create_generates_a_credential_that_logs_in_once_registered() {
         .push(stored["private_key"].as_str().unwrap().to_owned());
     assert_eq!(stored["public_key"], public_key);
     assert_eq!(
-        run.ok(run.cli().args(["profile", "show", &name]))["data"],
+        run.ok(run.cli().args(["profile", "show", "--profile-name", &name]))["data"],
         json!({"name": name, "profile": profile})
     );
 
@@ -384,7 +395,13 @@ fn profile_set_switches_the_credential_file() {
 
     let set = run.ok(run
         .cli()
-        .args(["profile", "set", &admin.name, "--api-key-file"])
+        .args([
+            "profile",
+            "set",
+            "--profile-name",
+            &admin.name,
+            "--api-key-file",
+        ])
         .arg(&next_key_file));
     assert_eq!(set["command"], "profile.set");
     assert_eq!(
@@ -403,7 +420,13 @@ fn profile_set_switches_the_credential_file() {
 
     let restored = run.ok(run
         .cli()
-        .args(["profile", "set", &admin.name, "--api-key-file"])
+        .args([
+            "profile",
+            "set",
+            "--profile-name",
+            &admin.name,
+            "--api-key-file",
+        ])
         .arg(&admin.key_file));
     assert_eq!(
         restored["data"]["profile"]["api_key_file"],
@@ -413,12 +436,20 @@ fn profile_set_switches_the_credential_file() {
 
     let missing = run.err(
         run.cli()
-            .args(["profile", "set", &admin.name, "--api-key-file"])
+            .args([
+                "profile",
+                "set",
+                "--profile-name",
+                &admin.name,
+                "--api-key-file",
+            ])
             .arg(run.home().join("absent.json")),
     );
     assert_eq!(missing["code"], "invalid_input", "{missing}");
     assert_eq!(
-        run.ok(run.cli().args(["profile", "show", &admin.name]))["data"]["profile"]["api_key_file"],
+        run.ok(run
+            .cli()
+            .args(["profile", "show", "--profile-name", &admin.name]))["data"]["profile"]["api_key_file"],
         fs::canonicalize(&admin.key_file).unwrap().to_str().unwrap()
     );
 }
@@ -479,7 +510,7 @@ fn bootstrapping_organization_root_tags_and_approval_model() {
 
     let got = run.ok(run
         .cli()
-        .args(["--profile", &admin.name, "user", "get", &root_user]));
+        .args(["--profile", &admin.name, "user", "get", "--id", &root_user]));
     assert_eq!(got["data"]["user"]["userTags"], json!([human_tag]));
 
     let listed = run.ok(run

@@ -187,6 +187,7 @@ async fn typed_client_http_status_is_classified_end_to_end() {
             &server.uri(),
             "user",
             "get",
+            "--id",
             "00000000-0000-4000-8000-000000000002",
         ]),
         1,
@@ -219,7 +220,7 @@ fn stale_lock_file_from_a_dead_process_does_not_block() {
     registry(&temp);
     let lock = temp.path().join(".config/turnkey/tk.config.lock");
     fs::write(&lock, "99999").unwrap();
-    output(command(&temp).args(["profile", "use", "agent"]));
+    output(command(&temp).args(["profile", "use", "--profile-name", "agent"]));
 }
 
 #[test]
@@ -289,7 +290,7 @@ fn profile_create_and_login_reject_local_mismatches() {
     assert_eq!(
         org_mismatch["message"],
         format!(
-            "profile default is saved with organization {ORG}; run tk profile set default --organization-id {other_org} to change it"
+            "profile default is saved with organization {ORG}; run tk profile set --profile-name default --organization-id {other_org} to change it"
         )
     );
     let url_mismatch = failure(
@@ -299,10 +300,22 @@ fn profile_create_and_login_reject_local_mismatches() {
     assert_eq!(url_mismatch["code"], "invalid_input");
     assert_eq!(
         url_mismatch["message"],
-        "profile default is saved with API base URL https://api.turnkey.com; run tk profile set default --api-base-url https://example.com to change it"
+        "profile default is saved with API base URL https://api.turnkey.com; run tk profile set --profile-name default --api-base-url https://example.com to change it"
     );
     let ambient_profile = failure(command(&temp).env("TK_PROFILE", "ambient").arg("login"), 1);
     assert_eq!(ambient_profile["code"], "invalid_input");
+}
+
+#[test]
+fn saved_profile_commands_reject_empty_profile_names() {
+    let temp = TempDir::new().unwrap();
+    for subcommand in ["show", "use", "delete", "set"] {
+        let parsed = failure(
+            command(&temp).args(["profile", subcommand, "--profile-name", ""]),
+            2,
+        );
+        assert_eq!(parsed["code"], "usage_error");
+    }
 }
 
 #[cfg(unix)]

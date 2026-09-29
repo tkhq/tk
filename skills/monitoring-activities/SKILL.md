@@ -36,7 +36,7 @@ Inputs: the activity id from the pending record, and the approver's profile
 
    <!-- example: activities.get -->
    ```sh
-   tk --profile approver --message-format json activity get ACTIVITY_ID
+   tk --profile approver --message-format json activity get --id ACTIVITY_ID
    ```
 
    `status` is the record status; `data.activity.status` the raw value
@@ -60,8 +60,8 @@ Inputs: the activity id from the pending record, and the approver's profile
 
    <!-- example: activities.vote -->
    ```sh
-   tk --profile approver --message-format json activity approve ACTIVITY_ID
-   tk --profile approver --message-format json activity reject ACTIVITY_ID
+   tk --profile approver --message-format json activity approve --id ACTIVITY_ID
+   tk --profile approver --message-format json activity reject --id ACTIVITY_ID
    ```
 
    `approve` returns `command: "activity.approve"` with `status`
@@ -72,7 +72,7 @@ Inputs: the activity id from the pending record, and the approver's profile
 
    <!-- example: activities.wait -->
    ```sh
-   tk --profile agent --message-format json activity wait ACTIVITY_ID --timeout 60
+   tk --profile agent --message-format json activity wait --id ACTIVITY_ID --timeout 60
    ```
 
    Exit `0` with `status: "completed"` ends the wait; the result is under
@@ -103,7 +103,7 @@ Inputs: the activity id from the pending record, and the approver's profile
   by the policy's consensus, or the activity is no longer pending. Check
   `data.activity.votes` and the consensus expression.
 - `activity approve` returns `pending`: the policy requires more approvers
-  than this vote. `policy evaluations ACTIVITY_ID` shows which clause is
+  than this vote. `policy evaluations --activity-id ACTIVITY_ID` shows which clause is
   unsatisfied.
 - `activity wait` returns `wait_timeout` repeatedly: the activity is waiting
   for a human. Report the id and the missing approver; do not resubmit.

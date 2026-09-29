@@ -25,6 +25,8 @@ struct ActivityCli {
 }
 
 const ORG: &str = "00000000-0000-4000-8000-000000000001";
+const TARGET: Uuid = Uuid::from_u128(0x00000000_0000_4000_8000_000000000002);
+const DECISION: &str = "00000000-0000-4000-8000-000000000003";
 fn activity(id: &str, status: &str) -> Value {
     json!({"activity":{"id":id,"status":status,"fingerprint":"sha256:example"}})
 }
@@ -49,7 +51,7 @@ fn activity_error(error: &Error) -> &ActivityError {
 async fn consensus_target(queries: u64) -> (MockServer, ResolvedAuth) {
     let server = MockServer::start().await;
     let auth = auth(&server, TurnkeyP256ApiKey::generate());
-    get_activity("target", "ACTIVITY_STATUS_CONSENSUS_NEEDED")
+    get_activity(&TARGET.to_string(), "ACTIVITY_STATUS_CONSENSUS_NEEDED")
         .expect(queries)
         .mount(&server)
         .await;
@@ -140,7 +142,7 @@ fn parser_enforces_body_source_and_safe_path() {
         ErrorKind::ValueValidation
     );
     assert_eq!(
-        ActivityCli::try_parse_from(["tk", "wait", "a", "--timeout", "0"])
+        ActivityCli::try_parse_from(["tk", "wait", "--id", &TARGET.to_string(), "--timeout", "0",])
             .unwrap_err()
             .kind(),
         ErrorKind::ValueValidation
@@ -190,6 +192,21 @@ fn list_parser_accepts_repeated_filters_and_rejects_unknown_types() {
             ),
             "{bad:?}: {error}"
         );
+    }
+}
+
+#[test]
+fn parser_requires_uuid_activity_ids() {
+    for subcommand in ["get", "approve", "reject", "wait"] {
+        for id in ["", "not-a-uuid"] {
+            assert_eq!(
+                ActivityCli::try_parse_from(["tk", subcommand, "--id", id])
+                    .unwrap_err()
+                    .kind(),
+                ErrorKind::ValueValidation,
+                "{subcommand} --id {id:?}"
+            );
+        }
     }
 }
 
@@ -285,17 +302,17 @@ async fn since_walks_full_pages_and_stops_at_the_window_or_the_cap() {
 async fn reject_success_and_malformed_submission_are_distinct() {
     let server = MockServer::start().await;
     let auth = auth(&server, TurnkeyP256ApiKey::generate());
-    get_activity("a", "ACTIVITY_STATUS_CONSENSUS_NEEDED")
+    get_activity(&TARGET.to_string(), "ACTIVITY_STATUS_CONSENSUS_NEEDED")
         .mount(&server)
         .await;
     json(
         "submit/reject_activity",
-        activity("a", "ACTIVITY_STATUS_REJECTED"),
+        activity(&TARGET.to_string(), "ACTIVITY_STATUS_REJECTED"),
     )
     .expect(1)
     .mount(&server)
     .await;
-    let output = run_activity(ActivityCommand::Reject { id: "a".into() }, &auth)
+    let output = run_activity(ActivityCommand::Reject { id: TARGET }, &auth)
         .await
         .unwrap();
     assert_eq!(output.status(), Status::Rejected);
@@ -318,24 +335,19 @@ async fn rejected_reject_proposal_is_not_a_rejected_target() {
     let (server, auth) = consensus_target(1).await;
     json(
         "submit/reject_activity",
-        activity("decision", "ACTIVITY_STATUS_REJECTED"),
+        activity(DECISION, "ACTIVITY_STATUS_REJECTED"),
     )
     .expect(1)
     .mount(&server)
     .await;
-    let error = run_activity(
-        ActivityCommand::Reject {
-            id: "target".into(),
-        },
-        &auth,
-    )
-    .await
-    .unwrap_err();
+    let error = run_activity(ActivityCommand::Reject { id: TARGET }, &auth)
+        .await
+        .unwrap_err();
     let error = activity_error(&error);
     assert_eq!(error.kind(), ActivityErrorKind::NotCompleted);
     assert_eq!(
         error.activity(),
-        Some(&json!({"id": "decision", "status": "ACTIVITY_STATUS_REJECTED"}))
+        Some(&json!({"id": DECISION, "status": "ACTIVITY_STATUS_REJECTED"}))
     );
     server.verify().await;
 }
@@ -345,23 +357,18 @@ async fn completed_vote_proposal_reports_the_target_status() {
     let (server, auth) = consensus_target(2).await;
     json(
         "submit/approve_activity",
-        activity("decision", "ACTIVITY_STATUS_COMPLETED"),
+        activity(DECISION, "ACTIVITY_STATUS_COMPLETED"),
     )
     .expect(1)
     .mount(&server)
     .await;
-    let output = run_activity(
-        ActivityCommand::Approve {
-            id: "target".into(),
-        },
-        &auth,
-    )
-    .await
-    .unwrap();
+    let output = run_activity(ActivityCommand::Approve { id: TARGET }, &auth)
+        .await
+        .unwrap();
     assert_eq!(output.status(), Status::Pending);
     assert_eq!(
         output.activity,
-        Some(json!({"id": "target", "status": "ACTIVITY_STATUS_CONSENSUS_NEEDED"}))
+        Some(json!({"id": TARGET, "status": "ACTIVITY_STATUS_CONSENSUS_NEEDED"}))
     );
     server.verify().await;
 }
@@ -459,20 +466,16 @@ async fn vote_submission_failures_retain_last_observed_target() {
                     .unwrap(),
             );
             let args = if approve {
-                ActivityCommand::Approve {
-                    id: "target".into(),
-                }
+                ActivityCommand::Approve { id: TARGET }
             } else {
-                ActivityCommand::Reject {
-                    id: "target".into(),
-                }
+                ActivityCommand::Reject { id: TARGET }
             };
             let error = run_activity(args, &auth).await.unwrap_err();
             let failure = activity_error(&error);
             assert_eq!(failure.kind(), ActivityErrorKind::SubmissionUnknown);
             assert_eq!(
                 failure.activity(),
-                Some(&json!({"id":"target", "status":"ACTIVITY_STATUS_CONSENSUS_NEEDED"}))
+                Some(&json!({"id": TARGET, "status":"ACTIVITY_STATUS_CONSENSUS_NEEDED"}))
             );
             server.verify().await;
         }
@@ -489,13 +492,13 @@ async fn wait_survives_transient_failures_and_fails_fast_on_client_errors() {
         .expect(1)
         .mount(&server)
         .await;
-    get_activity("a", "ACTIVITY_STATUS_COMPLETED")
+    get_activity(&TARGET.to_string(), "ACTIVITY_STATUS_COMPLETED")
         .expect(1)
         .mount(&server)
         .await;
     let output = run_activity(
         ActivityCommand::Wait {
-            id: "a".into(),
+            id: TARGET,
             timeout: 5,
         },
         &auth,
@@ -513,7 +516,7 @@ async fn wait_survives_transient_failures_and_fails_fast_on_client_errors() {
         .await;
     let error = run_activity(
         ActivityCommand::Wait {
-            id: "a".into(),
+            id: TARGET,
             timeout: 5,
         },
         &auth,

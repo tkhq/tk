@@ -99,7 +99,7 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
    ```
 
    Adding an agent later edits the `in [...]` list. Before the edit, resolve every id in the
-   final list with `tk --profile admin --message-format json user get USER_ID`, confirm each is
+   final list with `tk --profile admin --message-format json user get --id USER_ID`, confirm each is
    the intended non-root user carrying `AGENT_TAG` (or `BROKER_TAG`), show the final target set,
    and stop on any mismatch: a root-quorum user's id there lets the provisioner mint a key on root.
    Step 5 run by the real users is the acceptance.
@@ -135,7 +135,7 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
    ```
 
    Human-minting rows: `status: "pending"`; the human checks `data.userId`, `data.publicKey`,
-   and `data.expiresIn`, then runs `tk --profile approver --message-format json activity approve ACTIVITY_ID`;
+   and `data.expiresIn`, then runs `tk --profile approver --message-format json activity approve --id ACTIVITY_ID`;
    the provisioner's rerun returns `completed` with `alreadyRegistered: true`. Unilateral
    row: the first run completes with `data.apiKeyId`. Agent host:
 

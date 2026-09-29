@@ -57,7 +57,7 @@ the policy set.
 
    <!-- example: policies.get -->
    ```sh
-   tk --profile admin --message-format json policy get POLICY_ID
+   tk --profile admin --message-format json policy get --id POLICY_ID
    tk --profile admin --message-format json policy list
    ```
 
@@ -73,7 +73,7 @@ the policy set.
 
    <!-- example: policies.evaluations -->
    ```sh
-   tk --profile admin --message-format json policy evaluations ACTIVITY_ID
+   tk --profile admin --message-format json policy evaluations --activity-id ACTIVITY_ID
    ```
 
    `data.policyEvaluations[]` carries one entry per vote with
@@ -88,7 +88,7 @@ the policy set.
    <!-- example: policies.update -->
    ```sh
    tk --profile admin --message-format json policy update --input-json '{"policyId":"POLICY_ID","policyNotes":"revised"}'
-   tk --profile admin --message-format json policy delete POLICY_ID
+   tk --profile admin --message-format json policy delete --id POLICY_ID
    ```
 
    Re-run step 3 after an update. Deleting an ALLOW removes access
@@ -114,7 +114,7 @@ the policy set.
 - The constrained user gets `unauthorized` on an operation the ALLOW covers:
   check `activity.type` spelling against the table in
   [policy-language.md](../references/policy-language.md), and check that the
-  user actually carries the tag with `tk --profile admin --message-format json user get USER_ID`.
+  user actually carries the tag with `tk --profile admin --message-format json user get --id USER_ID`.
 - The activity is `pending` when it should complete: the consensus names a
   second party. That is allow-once behavior; approve it, or change the
   consensus if unilateral was intended.

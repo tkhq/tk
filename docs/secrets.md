@@ -7,9 +7,9 @@ Follow [authentication](./authentication.md) first.
 
 ```bash
 # From stdin, from a file, or prompted with input hidden.
-echo -n "$API_TOKEN" | tk secret import api-token
-tk secret import db-password --from-file ./password.txt
-tk secret import ssh-passphrase
+echo -n "$API_TOKEN" | tk secret import --name api-token
+tk secret import --name db-password --from-file ./password.txt
+tk secret import --name ssh-passphrase
 
 # Values.
 tk secret export --name api-token
@@ -43,7 +43,7 @@ followed by an import under the same name:
 
 ```bash
 tk secret delete --name api-token
-echo -n "$NEW_API_TOKEN" | tk secret import api-token --property env=prod
+echo -n "$NEW_API_TOKEN" | tk secret import --name api-token --property env=prod
 ```
 
 `delete` accepts `--name` or `--id`. A pending deletion (consensus needed)
@@ -57,8 +57,8 @@ properties, and prints one dotenv line per secret. The variable name is the
 part of the secret name after the last `/`.
 
 ```bash
-tk secret import service/API_TOKEN --property consensus=unilateral
-tk secret import service/DB_URL --property consensus=unilateral
+tk secret import --name service/API_TOKEN --property consensus=unilateral
+tk secret import --name service/DB_URL --property consensus=unilateral
 ```
 
 The process that needs them runs, at startup:
@@ -88,7 +88,7 @@ secrets:
 
 ```bash
 # Properties are bound to the secret forever.
-echo -n "$TOKEN" | tk secret import api-token --property env=prod --property team=payments
+echo -n "$TOKEN" | tk secret import --name api-token --property env=prod --property team=payments
 
 # Context is attached to one export request only.
 tk secret export --name api-token --context purpose=deploy --context ticket=OPS-123
@@ -101,7 +101,7 @@ tk secret export --name api-token --context purpose=deploy --context ticket=OPS-
 tk secret export --name prod-signing-key
 
 # Approver.
-tk --profile approver activity approve ACTIVITY_ID
+tk --profile approver activity approve --id ACTIVITY_ID
 
 # Submitter: the same command now prints the value.
 tk secret export --name prod-signing-key
@@ -115,7 +115,7 @@ Abandon a pending export by rejecting its activity, or leave it: the pending
 state is swept after 8 hours and the activity expires after 24.
 
 ```bash
-tk --profile approver activity reject ACTIVITY_ID
+tk --profile approver activity reject --id ACTIVITY_ID
 ```
 
 ## Skills

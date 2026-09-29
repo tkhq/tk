@@ -58,22 +58,26 @@ pub enum ActivityCommand {
     /// Fetch one activity by ID.
     Get {
         /// Activity ID.
-        id: String,
+        #[arg(long)]
+        id: Uuid,
     },
     /// Approve a `pending` activity by ID.
     Approve {
         /// Activity ID.
-        id: String,
+        #[arg(long)]
+        id: Uuid,
     },
     /// Reject a `pending` activity by ID.
     Reject {
         /// Activity ID.
-        id: String,
+        #[arg(long)]
+        id: Uuid,
     },
     /// Poll one activity until it reaches a terminal status.
     Wait {
         /// Activity ID.
-        id: String,
+        #[arg(long)]
+        id: Uuid,
         /// Seconds to poll before failing with `wait_timeout`.
         #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
@@ -524,12 +528,12 @@ pub async fn run_activity(args: ActivityCommand, auth: &ResolvedAuth) -> Result<
     match args {
         ActivityCommand::List(args) => list(auth, args).await,
         ActivityCommand::Get { id } => {
-            let value = query_activity(auth, &id).await?;
+            let value = query_activity(auth, &id.to_string()).await?;
             Ok(OperationOutput::result("activity.get", value))
         }
-        ActivityCommand::Wait { id, timeout } => wait(auth, &id, timeout).await,
-        ActivityCommand::Approve { id } => vote(auth, &id, true).await,
-        ActivityCommand::Reject { id } => vote(auth, &id, false).await,
+        ActivityCommand::Wait { id, timeout } => wait(auth, id, timeout).await,
+        ActivityCommand::Approve { id } => vote(auth, id, true).await,
+        ActivityCommand::Reject { id } => vote(auth, id, false).await,
     }
 }
 
@@ -640,12 +644,13 @@ fn created_at_seconds(item: &Value) -> Result<u64> {
         })
 }
 
-async fn wait(auth: &ResolvedAuth, id: &str, seconds: u64) -> Result<OperationOutput> {
+async fn wait(auth: &ResolvedAuth, id: Uuid, seconds: u64) -> Result<OperationOutput> {
     let command = "activity.wait";
+    let wire_id = id.to_string();
     let mut last: Option<Value> = None;
     let result = timeout(Duration::from_secs(seconds), async {
         loop {
-            match query_activity(auth, id).await {
+            match query_activity(auth, &wire_id).await {
                 Ok(value) => {
                     let output = OperationOutput::result(command, value);
                     if !output.is_pending() {
@@ -685,13 +690,14 @@ fn transient(error: &Error) -> bool {
     })
 }
 
-async fn vote(auth: &ResolvedAuth, id: &str, approve: bool) -> Result<OperationOutput> {
+async fn vote(auth: &ResolvedAuth, id: Uuid, approve: bool) -> Result<OperationOutput> {
     let command = if approve {
         "activity.approve"
     } else {
         "activity.reject"
     };
-    let value = query_activity(auth, id).await?;
+    let wire_id = id.to_string();
+    let value = query_activity(auth, &wire_id).await?;
     let target = json!({"id": id, "status": value.pointer("/activity/status")});
     let submitted = async {
         let fingerprint = value
@@ -733,11 +739,11 @@ async fn vote(auth: &ResolvedAuth, id: &str, approve: bool) -> Result<OperationO
                     "response omitted activity; inspect activity before resubmitting",
                 )
             })?;
-        let data = if returned.eq_ignore_ascii_case(id) {
+        let data = if Uuid::parse_str(returned).is_ok_and(|returned| returned == id) {
             response
         } else {
             terminal(OperationOutput::result(command, response), true)?;
-            query_activity(auth, id).await?
+            query_activity(auth, &wire_id).await?
         };
         let output = OperationOutput::result(command, data);
         if !approve && matches!(output.status(), Status::Rejected) {

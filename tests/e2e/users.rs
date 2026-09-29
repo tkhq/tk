@@ -42,7 +42,7 @@ fn user_lifecycle_from_input_json_and_stdin() {
     let stdin_user = created_user_id(&created);
 
     for (id, name) in [(&json_user, &json_name), (&stdin_user, &stdin_name)] {
-        let got = run.ok(run.admin().args(["user", "get", id]));
+        let got = run.ok(run.admin().args(["user", "get", "--id", id]));
         assert_eq!(got["command"], "user.get");
         assert_eq!(got["data"]["user"]["userId"], *id);
         assert_eq!(got["data"]["user"]["userName"], *name);
@@ -59,14 +59,14 @@ fn user_lifecycle_from_input_json_and_stdin() {
     assert!(listed.contains(&stdin_user.as_str()));
 
     let deleted = run.submit(
-        run.admin().args(["user", "delete", &stdin_user]),
+        run.admin().args(["user", "delete", "--id", &stdin_user]),
         "user.delete",
     );
     assert_eq!(
         result(&deleted, "deleteUsersResult")["userIds"],
         json!([stdin_user])
     );
-    let missing = run.err(run.admin().args(["user", "get", &stdin_user]));
+    let missing = run.err(run.admin().args(["user", "get", "--id", &stdin_user]));
     assert_eq!(missing["code"], "not_found");
 }
 
@@ -113,7 +113,7 @@ fn user_create_from_flags_resolves_tag_names_and_registers_anchor_and_expiring_k
     );
     let user_id = created_user_id(&created);
 
-    let got = run.ok(run.admin().args(["user", "get", &user_id]));
+    let got = run.ok(run.admin().args(["user", "get", "--id", &user_id]));
     assert_eq!(got["data"]["user"]["userName"], user_name);
     assert_eq!(got["data"]["user"]["userTags"], json!([tag_id]));
     let keys = run.ok(run.admin().args(["api-key", "list", "--user-id", &user_id]));
@@ -356,6 +356,7 @@ fn inspecting_agents_jq_recipes_answer_live_records() {
             .args([
                 "secret",
                 "import",
+                "--name",
                 &secret_name,
                 "--property",
                 "env=prod",
@@ -494,7 +495,7 @@ fn inspecting_agents_jq_recipes_answer_live_records() {
         "{rest}"
     );
 
-    let got = run.ok(run.admin().args(["activity", "get", &pending_id]));
+    let got = run.ok(run.admin().args(["activity", "get", "--id", &pending_id]));
     assert_eq!(
         jq_values(&got, &[VOTES.filter]),
         [json!({"userId": agent_one_id, "selection": "VOTE_SELECTION_APPROVED"})],

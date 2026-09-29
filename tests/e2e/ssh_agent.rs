@@ -280,7 +280,7 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
         )
     );
     let mut remove = bare_cli(run.home());
-    let removed = run.human_stdout(remove.args(["ssh", "keys", "remove", &first_id]));
+    let removed = run.human_stdout(remove.args(["ssh", "keys", "remove", "--key", &first_id]));
     assert_eq!(
         removed,
         format!(
@@ -431,9 +431,14 @@ fn agent_start_narrows_by_key_profile_and_organization() {
     assert_eq!(profiled.stop(), json!({"reason": "agent_stopped"}));
 
     // A profile of another organization has nothing to serve.
-    run.ok(run
-        .cli()
-        .args(["profile", "set", &login.name, "--organization-id", &nil]));
+    run.ok(run.cli().args([
+        "profile",
+        "set",
+        "--profile-name",
+        &login.name,
+        "--organization-id",
+        &nil,
+    ]));
     no_agent(
         run.err(
             run.cli()
@@ -450,10 +455,10 @@ fn agent_start_narrows_by_key_profile_and_organization() {
     // An empty registry fails before any process is spawned.
     run.ok(run
         .admin_offline()
-        .args(["ssh", "keys", "remove", &first_id]));
+        .args(["ssh", "keys", "remove", "--key", &first_id]));
     run.ok(run
         .admin_offline()
-        .args(["ssh", "keys", "remove", &second_id]));
+        .args(["ssh", "keys", "remove", "--key", &second_id]));
     no_agent(
         run.err(
             run.admin_offline()
@@ -627,13 +632,19 @@ fn using_ssh_register_serve_sign() {
     );
     run.ok(run
         .cli()
-        .args(["profile", "set", &profile, "--api-key-file"])
+        .args([
+            "profile",
+            "set",
+            "--profile-name",
+            &profile,
+            "--api-key-file",
+        ])
         .arg(&next_key_file));
 
     let old_id = run.api_key_id(&agent_id, &hex::encode(agent_key.compressed_public_key()));
     let deleted = run.submit(
         run.admin()
-            .args(["api-key", "delete", "--user-id", &agent_id, &old_id]),
+            .args(["api-key", "delete", "--user-id", &agent_id, "--id", &old_id]),
         "api-key.delete",
     );
     assert_eq!(
@@ -652,7 +663,9 @@ fn using_ssh_register_serve_sign() {
     assert_eq!(agent.stop(), json!({"reason": "agent_stopped"}));
     sign_and_check(&profiled);
 
-    run.ok(run.cli().args(["profile", "delete", &profile]));
+    run.ok(run
+        .cli()
+        .args(["profile", "delete", "--profile-name", &profile]));
     let unselected = profiled.sign(&ssh_keygen, &served_public_key, &payload);
     assert!(
         !unselected.status.success(),

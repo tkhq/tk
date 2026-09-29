@@ -16,7 +16,7 @@ tk ssh public-key
 tk ssh public-key --key SSH_FINGERPRINT
 
 # Forget a key. The Turnkey private key is unchanged.
-tk ssh keys remove SSH_FINGERPRINT
+tk ssh keys remove --key SSH_FINGERPRINT
 ```
 
 ## Agent

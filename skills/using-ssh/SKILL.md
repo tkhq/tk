@@ -153,7 +153,7 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
   run `tk --profile admin --message-format json activity list --limit 5`.
 - A failed `SIGN_RAW_PAYLOAD` activity exists: Turnkey denied the signature.
   As root, run
-  `tk --profile admin --message-format json policy evaluations ACTIVITY_ID`
+  `tk --profile admin --message-format json policy evaluations --activity-id ACTIVITY_ID`
   on it; the usual cause is a policy scoped to a different `private_key.id`
   or a consensus that names the wrong user. Do not start the daemon as root
   instead.

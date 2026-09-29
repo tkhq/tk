@@ -35,8 +35,14 @@ fn registered_api_key_is_listed_for_its_user_and_gone_after_delete() {
     assert_eq!(ours["expiresAt"], Value::Null, "{ours}");
 
     let deleted = run.submit(
-        run.admin()
-            .args(["api-key", "delete", "--user-id", &user_id, &api_key_id]),
+        run.admin().args([
+            "api-key",
+            "delete",
+            "--user-id",
+            &user_id,
+            "--id",
+            &api_key_id,
+        ]),
         "api-key.delete",
     );
     assert_eq!(
@@ -80,7 +86,13 @@ fn managing_identities_rotate_and_revoke() {
 
     let switched = run.ok(run
         .cli()
-        .args(["profile", "set", &profile, "--api-key-file"])
+        .args([
+            "profile",
+            "set",
+            "--profile-name",
+            &profile,
+            "--api-key-file",
+        ])
         .arg(&next_file));
     assert_eq!(switched["command"], "profile.set");
     assert_eq!(switched["data"]["publicKey"], next_public);
@@ -104,7 +116,7 @@ fn managing_identities_rotate_and_revoke() {
 
     let deleted = run.submit(
         run.admin()
-            .args(["api-key", "delete", "--user-id", &user_id, &old_id]),
+            .args(["api-key", "delete", "--user-id", &user_id, "--id", &old_id]),
         "api-key.delete",
     );
     assert_eq!(
@@ -115,10 +127,10 @@ fn managing_identities_rotate_and_revoke() {
     assert_unauthenticated(&revoked);
     run.ok(run.cli().args(["--profile", &profile, "whoami"]));
 
-    let got = run.ok(run.admin().args(["user", "get", &user_id]));
+    let got = run.ok(run.admin().args(["user", "get", "--id", &user_id]));
     assert_eq!(got["data"]["user"]["userName"], run.name("agent"));
     let removed = run.submit(
-        run.admin().args(["user", "delete", &user_id]),
+        run.admin().args(["user", "delete", "--id", &user_id]),
         "user.delete",
     );
     assert_eq!(
@@ -127,7 +139,7 @@ fn managing_identities_rotate_and_revoke() {
     );
     let gone = run.err(run.cli().args(["--profile", &profile, "whoami"]));
     assert_eq!(gone["code"], "unauthorized", "{gone}");
-    let missing = run.err(run.admin().args(["user", "get", &user_id]));
+    let missing = run.err(run.admin().args(["user", "get", "--id", &user_id]));
     assert_eq!(missing["code"], "not_found", "{missing}");
 }
 
@@ -211,6 +223,7 @@ fn provisioning_agent_identity_isolation_denies_cross_agent_export() {
                 .args([
                     "secret",
                     "import",
+                    "--name",
                     &name,
                     "--property",
                     "consensus=unilateral",

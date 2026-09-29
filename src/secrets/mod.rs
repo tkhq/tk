@@ -39,7 +39,7 @@ pub enum SecretCommand {
     /// Encrypt and import a new named secret.
     Import {
         /// Name of the new secret.
-        #[arg(value_parser = SecretName::parse_new)]
+        #[arg(long, value_parser = SecretName::parse_new)]
         name: SecretName,
         /// File holding the secret value.
         #[arg(long)]
