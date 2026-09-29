@@ -14,6 +14,7 @@ pub use daemon::is_default_running;
 
 use crate::auth::AuthOptions;
 use crate::outcome::Outcome;
+use crate::socket::SocketMode;
 use crate::ssh::registry::SshKeyName;
 
 #[derive(Debug, ClapArgs)]
@@ -36,12 +37,24 @@ pub async fn run(args: Args, options: &AuthOptions) -> Result<Outcome> {
 }
 
 #[derive(Serialize)]
-#[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunning {
     pub pid: u32,
     pub socket: String,
+    pub socket_mode: SocketMode,
     pub keys: Vec<String>,
+}
+
+#[cfg(test)]
+impl Default for AgentRunning {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            socket: String::new(),
+            socket_mode: "600".parse().unwrap(),
+            keys: Vec::new(),
+        }
+    }
 }
 
 impl Display for AgentRunning {
@@ -105,6 +118,12 @@ struct StartArgs {
     /// PID file path of the background SSH agent.
     #[arg(long, value_name = "PATH")]
     pid_file: Option<PathBuf>,
+
+    /// Octal permissions for the socket.
+    ///
+    /// Access to the socket grants signing authority.
+    #[arg(long, default_value = "600")]
+    socket_mode: SocketMode,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -131,4 +150,32 @@ struct InternalRunArgs {
     /// PID file path of the background SSH agent.
     #[arg(long, value_name = "PATH", hide = true)]
     pid_file: PathBuf,
+
+    /// Octal permissions for the socket.
+    #[arg(long)]
+    socket_mode: SocketMode,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+    use clap::error::ErrorKind;
+
+    use super::*;
+
+    #[derive(Debug, Parser)]
+    struct AgentParser {
+        #[command(flatten)]
+        args: Args,
+    }
+
+    #[test]
+    fn start_rejects_invalid_socket_modes_during_cli_parsing() {
+        for value in ["999", "abc"] {
+            let error = AgentParser::try_parse_from(["agent", "start", "--socket-mode", value])
+                .unwrap_err();
+
+            assert_eq!(error.kind(), ErrorKind::ValueValidation, "{value}");
+        }
+    }
 }

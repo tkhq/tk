@@ -5,11 +5,10 @@ description: Run tk beside an unattended agent so the agent process holds only w
 
 # Sidecar patterns
 
-Result: a deployment where the agent reads its secrets once at startup, a separate
-renewal loop keeps the agent's expiring credential fresh, SSH goes through a socket,
-git signs commits through a broker's socket, and an operator hears about an expired
-credential from something other than the agent. Every `tk` step in this workflow is a
-command another workflow already documents; this workflow fixes where each one runs and what state it keeps.
+Result: a deployment where the agent reads its secrets once at startup, a separate renewal
+loop keeps the agent's expiring credential fresh, SSH goes through a socket, git signs
+commits through a broker's socket, and an operator hears about an expired credential from
+something other than the agent. Every `tk` step in this workflow is a command another workflow already documents; this workflow fixes where each one runs and what state it keeps.
 
 ## Reference
 
@@ -39,7 +38,8 @@ command another workflow already documents; this workflow fixes where each one r
   be authenticated: the provisioner binds the request to the expected
   organization, agent user id, and lifetime before it mints anything.
 - The SSH socket is signing authority. Bind it under the agent's `HOME`,
-  mode-restricted to that OS user.
+  mode-restricted to that OS user, or to a supplemental group when its
+  clients run as another uid.
 - The OpenPGP socket is signing authority too. The broker alone holds the signing
   profile, serves one fingerprint, and restarts after its own rotation. The agent's
   boundary gets the socket and the public key, never the broker's profile or
@@ -115,6 +115,9 @@ secrets are imported ([managing-secrets](../managing-secrets/SKILL.md)).
    ```sh
    install -d -m 0700 /run/agent
    tk --profile agent --message-format json ssh agent start --key SSH_FINGERPRINT --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid
+   # Clients under another uid: share the directory and socket with a supplemental group.
+   install -d -m 0750 -g agents /run/agent
+   tk --profile agent --message-format json ssh agent start --key SSH_FINGERPRINT --socket /run/agent/ssh.sock --pid-file /run/agent/ssh.pid --socket-mode 660
    ```
 
    Export `SSH_AUTH_SOCK=/run/agent/ssh.sock` in the agent's environment.
@@ -140,7 +143,7 @@ secrets are imported ([managing-secrets](../managing-secrets/SKILL.md)).
    |---|---|
    | separation | the model in force: separate OS users, or under the shared-uid model one uid for agent and broker with separate `HOME`s, process trees, and mounts |
    | `HOME`s | the agent's holds only its own profile; the sidecar's holds only the provisioner's |
-   | SSH socket directory | `0700` to the agent's user |
+   | SSH socket directory | `0700` to the agent's user, or `0750` to the shared group with a `0660` socket |
    | broker socket | its model: `0660` owned by the broker and the shared group, or `0600` owned by the shared uid |
    | timer | fires |
    | forced expiry (`--expires-in` shorter than the tick) | renews through the loop |
@@ -175,9 +178,8 @@ timers, mounts, or alert delivery.
 
 ## Troubleshooting
 
-- `session request` reports `data.userId: null`: the agent's key has already
-  expired. Provision with the persisted `AGENT_USER_ID`; activation still
-  verifies with the new key.
+- `session request` reports `data.userId: null`: the agent's key has already expired.
+  Provision with the persisted `AGENT_USER_ID`; activation still verifies with the new key.
 - `session request` fails `invalid_input` naming a pending request: a
   previous tick requested and did not finish. Provision that request; use
   `--replace` only after its activity was rejected.

@@ -1,6 +1,7 @@
 //! Live SSH agent coverage: serving the registry, narrowing, and lifecycle.
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -28,6 +29,16 @@ impl<'r> Agent<'r> {
         keys: &[&str],
         paths: &[(&str, &Path)],
     ) -> Self {
+        Self::start_with(run, command, keys, paths, &[])
+    }
+
+    fn start_with(
+        run: &'r Run,
+        command: &mut TkCommand,
+        keys: &[&str],
+        paths: &[(&str, &Path)],
+        start_args: &[&str],
+    ) -> Self {
         let paths: Vec<String> = paths
             .iter()
             .flat_map(|(flag, path)| [flag.to_string(), path.display().to_string()])
@@ -35,7 +46,8 @@ impl<'r> Agent<'r> {
         let started = run.ok(command
             .args(["ssh", "agent", "start"])
             .args(keys.iter().flat_map(|key| ["--key", key]))
-            .args(&paths));
+            .args(&paths)
+            .args(start_args));
         assert_eq!(started["reason"], "agent_started", "{started}");
         let socket = PathBuf::from(text(&started["socket"]));
         assert!(socket.exists(), "the agent socket was not created");
@@ -178,6 +190,11 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
         run.home().join(".config/turnkey/ssh-agent.sock")
     );
     assert!(run.home().join(".config/turnkey/ssh-agent.pid").exists());
+    assert_eq!(agent.started["socketMode"], "600", "{}", agent.started);
+    assert_eq!(
+        fs::metadata(&agent.socket).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 
     assert_eq!(
         agent.listed_keys(&ssh_add),
@@ -194,6 +211,7 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
             "reason": "agent_status_report",
             "pid": agent.started["pid"],
             "socket": agent.started["socket"],
+            "socketMode": "600",
             "keys": expected_fingerprints,
         })
     );
@@ -507,7 +525,17 @@ fn using_ssh_register_serve_sign() {
     let served_public_key = public_key_file(&run, "served.pub", &served);
     let unserved_public_key = public_key_file(&run, "unserved.pub", &unserved);
 
-    let agent = Agent::start(&run, &mut run.as_user(&agent_key), &[], &paths);
+    let agent = Agent::start_with(
+        &run,
+        &mut run.as_user(&agent_key),
+        &[],
+        &paths,
+        &["--socket-mode", "660"],
+    );
+    assert_eq!(
+        fs::metadata(&agent.socket).unwrap().permissions().mode() & 0o777,
+        0o660
+    );
     assert_eq!(
         agent.listed_keys(&ssh_add),
         sorted(vec![
@@ -521,6 +549,7 @@ fn using_ssh_register_serve_sign() {
             "reason": "agent_status_report",
             "pid": agent.started["pid"],
             "socket": agent.started["socket"],
+            "socketMode": "660",
             "keys": agent.fingerprints(),
         })
     );

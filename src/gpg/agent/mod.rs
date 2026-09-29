@@ -9,7 +9,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixListener as StdUnixListener;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -36,6 +35,7 @@ use super::signer::TurnkeySigner;
 use super::{select_registered, unix_now};
 use crate::auth::{AuthOptions, config_dir};
 use crate::outcome::{MachineOnly, Outcome};
+use crate::socket::SocketMode;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const SIGN_TIMEOUT: Duration = Duration::from_secs(60);
@@ -77,25 +77,6 @@ struct State {
     fingerprint: Fingerprint,
     organization_id: Uuid,
     client: TurnkeyClient<TurnkeyP256ApiKey>,
-}
-
-#[derive(Clone, Debug)]
-struct SocketMode(u32);
-
-#[derive(Debug, Error)]
-#[error("socket mode must be an octal value from 000 through 777")]
-struct SocketModeError;
-
-impl FromStr for SocketMode {
-    type Err = SocketModeError;
-
-    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
-        u32::from_str_radix(value, 8)
-            .ok()
-            .filter(|mode| *mode <= 0o777)
-            .map(Self)
-            .ok_or(SocketModeError)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -313,7 +294,7 @@ async fn acquire_socket(socket: &SocketPath, mode: SocketMode) -> Result<SocketG
         path: staging,
         identity: SocketIdentity::from_metadata(&metadata),
     };
-    fs::set_permissions(&staging_guard.path, Permissions::from_mode(mode.0))
+    fs::set_permissions(&staging_guard.path, mode.permissions())
         .await
         .with_context(|| format!("failed to restrict OpenPGP agent socket {}", path.display()))?;
     let listener = (|| -> io::Result<UnixListener> {
@@ -571,10 +552,14 @@ mod tests {
         SocketPath::try_from(path.to_path_buf()).unwrap()
     }
 
-    async fn acquired(mode: u32) -> (TempDir, PathBuf, SocketGuard) {
+    fn socket_mode(mode: &str) -> SocketMode {
+        mode.parse().unwrap()
+    }
+
+    async fn acquired(mode: &str) -> (TempDir, PathBuf, SocketGuard) {
         let directory = tempdir().unwrap();
         let path = directory.path().join("agent.sock");
-        let guard = acquire_socket(&socket(&path), SocketMode(mode))
+        let guard = acquire_socket(&socket(&path), socket_mode(mode))
             .await
             .unwrap();
         (directory, path, guard)
@@ -593,7 +578,7 @@ mod tests {
         let parsed = AgentParser::try_parse_from(["agent", "serve", "--key", KEY]).unwrap();
         let Command::Serve(args) = parsed.args.command;
 
-        assert_eq!(args.socket_mode.0, 0o600);
+        assert_eq!(args.socket_mode, socket_mode("600"));
     }
 
     #[test]
@@ -603,7 +588,7 @@ mod tests {
                 .unwrap();
         let Command::Serve(args) = parsed.args.command;
 
-        assert_eq!(args.socket_mode.0, 0o640);
+        assert_eq!(args.socket_mode, socket_mode("640"));
     }
 
     #[test]
@@ -765,7 +750,7 @@ mod tests {
 
     #[tokio::test]
     async fn request_send_deadline_bounds_a_peer_that_accepts_without_reading() {
-        let (_directory, path, guard) = acquired(0o600).await;
+        let (_directory, path, guard) = acquired("600").await;
         let accepted = tokio::spawn(async move {
             let (stream, _) = guard.listener.accept().await.unwrap();
             pending::<()>().await;
@@ -799,7 +784,7 @@ mod tests {
 
     #[tokio::test]
     async fn acquired_socket_is_ready_has_requested_mode_and_lives_with_guard() {
-        let (directory, path, guard) = acquired(0o640).await;
+        let (directory, path, guard) = acquired("640").await;
 
         let metadata = std::fs::symlink_metadata(&path).unwrap();
         assert!(metadata.file_type().is_socket());
@@ -819,7 +804,7 @@ mod tests {
         let directory = tempdir().unwrap();
         let path = directory.path().join("s");
 
-        let guard = acquire_socket(&socket(&path), SocketMode(0o600))
+        let guard = acquire_socket(&socket(&path), socket_mode("600"))
             .await
             .unwrap();
         let connected = UnixStream::connect(&path).await.unwrap();
@@ -863,7 +848,7 @@ mod tests {
             unix_socket_path_capacity()
         );
 
-        let guard = acquire_socket(&socket(&path), SocketMode(0o600))
+        let guard = acquire_socket(&socket(&path), socket_mode("600"))
             .await
             .unwrap();
         let connected = UnixStream::connect(&path).await.unwrap();
@@ -875,9 +860,9 @@ mod tests {
 
     #[tokio::test]
     async fn socket_lock_blocks_until_published_guard_is_dropped() {
-        let (_directory, path, guard) = acquired(0o600).await;
+        let (_directory, path, guard) = acquired("600").await;
 
-        let error = acquire_socket(&socket(&path), SocketMode(0o600))
+        let error = acquire_socket(&socket(&path), socket_mode("600"))
             .await
             .err()
             .expect("the published guard must retain the lifecycle lock");
@@ -887,7 +872,7 @@ mod tests {
         );
 
         drop(guard);
-        let replacement_guard = acquire_socket(&socket(&path), SocketMode(0o600))
+        let replacement_guard = acquire_socket(&socket(&path), socket_mode("600"))
             .await
             .unwrap();
         drop(replacement_guard);
@@ -902,8 +887,8 @@ mod tests {
 
         let socket = socket(&path);
         let (first, second) = tokio::join!(
-            acquire_socket(&socket, SocketMode(0o600)),
-            acquire_socket(&socket, SocketMode(0o600))
+            acquire_socket(&socket, socket_mode("600")),
+            acquire_socket(&socket, socket_mode("600"))
         );
 
         let (guard, error) = match (first, second) {
@@ -948,7 +933,7 @@ mod tests {
         let path = directory.path().join("agent.sock");
         std::fs::write(&path, []).unwrap();
 
-        let error = acquire_socket(&socket(&path), SocketMode(0o600))
+        let error = acquire_socket(&socket(&path), socket_mode("600"))
             .await
             .err()
             .expect("non-socket path must be rejected");
@@ -957,14 +942,14 @@ mod tests {
             format!("refusing to replace non-socket path {}", path.display())
         );
         std::fs::remove_file(&path).unwrap();
-        let _guard = acquire_socket(&socket(&path), SocketMode(0o600))
+        let _guard = acquire_socket(&socket(&path), socket_mode("600"))
             .await
             .unwrap();
     }
 
     #[tokio::test]
     async fn cleanup_socket_guard_preserves_a_replacement_at_the_same_path() {
-        let (_directory, path, guard) = acquired(0o600).await;
+        let (_directory, path, guard) = acquired("600").await;
         std::fs::remove_file(&path).unwrap();
         let _replacement = TestUnixListener::bind(&path).unwrap();
 

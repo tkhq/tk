@@ -196,7 +196,10 @@ async fn server_lists_and_signs_with_multiple_stub_identities() {
         refused: identities[2].public_key,
     });
     let server_socket = socket.clone();
-    let server = tokio::spawn(async move { agent::run(server_socket, keyring).await });
+    let server =
+        tokio::spawn(
+            async move { agent::run(server_socket, "600".parse().unwrap(), keyring).await },
+        );
 
     let identities_request =
         protocol::encode_agent_frame(protocol::SSH_AGENTC_REQUEST_IDENTITIES, &[]);
@@ -273,7 +276,10 @@ async fn a_connection_idle_between_requests_still_gets_a_signature() {
         refused: Ed25519PublicKey::from_bytes([0xff; 32]),
     });
     let server_socket = socket.clone();
-    let server = tokio::spawn(async move { agent::run(server_socket, keyring).await });
+    let server =
+        tokio::spawn(
+            async move { agent::run(server_socket, "600".parse().unwrap(), keyring).await },
+        );
 
     let mut stream = connect(&socket).await.expect("agent socket should accept");
     let identities_request =
