@@ -2,7 +2,7 @@
 
 [package]
 name = "turnkey_tk"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.95"
