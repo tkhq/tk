@@ -37,5 +37,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
+      - name: Install SSH, GnuPG, and git
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssh-server openssh-client gnupg git
+          sudo mkdir -p /run/sshd
       - name: Run end-to-end tests
         run: cargo test --locked --test e2e -- --ignored --test-threads 4

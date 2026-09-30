@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, btree_map::Entry};
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::{self, Stdio};
@@ -23,7 +23,9 @@ use uuid::Uuid;
 
 use super::lock::{AgentLock, is_lock_held_by_other, resolve_lock_file};
 use super::{
-    AgentNotRunning, AgentPathArgs, AgentRunning, AgentStopped, InternalRunArgs, StartArgs,
+    AgentNotRunning, AgentPathArgs, AgentRunning, AgentStopped, DestinationConstraints,
+    InternalRunArgs, ServingArgs, StartArgs,
+    allowed_hosts::{self, AllowedHosts},
 };
 use crate::auth::{self, AuthOptions, CredentialSource, LoadedRegistry, ReloadingClient};
 use crate::errors::InvalidInput;
@@ -32,6 +34,7 @@ use crate::socket::SocketMode;
 use crate::ssh::registry::{SelectError, SshKeyEntry, SshKeyName};
 use crate::ssh::selection_error;
 use crate::ssh::signer::{BACKOFF, TurnkeySigner};
+use crate::wire::ssh::agent::destination::DestinationPolicy;
 
 const START_TIMEOUT: Duration = Duration::from_secs(4);
 const STOP_TIMEOUT: Duration = Duration::from_secs(4);
@@ -97,6 +100,8 @@ struct AgentMetadata {
     pid: u32,
     socket_mode: SocketMode,
     keys: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    constraints: Option<DestinationConstraints>,
 }
 
 struct AgentPaths {
@@ -107,8 +112,16 @@ struct AgentPaths {
 
 impl AgentPaths {
     fn resolve(socket: Option<PathBuf>, pid_file: Option<PathBuf>) -> Result<Self> {
-        let socket = socket.map_or_else(default_socket_path, Ok)?;
-        let pid_file = pid_file.map_or_else(default_pid_path, Ok)?;
+        let (socket, pid_file) = match (socket, pid_file) {
+            (None, None) => (default_socket_path()?, default_pid_path()?),
+            (None, Some(pid_file)) => (default_socket_path()?, pid_file),
+            (Some(socket), Some(pid_file)) => (socket, pid_file),
+            (Some(socket), None) => {
+                let mut pid_file = socket.clone().into_os_string();
+                pid_file.push(".pid");
+                (socket, pid_file.into())
+            }
+        };
         let lock_file = resolve_lock_file(&pid_file);
         Ok(Self {
             socket,
@@ -124,23 +137,37 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
         pid_file,
         lock_file,
     } = AgentPaths::resolve(args.socket, args.pid_file)?;
-    let requested = args.key;
+    let ServingArgs {
+        key,
+        allowed_hosts_file,
+        allow_namespace,
+    } = args.serving;
+    if let Some(path) = allowed_hosts_file.as_deref() {
+        let contents = allowed_hosts::read(path).await?;
+        allowed_hosts::parse(path, &contents)
+            .context("the allowed-hosts file must hold ssh-keyscan HOST output")?;
+    }
 
     let mut command = Command::new(env::current_exe()?);
     command.arg("ssh").arg("agent").arg("internal-run");
     for argument in forwarded_auth_arguments(options) {
         command.arg(argument);
     }
-    command.arg("--socket").arg(&socket);
-    command.arg("--pid-file").arg(&pid_file);
-    command
-        .arg("--socket-mode")
-        .arg(args.socket_mode.to_string());
-    for requested in &requested {
-        command.arg("--key").arg(requested.to_string());
+    command.arg(flag("--socket", &socket));
+    command.arg(flag("--pid-file", &pid_file));
+    command.arg(flag("--socket-mode", args.socket_mode.to_string()));
+    for key in &key {
+        command.arg(flag("--key", key.to_string()));
     }
+    if let Some(path) = allowed_hosts_file {
+        command.arg(flag("--allowed-hosts-file", path));
+    }
+    for namespace in allow_namespace {
+        command.arg(flag("--allow-namespace", namespace));
+    }
+
     let mut registry = LoadedRegistry::load().await?;
-    select_keys(options, requested, &mut registry)?;
+    select_keys(options, key, &mut registry)?;
 
     create_parent_dir(&socket).await?;
     create_parent_dir(&pid_file).await?;
@@ -168,20 +195,31 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
         .id()
         .context("background ssh-agent pid was not available")?;
 
-    match wait_for_startup(&socket, &mut child).await {
-        Ok(()) => {
-            let AgentMetadata {
-                pid,
-                socket_mode,
-                keys,
-            } = require_metadata(&pid_file).await?;
-            Ok(Outcome::AgentStarted(AgentRunning {
-                pid,
-                socket: socket.display().to_string(),
-                socket_mode,
-                keys,
-            }))
+    let started = async {
+        wait_for_startup(&socket, &mut child).await?;
+        let metadata = require_metadata(&pid_file).await?;
+        if metadata.pid != child_pid {
+            return Err(anyhow!(
+                "ssh-agent is already running on {}",
+                socket.display()
+            ));
         }
+        Ok(metadata)
+    }
+    .await;
+    match started {
+        Ok(AgentMetadata {
+            pid,
+            socket_mode,
+            keys,
+            constraints,
+        }) => Ok(Outcome::AgentStarted(AgentRunning {
+            pid,
+            socket: socket.display().to_string(),
+            socket_mode,
+            keys,
+            constraints,
+        })),
         Err(error) => {
             remove_pid_file_owned_by(&pid_file, child_pid).await;
             let _ = child.start_kill();
@@ -229,6 +267,7 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
         pid,
         socket_mode,
         keys,
+        constraints,
     } = require_metadata(&pid_file).await?;
     if !is_process_alive(pid) {
         return Err(anyhow!("ssh-agent pid {} is not running", pid));
@@ -245,12 +284,26 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
         socket: socket.display().to_string(),
         socket_mode,
         keys,
+        constraints,
     }))
 }
 
 pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result<Outcome> {
+    let restricted = match args.serving.allowed_hosts_file.as_deref() {
+        None => None,
+        Some(path) => {
+            let contents = allowed_hosts::read(path).await?;
+            let AllowedHosts { names, keys } = allowed_hosts::parse(path, &contents)?;
+            let constraints = DestinationConstraints {
+                allowed_hosts: names,
+                allowed_namespaces: args.serving.allow_namespace,
+            };
+            Some((keys, constraints))
+        }
+    };
+
     let mut registry = LoadedRegistry::load().await?;
-    let selected = select_keys(&options, args.key, &mut registry)?;
+    let selected = select_keys(&options, args.serving.key, &mut registry)?;
     let mut fixed = None;
     let mut clients = BTreeMap::new();
     let mut keys = Vec::with_capacity(selected.len());
@@ -295,10 +348,21 @@ pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result
         pid: process::id(),
         socket_mode: args.socket_mode,
         keys,
+        constraints: restricted
+            .as_ref()
+            .map(|(_, constraints)| constraints.clone()),
     };
     write_pid_file(&args.pid_file, &metadata).await?;
 
-    let result = agent::run(args.socket, args.socket_mode, keyring).await;
+    let policy = match restricted {
+        None => DestinationPolicy::Unrestricted,
+        Some((hosts, constraints)) => DestinationPolicy::Restricted {
+            hosts,
+            namespaces: constraints.allowed_namespaces,
+        },
+    };
+
+    let result = agent::run(args.socket, args.socket_mode, keyring, Arc::new(policy)).await;
     let _ = fs::remove_file(&args.pid_file).await;
     result.map(|()| Outcome::AgentDaemonExited(MachineOnly {}))
 }
@@ -345,18 +409,23 @@ fn select_keys(
 fn forwarded_auth_arguments(options: &AuthOptions) -> Vec<OsString> {
     let mut forwarded = Vec::new();
     if let Some(profile) = options.profile() {
-        forwarded.push(OsString::from("--profile"));
-        forwarded.push(profile.into());
+        forwarded.push(flag("--profile", profile));
     }
     if let Some(organization_id) = options.organization_id() {
-        forwarded.push(OsString::from("--organization-id"));
-        forwarded.push(organization_id.to_string().into());
+        forwarded.push(flag("--organization-id", organization_id.to_string()));
     }
     if let Some(api_base_url) = options.api_base_url() {
-        forwarded.push(OsString::from("--api-base-url"));
-        forwarded.push(api_base_url.into());
+        forwarded.push(flag("--api-base-url", api_base_url));
     }
     forwarded
+}
+
+// The `=` form keeps a value that begins with `-` from parsing as a flag.
+fn flag(name: &str, value: impl AsRef<OsStr>) -> OsString {
+    let mut argument = OsString::from(name);
+    argument.push("=");
+    argument.push(value);
+    argument
 }
 
 fn default_socket_path() -> Result<PathBuf> {
@@ -632,6 +701,7 @@ mod tests {
             pid,
             socket_mode: "600".parse().unwrap(),
             keys: vec!["SHA256:example".to_string()],
+            constraints: None,
         }
     }
 
@@ -709,6 +779,32 @@ mod tests {
         };
         assert_eq!(classify(&error).code, ErrorCode::ApiError);
         assert_eq!(server.received_requests().await.unwrap().len(), 5);
+    }
+
+    #[tokio::test]
+    async fn a_pid_file_without_constraints_reads_as_unconstrained_and_malformed_ones_fail() {
+        let (_directory, pid_file, _socket) = agent_paths();
+        fs::write(
+            &pid_file,
+            br#"{"pid":4242,"socket_mode":"600","keys":["SHA256:example"]}"#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            read_metadata(&pid_file).await.unwrap(),
+            Some(metadata(4242))
+        );
+
+        fs::write(
+            &pid_file,
+            br#"{"pid":4242,"socket_mode":"600","keys":[],"constraints":{"allowedHosts":"github.com","allowedNamespaces":[]}}"#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            read_metadata(&pid_file).await.unwrap_err().to_string(),
+            format!("failed to parse pid file at {}", pid_file.display())
+        );
     }
 
     #[tokio::test]

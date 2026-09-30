@@ -286,8 +286,10 @@ tk ssh agent start [OPTIONS]
 | Argument | Notes | Description |
 |---|---|---|
 | `--key <KEY> (repeatable)` |  | Serve only this registered key |
+| `--allowed-hosts-file <PATH>` |  | Sign SSH connections only for host keys in this `known_hosts` file |
+| `--allow-namespace <NAMESPACE> (repeatable)` |  | Also sign `ssh-keygen -Y sign` requests in this `SSHSIG` namespace |
 | `--socket <PATH>` |  | Unix socket path for SSH agent connections |
-| `--pid-file <PATH>` |  | PID file path of the background SSH agent |
+| `--pid-file <PATH>` |  | PID file of the background SSH agent; defaults to `SOCKET.pid` when `--socket` is given |
 | `--socket-mode <SOCKET_MODE>` | default `600` | Octal permissions for the socket |
 
 ##### `tk ssh agent stop`
@@ -301,7 +303,7 @@ tk ssh agent stop [OPTIONS]
 | Argument | Notes | Description |
 |---|---|---|
 | `--socket <PATH>` |  | Unix socket path for SSH agent connections |
-| `--pid-file <PATH>` |  | PID file path of the background SSH agent |
+| `--pid-file <PATH>` |  | PID file of the background SSH agent; defaults to `SOCKET.pid` when `--socket` is given |
 
 ##### `tk ssh agent status`
 
@@ -314,7 +316,7 @@ tk ssh agent status [OPTIONS]
 | Argument | Notes | Description |
 |---|---|---|
 | `--socket <PATH>` |  | Unix socket path for SSH agent connections |
-| `--pid-file <PATH>` |  | PID file path of the background SSH agent |
+| `--pid-file <PATH>` |  | PID file of the background SSH agent; defaults to `SOCKET.pid` when `--socket` is given |
 
 ### `tk request`
 

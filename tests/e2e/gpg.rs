@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::policy_helpers::SignScope;
-use crate::run::{AdminLogin, Run, result, signed_commit};
+use crate::run::{AdminLogin, Run, result, signed_commit, skip};
 
 const USER_ID: &str = "tk e2e <tk-e2e@example.com>";
 const SECOND_USER_ID: &str = "tk e2e second <tk-e2e-2@example.com>";
@@ -327,7 +327,7 @@ fn gpg_keys_create_list_export_sign_remove_and_add() {
     );
 
     let Some(gpg) = locate("gpg") else {
-        eprintln!("skipping GnuPG verification: gpg is not on PATH");
+        skip("GnuPG verification: gpg is not on PATH");
         return;
     };
     let gnupghome = import_public_key(&run, &gpg, run.home.path(), &fingerprint, armored);
@@ -383,7 +383,7 @@ fn gpg_key_organization_selects_the_profile() {
 #[ignore]
 fn gpg_shim_signs_and_git_verifies() {
     let (Some(gpg), Some(git)) = (locate("gpg"), locate("git")) else {
-        eprintln!("skipping the git shim test: gpg or git is not on PATH");
+        skip("the git shim test: gpg or git is not on PATH");
         return;
     };
     let run = Run::new();

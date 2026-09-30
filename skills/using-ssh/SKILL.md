@@ -100,6 +100,36 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
    deployment passes `--key SSH_FINGERPRINT` so the daemon serves one key;
    custom socket and pid-file paths are in [ssh](../../docs/ssh-agent.md#agent).
 
+   Optionally, pin the destinations; no Turnkey policy can see the host a
+   challenge came from. The daemon then signs an SSH login only after the
+   client's `session-bind@openssh.com` names a host key in the file, and
+   git's `ssh-keygen -Y sign -n git` (`gpg.ssh.program=ssh-keygen`) only in
+   an `--allow-namespace` namespace on an unbound connection, a tk
+   extension. An OpenSSH 8.9+ `ssh -A` forward arrives bound and gets
+   neither; a relay (`ssh -R`, `socat`, a pre-8.9 forward) sends no bind, so
+   share an `--allow-namespace` socket only with the one boundary that signs
+   git (another OS user, or one container or VM through a mount) and never
+   forward or relay it beyond that boundary.
+   `gpg.ssh.program=tk` needs no socket ([signing-git-commits](../signing-git-commits/SKILL.md)); see [ssh](../../docs/ssh-agent.md#destination-constraints).
+   Check `ssh-keyscan` output against the host's published fingerprints, and
+   drop `--allow-namespace git` when git does not sign through the socket:
+
+   <!-- example: ssh.constrain -->
+   ```sh
+   ssh-keyscan github.com > ~/.config/turnkey/ssh-allowed-hosts
+   tk --profile agent --message-format json ssh agent stop
+   tk --profile agent --message-format json ssh agent start --allowed-hosts-file ~/.config/turnkey/ssh-allowed-hosts --allow-namespace git
+   ```
+
+   To forward or relay the login socket, keep `--allow-namespace` off it and sign git from `ssh-git.sock`, step 5's verify socket:
+
+   <!-- example: ssh.constrain-forwarded -->
+   ```sh
+   tk --profile agent --message-format json ssh agent stop
+   tk --profile agent --message-format json ssh agent start --allowed-hosts-file ~/.config/turnkey/ssh-allowed-hosts
+   tk --profile agent --message-format json ssh agent start --allowed-hosts-file ~/.config/turnkey/ssh-allowed-hosts --allow-namespace git --socket ~/.config/turnkey/ssh-git.sock
+   ```
+
 5. **Point clients at the socket and verify.** Per repository, or per
    connection:
 
@@ -135,6 +165,10 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
 |---|---|
 | ssh.create-key, ssh.policy, ssh.register, ssh.agent-start, ssh.verify | ssh_agent::using_ssh_register_serve_sign |
 | ssh.agent-start | ssh_agent::agent_serves_every_registered_key_and_reports_its_lifecycle |
+| ssh.constrain | ssh_agent_destinations::constrained_agent_signs_only_allowed_namespaces_and_reports_them |
+| ssh.constrain | ssh_agent_destinations::constrained_agent_gates_ssh_userauth_by_server_host_key |
+| ssh.constrain-forwarded | ssh_agent_destinations::constrained_agent_refuses_a_forwarded_hop |
+| ssh.constrain-forwarded | ssh_agent_destinations::constrained_agent_signs_only_allowed_namespaces_and_reports_them |
 | ssh.register | ssh::ssh_key_register_list_print_and_remove_by_every_name |
 
 ## Troubleshooting
@@ -146,8 +180,7 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
   running": nothing holds the pid file. Start it; if `--socket` or
   `--pid-file` were given at start, give them here too.
 - `ssh agent start` exits `1` with `command_error` "ssh-agent is already
-  running on": stop that one first, or start on another `--socket` and
-  `--pid-file`.
+  running on": stop that one first, or start on another `--socket`.
 - `ssh-keygen -Y sign` or `ssh` fails with "agent refused operation" while
   `ssh-add -L` lists the key: check for the signing activity first. As root,
   run `tk --profile admin --message-format json activity list --limit 5`.
@@ -164,6 +197,10 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
   profile's API key file is unreadable. In the daemon's `HOME`, run
   `tk --profile agent --message-format json whoami`; the daemon signs again
   once that succeeds, with no restart.
+- No activity, `whoami` succeeds, and `--allowed-hosts-file` is set: the
+  daemon refused a pre-8.9 client, an unlisted host key, a failed bind, an
+  8.9+ client's forwarded hop, or `-Y sign` bound or outside
+  `--allow-namespace`.
 - `ssh keys add` exits `1` with `invalid_input` naming another curve: the
   id is an existing non-Ed25519 key. Create one with step 1.
 - The key is served but the server rejects it: the public key line is not

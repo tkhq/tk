@@ -38,8 +38,12 @@ something other than the agent. Every `tk` step in this workflow is a command an
   be authenticated: the provisioner binds the request to the expected
   organization, agent user id, and lifetime before it mints anything.
 - The SSH socket is signing authority. Bind it under the agent's `HOME`,
-  mode-restricted to that OS user, or to a supplemental group when its
-  clients run as another uid.
+  mode-restricted to that OS user or a supplemental group for clients under another
+  uid. A socket anything else can reach takes `--allowed-hosts-file`, which signs only
+  SSH logins to listed host keys and refuses `ssh-keygen -Y sign`
+  ([using-ssh](../using-ssh/SKILL.md)). Only a socket shared with its one
+  git-signing boundary carries `--allow-namespace`; never forward it over SSH
+  or relay it beyond that boundary.
 - The OpenPGP socket is signing authority too. The broker alone holds the signing
   profile and serves one fingerprint. The agent's
   boundary gets the socket and the public key, never the broker's profile or
