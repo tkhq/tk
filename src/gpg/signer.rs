@@ -1,17 +1,23 @@
 //! Signs `OpenPGP` digests through Turnkey sign raw payload.
 
-use crate::wire::openpgp::entity::{EcdsaSignature, SignDigest, SignDigestFuture};
-use crate::wire::openpgp::key::UncompressedPoint;
 use anyhow::{Context, Result};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
-use turnkey_client::generated::{
-    SignRawPayloadIntentV2, SignRawPayloadResult,
-    immutable::common::v1::{HashFunction, PayloadEncoding},
+use turnkey_client::{
+    ActivityResult, TurnkeyClient,
+    generated::{
+        SignRawPayloadIntentV2, SignRawPayloadResult,
+        immutable::common::v1::{HashFunction, PayloadEncoding},
+    },
 };
-use turnkey_client::{ActivityResult, TurnkeyClient};
 use uuid::Uuid;
 
-use crate::errors::{ActivityError, ActivityErrorKind};
+use crate::{
+    errors::{ActivityError, ActivityErrorKind},
+    wire::openpgp::{
+        entity::{EcdsaSignature, SignDigest, SignDigestFuture},
+        key::UncompressedPoint,
+    },
+};
 
 /// The digest is already the value `OpenPGP` signs, so the hash function is
 /// [`HashFunction::NoOp`].

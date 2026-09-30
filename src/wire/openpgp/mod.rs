@@ -3,9 +3,8 @@
 //! only frames bytes: a [`entity::SignDigest`] turns a SHA-256 digest into
 //! raw ECDSA scalars.
 
-use thiserror::Error;
-
 use key::POINT_LEN;
+use thiserror::Error;
 
 pub(crate) mod armor;
 pub mod entity;

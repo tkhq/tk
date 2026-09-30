@@ -1,8 +1,3 @@
-use anyhow::{Context, Error, Result, bail};
-use clap::{Args, Subcommand, builder::NonEmptyStringValueParser};
-use reqwest::{Client, ClientBuilder, Url, redirect::Policy};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::{
     collections::{BTreeMap, btree_map::Entry},
     fmt::{self, Display, Formatter},
@@ -12,14 +7,22 @@ use std::{
     sync::{Arc, Mutex, OnceLock, PoisonError},
     time::{Duration, SystemTime},
 };
+
+use anyhow::{Context, Error, Result, bail};
+use clap::{Args, Subcommand, builder::NonEmptyStringValueParser};
+use reqwest::{Client, ClientBuilder, Url, redirect::Policy};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::{
     fs::{self, OpenOptions},
     io::AsyncWriteExt,
 };
 use tracing::debug;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
-use turnkey_client::TurnkeyClient;
-use turnkey_client::generated::{GetWhoamiRequest, GetWhoamiResponse};
+use turnkey_client::{
+    TurnkeyClient,
+    generated::{GetWhoamiRequest, GetWhoamiResponse},
+};
 use uuid::Uuid;
 
 use crate::{
@@ -508,6 +511,7 @@ impl FileLock {
         #[cfg(unix)]
         {
             use std::os::fd::AsRawFd;
+
             // SAFETY: flock only reads the descriptor, which stays open for the
             // lifetime of `file`.
             let status = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
@@ -1237,6 +1241,7 @@ mod tests {
     #[tokio::test]
     async fn sweep_removes_only_files_older_than_the_cutoff() {
         use std::time::{Duration, SystemTime};
+
         let dir = tempfile::tempdir().unwrap();
         let nested = dir.path().join("org-a");
         std::fs::create_dir_all(&nested).unwrap();

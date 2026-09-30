@@ -914,17 +914,19 @@ impl Query {
 #[cfg(test)]
 #[allow(clippy::disallowed_types)]
 mod tests {
-    use super::*;
-    use crate::errors::{Classification, ErrorCode, classify};
+    use std::iter::once;
+
     use clap::Parser;
     use serde_json::{from_value, json, to_vec};
-    use std::iter::once;
     use tempfile::NamedTempFile;
     use turnkey_client::generated::external::{activity::v1 as activity, data::v1::Timestamp};
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{method, path},
     };
+
+    use super::*;
+    use crate::errors::{Classification, ErrorCode, classify};
 
     const ID: &str = "11111111-1111-4111-8111-111111111111";
     const OTHER: &str = "22222222-2222-4222-8222-222222222222";

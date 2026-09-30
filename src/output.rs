@@ -1,13 +1,17 @@
 // The output layer renders classified error codes.
 #![allow(clippy::disallowed_types)]
-use crate::errors::{Classification, ErrorCode, classify, error_details, render_error_chain};
+use std::{
+    fmt::{self, Display, Formatter},
+    io::{self, IsTerminal, Stderr, Stdout, Write},
+};
+
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::{Error, Result};
 use clap::ValueEnum;
 use serde::Serialize;
 use serde_json::Value;
-use std::fmt::{self, Display, Formatter};
-use std::io::{self, IsTerminal, Stderr, Stdout, Write};
+
+use crate::errors::{Classification, ErrorCode, classify, error_details, render_error_chain};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum MessageFormat {
@@ -215,9 +219,10 @@ impl Display for ErrorMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use anyhow::anyhow;
     use serde::Serialize;
+
+    use super::*;
 
     type TestShell = Shell<Vec<u8>, Vec<u8>>;
 

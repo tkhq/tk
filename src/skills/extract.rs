@@ -1,8 +1,10 @@
-use std::borrow::Cow;
-use std::iter::Peekable;
-use std::mem::take;
-use std::path::{Path, PathBuf};
-use std::str::CharIndices;
+use std::{
+    borrow::Cow,
+    iter::Peekable,
+    mem::take,
+    path::{Path, PathBuf},
+    str::CharIndices,
+};
 
 use thiserror::Error;
 

@@ -1,7 +1,10 @@
+use std::{
+    fmt::{self, Display, Formatter},
+    path::PathBuf,
+    str::FromStr,
+};
+
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, Display, Formatter};
-use std::path::PathBuf;
-use std::str::FromStr;
 use thiserror::Error;
 
 pub const ROOT: &str = "turnkey-tk";
@@ -29,6 +32,7 @@ pub(super) enum Kind {
 
 mod manifest {
     use super::{File, Kind};
+
     include!(concat!(env!("OUT_DIR"), "/bundle_manifest.rs"));
 }
 

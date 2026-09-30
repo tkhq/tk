@@ -1,18 +1,22 @@
 //! Registered SSH signing keys and request-side key names.
 
-use std::collections::BTreeMap;
-use std::convert::Infallible;
-use std::fmt::{self, Display, Formatter};
-use std::mem;
-use std::path::Path;
-use std::str::FromStr;
+use std::{
+    collections::BTreeMap,
+    convert::Infallible,
+    fmt::{self, Display, Formatter},
+    mem,
+    path::Path,
+    str::FromStr,
+};
 
-use crate::wire::ssh::{Ed25519PublicKey, parse_public_key_line};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::errors::{InvalidInput, Malformed};
-use crate::registry::{select, select_split};
+use crate::{
+    errors::{InvalidInput, Malformed},
+    registry::{select, select_split},
+    wire::ssh::{Ed25519PublicKey, parse_public_key_line},
+};
 
 /// An opaque Turnkey private-key identifier.
 #[derive(Clone, Debug, PartialEq)]

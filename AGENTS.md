@@ -36,8 +36,9 @@ Default guidance for coding-agent runs in this repository.
   longer/module-qualified form when it disambiguates from another in-scope name —
   e.g. `fmt::Result` stays qualified (via `use std::fmt::{self, Display, Formatter}`)
   so it doesn't collide with `anyhow::Result`, and `std::fmt::Write` may need
-  `as _` where `std::io::Write` is also in scope. Merge imports from the same
-  module where practical.
+  `as _` where `std::io::Write` is also in scope.
+- Format with `cargo +nightly-2026-09-01 fmt --all`, the toolchain the CI `fmt`
+  job pins.
 - A comment exists in exactly three cases. A `///` or `//!` that the
   `missing_docs` lint demands. A `///` on a Clap command, field, or variant,
   which renders as `--help` text. A `//` stating an invariant a reader cannot

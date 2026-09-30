@@ -1,8 +1,8 @@
 //! Tests for typed SSH public keys.
 
+use base64::{Engine, engine::general_purpose::STANDARD};
+
 use crate::wire::ssh::{Ed25519PublicKey, PublicKeyParseError, parse_public_key_line};
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 
 fn encode_string(bytes: &[u8], output: &mut Vec<u8>) {
     output.extend_from_slice(&(bytes.len() as u32).to_be_bytes());

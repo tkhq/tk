@@ -2,10 +2,11 @@
 // Test helpers may panic.
 #![allow(clippy::unwrap_used)]
 
+use std::{fs, path::Path};
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{Value, json};
-use std::{fs, path::Path};
 use tempfile::TempDir;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use wiremock::{
@@ -322,6 +323,7 @@ fn saved_profile_commands_reject_empty_profile_names() {
 #[test]
 fn nonunicode_credential_environment_does_not_fall_back() {
     use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+
     let temp = TempDir::new().unwrap();
     registry(&temp);
     command(&temp)

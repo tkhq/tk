@@ -1,41 +1,58 @@
 mod protocol;
 
-use std::fs::{File, Metadata, OpenOptions, Permissions};
-use std::io::{self, ErrorKind};
-use std::mem::zeroed;
-use std::num::NonZeroUsize;
-use std::os::fd::AsRawFd;
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
-use std::os::unix::net::UnixListener as StdUnixListener;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+    fs::{File, Metadata, OpenOptions, Permissions},
+    io::{self, ErrorKind},
+    mem::zeroed,
+    num::NonZeroUsize,
+    os::{
+        fd::AsRawFd,
+        unix::{
+            ffi::OsStrExt,
+            fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+            net::UnixListener as StdUnixListener,
+        },
+    },
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use crate::wire::openpgp::entity::{ArmoredSignature, SigningKey, armored_detached_signature};
-use crate::wire::openpgp::key::Fingerprint;
 use anyhow::{Context, Result, anyhow};
-use clap::builder::{PathBufValueParser, TypedValueParser as _};
-use clap::{Args as ClapArgs, Subcommand};
+use clap::{
+    Args as ClapArgs, Subcommand,
+    builder::{PathBufValueParser, TypedValueParser as _},
+};
 use socket2::{Domain, SockAddr, Socket, Type};
 use thiserror::Error;
-use tokio::fs;
-use tokio::net::{UnixListener, UnixStream};
-use tokio::signal::unix::{SignalKind, signal};
-use tokio::task::{JoinError, JoinSet};
-use tokio::time::timeout;
+use tokio::{
+    fs,
+    net::{UnixListener, UnixStream},
+    signal::unix::{SignalKind, signal},
+    task::{JoinError, JoinSet},
+    time::timeout,
+};
 use tracing::warn;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::TurnkeyClient;
 use uuid::Uuid;
 
 use self::protocol::{Failure, SignRequest};
-use super::registry::{KeyName, SigningKeyName};
-use super::signer::TurnkeySigner;
-use super::{selection_error, unix_now};
-use crate::auth::{self, AuthOptions, CredentialSource, ReloadingClient, config_dir};
-use crate::outcome::{MachineOnly, Outcome};
-use crate::socket::SocketMode;
+use super::{
+    registry::{KeyName, SigningKeyName},
+    selection_error,
+    signer::TurnkeySigner,
+    unix_now,
+};
+use crate::{
+    auth::{self, AuthOptions, CredentialSource, ReloadingClient, config_dir},
+    outcome::{MachineOnly, Outcome},
+    socket::SocketMode,
+    wire::openpgp::{
+        entity::{ArmoredSignature, SigningKey, armored_detached_signature},
+        key::Fingerprint,
+    },
+};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const SIGN_TIMEOUT: Duration = Duration::from_secs(60);
@@ -568,10 +585,11 @@ fn agent_already_running<T>(path: &Path) -> Result<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::future::pending;
-    use std::os::unix::fs::symlink;
-    use std::os::unix::net::UnixListener as TestUnixListener;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{
+        future::pending,
+        os::unix::{fs::symlink, net::UnixListener as TestUnixListener},
+        sync::atomic::{AtomicUsize, Ordering},
+    };
 
     use clap::Parser;
     use tempfile::{TempDir, tempdir, tempdir_in};

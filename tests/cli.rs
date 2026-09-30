@@ -1,14 +1,14 @@
 //! Tests for top-level CLI parsing.
 
-use std::error::Error;
-use std::fs;
-use std::iter::successors;
+use std::{error::Error, fs, iter::successors};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{Value, json};
-use ssh_key::public::{KeyData, RsaPublicKey};
-use ssh_key::{Mpint, PublicKey};
+use ssh_key::{
+    Mpint, PublicKey,
+    public::{KeyData, RsaPublicKey},
+};
 
 #[test]
 fn cli_help_lists_registry_ssh_commands() {

@@ -1,10 +1,13 @@
 //! Outcome reasons; variant names are the stable `snake_case` JSON values.
 
-use crate::gpg;
-use crate::skills;
-use crate::ssh::{self, agent};
-use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
+
+use serde::Serialize;
+
+use crate::{
+    gpg, skills,
+    ssh::{self, agent},
+};
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Default))]
@@ -82,9 +85,9 @@ impl Display for Outcome {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use strum::IntoEnumIterator;
 
+    use super::*;
     use crate::output::ErrorMessage;
 
     const NON_TERMINAL_REASONS: [&str; 2] = [

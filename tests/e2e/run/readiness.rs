@@ -1,10 +1,6 @@
-use std::net::TcpStream;
-use std::path::Path;
-use std::process::Child;
-use std::thread;
-use std::time::Instant;
-
-use std::os::unix::net::UnixStream;
+use std::{
+    net::TcpStream, os::unix::net::UnixStream, path::Path, process::Child, thread, time::Instant,
+};
 
 use super::{CHILD_READINESS_POLL_INTERVAL, CHILD_READINESS_TIMEOUT, Run};
 

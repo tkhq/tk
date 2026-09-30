@@ -70,7 +70,7 @@ context, and:
 > Apply these refactors completely, including every call site they touch,
 > editing only these files: <file list>. Preserve behavior, public signatures,
 > serialized shapes, and error text. Do not add doc comments to items you did
-> not create. Then run `cargo fmt --all`, `cargo clippy --workspace
+> not create. Then run `cargo +nightly-2026-09-01 fmt --all`, `cargo clippy --workspace
 > --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked`.
 > If a test fails, revert your change with `git checkout -- <files>` and report
 > why. Return one paragraph per candidate. Do not commit.

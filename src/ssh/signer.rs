@@ -5,13 +5,19 @@ use std::time::Duration;
 use anyhow::{Error, Result};
 use tokio::time::sleep;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
-use turnkey_client::generated::immutable::common::v1::{HashFunction, PayloadEncoding};
-use turnkey_client::generated::{GetActivityRequest, SignRawPayloadIntentV2, SignRawPayloadResult};
-use turnkey_client::{ActivityResult, TurnkeyClient, TurnkeyClientError};
+use turnkey_client::{
+    ActivityResult, TurnkeyClient, TurnkeyClientError,
+    generated::{
+        GetActivityRequest, SignRawPayloadIntentV2, SignRawPayloadResult,
+        immutable::common::v1::{HashFunction, PayloadEncoding},
+    },
+};
 use uuid::Uuid;
 
-use crate::errors::{ActivityError, ActivityErrorKind, transient_status};
-use crate::ssh::registry::PrivateKeyId;
+use crate::{
+    errors::{ActivityError, ActivityErrorKind, transient_status},
+    ssh::registry::PrivateKeyId,
+};
 
 const ATTEMPTS: u32 = 5;
 

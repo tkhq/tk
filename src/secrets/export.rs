@@ -1,13 +1,16 @@
 //! Resolves, decrypts, and delivers secret values. Pending exports persist a
 //! recipient key so the same command can resume after approval.
 
+use std::{
+    fmt::Display,
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
+
 use anyhow::{Context, Error, Result};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, from_slice, json, to_value, to_vec};
-use std::fmt::Display;
-use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::warn;
 use turnkey_client::generated::{
@@ -22,13 +25,15 @@ use turnkey_enclave_encrypt::{QuorumPublicKey, client::ExportClient};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-use super::input::{SecretName, SecretRef, UniqueKeyValues, quorum_for};
-use super::{Listing, SecretOutput};
-use crate::auth::{
-    ResolvedAuth, SecureCreateError, build_turnkey_client, secure_create, state_dir,
+use super::{
+    Listing, SecretOutput,
+    input::{SecretName, SecretRef, UniqueKeyValues, quorum_for},
 };
-use crate::errors::{ActivityError, ActivityErrorKind, InvalidInput, Malformed, MissingResource};
-use crate::operations::{OperationOutput, observed, query, query_activity, submit_activity};
+use crate::{
+    auth::{ResolvedAuth, SecureCreateError, build_turnkey_client, secure_create, state_dir},
+    errors::{ActivityError, ActivityErrorKind, InvalidInput, Malformed, MissingResource},
+    operations::{OperationOutput, observed, query, query_activity, submit_activity},
+};
 
 const COMMAND: &str = "secret.export";
 const NEXT_STEP: &str = "After approval, run the same export command again.";

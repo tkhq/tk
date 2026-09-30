@@ -14,12 +14,13 @@ mod status;
 
 use anyhow::Result;
 use clap::Subcommand;
-
 use provision::ProvisionArgs;
 use status::StatusArgs;
 
-use crate::auth::{self, AuthOptions};
-use crate::operations::OperationOutput;
+use crate::{
+    auth::{self, AuthOptions},
+    operations::OperationOutput,
+};
 
 #[derive(Debug, Subcommand)]
 pub enum SessionCommand {

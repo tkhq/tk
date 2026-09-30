@@ -1,15 +1,17 @@
+use std::path::PathBuf;
+
+use anyhow::{Context, Result};
+use clap::Args;
+use serde_json::json;
+use tokio::fs;
+use turnkey_api_key_stamper::TurnkeyP256ApiKey;
+use zeroize::{Zeroize, Zeroizing};
+
 use crate::{
     auth::{KeyCurve, StoredApiKey, secure_create, state_dir},
     operations::OperationOutput,
     sessions::public_key::CompressedPublicKey,
 };
-use anyhow::{Context, Result};
-use clap::Args;
-use serde_json::json;
-use std::path::PathBuf;
-use tokio::fs;
-use turnkey_api_key_stamper::TurnkeyP256ApiKey;
-use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Debug, Args)]
 pub struct GenerateArgs {
@@ -68,11 +70,13 @@ pub(crate) async fn generate(output: Option<PathBuf>) -> Result<GeneratedApiKey>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::auth::SecureCreateError;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
+
+    use super::*;
+    use crate::auth::SecureCreateError;
+
     #[tokio::test]
     async fn generated_credentials_are_valid_private_and_not_in_output() {
         let dir = tempfile::tempdir().unwrap();
@@ -91,6 +95,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+
             assert_eq!(
                 fs::metadata(path).unwrap().permissions().mode() & 0o777,
                 0o600

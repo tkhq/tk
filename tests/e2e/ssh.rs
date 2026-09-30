@@ -1,17 +1,20 @@
 //! Live SSH registry command coverage.
 
-use std::env;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::{
+    env, fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::{Command, Output},
+};
 
 use assert_cmd::Command as TkCommand;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::policy_helpers::SignScope;
-use crate::run::{Run, bare_cli, result, signed_commit, skip};
+use crate::{
+    policy_helpers::SignScope,
+    run::{Run, bare_cli, result, signed_commit, skip},
+};
 
 pub(crate) fn locate(binary: &str) -> Option<PathBuf> {
     env::var_os("PATH").and_then(|path| {

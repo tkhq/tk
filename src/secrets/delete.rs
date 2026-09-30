@@ -5,10 +5,11 @@ use anyhow::Result;
 use serde_json::json;
 use turnkey_client::generated::immutable::activity::v1::DeleteSecretsIntent;
 
-use super::export::resolve_name;
-use super::input::SecretRef;
-use crate::auth::ResolvedAuth;
-use crate::operations::{OperationOutput, submit_activity};
+use super::{export::resolve_name, input::SecretRef};
+use crate::{
+    auth::ResolvedAuth,
+    operations::{OperationOutput, submit_activity},
+};
 
 const COMMAND: &str = "secret.delete";
 

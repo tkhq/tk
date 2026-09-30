@@ -3,25 +3,31 @@
 
 use std::collections::BTreeSet;
 
-use crate::wire::openpgp::entity::{OpenPgpKey, SigningKey, UserId};
-use crate::wire::openpgp::key::parse_point_hex;
 use anyhow::{Context, Result};
 use tracing::debug;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
-use turnkey_client::generated::{
-    CreateWalletAccountsIntent, CreateWalletAccountsResult, GetWalletAccountsRequest,
-    GetWalletAccountsResponse, WalletAccountParams,
-    external::{
-        data::v1::{Timestamp, WalletAccount},
-        options::v1::Pagination,
+use turnkey_client::{
+    ActivityResult, TurnkeyClient,
+    generated::{
+        CreateWalletAccountsIntent, CreateWalletAccountsResult, GetWalletAccountsRequest,
+        GetWalletAccountsResponse, WalletAccountParams,
+        external::{
+            data::v1::{Timestamp, WalletAccount},
+            options::v1::Pagination,
+        },
+        immutable::common::v1::{AddressFormat, Curve, PathFormat},
     },
-    immutable::common::v1::{AddressFormat, Curve, PathFormat},
 };
-use turnkey_client::{ActivityResult, TurnkeyClient};
 use uuid::Uuid;
 
-use crate::errors::{ActivityError, ActivityErrorKind, MissingResource};
-use crate::gpg::KeySummary;
+use crate::{
+    errors::{ActivityError, ActivityErrorKind, MissingResource},
+    gpg::KeySummary,
+    wire::openpgp::{
+        entity::{OpenPgpKey, SigningKey, UserId},
+        key::parse_point_hex,
+    },
+};
 
 /// The BIP-32 purpose reserved for `OpenPGP` keys: `0x504750`, ASCII "PGP".
 /// Changing it would orphan every key already created.

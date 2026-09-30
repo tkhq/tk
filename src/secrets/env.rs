@@ -1,21 +1,28 @@
 //! Exports a set of secrets as dotenv lines for a process's environment.
 
+use std::{
+    collections::{BTreeMap, btree_map::Entry},
+    fmt::Write,
+    mem::take,
+    path::PathBuf,
+};
+
 use anyhow::Result;
 use serde_json::{Map, Value, json};
-use std::collections::{BTreeMap, btree_map::Entry};
-use std::fmt::Write;
-use std::mem::take;
-use std::path::PathBuf;
 use turnkey_client::generated::SecretMetadata;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-use super::SecretOutput;
-use super::export::{Binding, Exported, export_value, list_all, remove};
-use super::input::{Selector, UniqueKeyValues, quorum_for};
-use crate::auth::{ResolvedAuth, state_dir};
-use crate::errors::{InvalidInput, Malformed, PendingApprovals};
-use crate::operations::OperationOutput;
+use super::{
+    SecretOutput,
+    export::{Binding, Exported, export_value, list_all, remove},
+    input::{Selector, UniqueKeyValues, quorum_for},
+};
+use crate::{
+    auth::{ResolvedAuth, state_dir},
+    errors::{InvalidInput, Malformed, PendingApprovals},
+    operations::OperationOutput,
+};
 
 const COMMAND: &str = "secret.env";
 
@@ -176,8 +183,9 @@ pub(super) async fn run(auth: ResolvedAuth, selector: Selector) -> Result<Secret
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use turnkey_client::generated::immutable::models::v1::KeyValue;
+
+    use super::*;
 
     fn secret(name: &str, properties: &[(&str, &str)]) -> SecretMetadata {
         SecretMetadata {

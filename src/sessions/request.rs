@@ -7,13 +7,15 @@ use tracing::debug;
 use turnkey_client::generated::GetWhoamiResponse;
 
 use super::pending::PendingSession;
-use crate::auth::{
-    Profile, SecureCreateError, build_turnkey_client, read_key, remove_generated_key,
-    saved_profile, state_dir, whoami,
+use crate::{
+    auth::{
+        Profile, SecureCreateError, build_turnkey_client, read_key, remove_generated_key,
+        saved_profile, state_dir, whoami,
+    },
+    errors::{InvalidInput, is_unauthorized},
+    keygen::{GeneratedApiKey, generate},
+    operations::OperationOutput,
 };
-use crate::errors::{InvalidInput, is_unauthorized};
-use crate::keygen::{GeneratedApiKey, generate};
-use crate::operations::OperationOutput;
 
 const COMMAND: &str = "session.request";
 

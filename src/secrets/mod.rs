@@ -4,20 +4,21 @@ mod export;
 mod import;
 mod input;
 
+use std::{
+    fmt::{self, Display, Formatter},
+    fs,
+    path::PathBuf,
+};
+
 use anyhow::Result;
 use clap::{ArgGroup, Args, Subcommand};
+use input::{SecretName, SecretRef, Selector, UniqueKeyValues, parse_key_value, read_value};
 use serde::{Serialize, Serializer};
-use std::fmt::{self, Display, Formatter};
-use std::fs;
-use std::path::PathBuf;
 use turnkey_client::generated::immutable::models::v1::KeyValue;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-use crate::auth::ResolvedAuth;
-use crate::errors::InvalidInput;
-use crate::operations::OperationOutput;
-use input::{SecretName, SecretRef, Selector, UniqueKeyValues, parse_key_value, read_value};
+use crate::{auth::ResolvedAuth, errors::InvalidInput, operations::OperationOutput};
 
 #[derive(Debug, Subcommand)]
 pub enum SecretCommand {
@@ -262,9 +263,9 @@ impl PreparedSecret {
 
 #[cfg(test)]
 mod tests {
+    use clap::{Parser, error::ErrorKind};
+
     use super::*;
-    use clap::Parser;
-    use clap::error::ErrorKind;
 
     #[derive(Debug, Parser)]
     struct Cli {

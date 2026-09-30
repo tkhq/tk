@@ -4,14 +4,16 @@ use std::pin::Pin;
 
 use anyhow::{Context, Result};
 
-use super::OpenPgpError;
 pub use super::armor::ArmoredSignature;
-use super::armor::{BlockType, armor};
-use super::key::{Fingerprint, UncompressedPoint, primary_key_packet};
-use super::packet::{new_format_packet, subpacket};
-use super::signature::{
-    P256Scalar, SignedObject, creation_time_subpacket, digest, hashed_portion,
-    issuer_fingerprint_subpacket, issuer_key_id_subpacket, key_hash_prefix, signature_packet,
+use super::{
+    OpenPgpError,
+    armor::{BlockType, armor},
+    key::{Fingerprint, UncompressedPoint, primary_key_packet},
+    packet::{new_format_packet, subpacket},
+    signature::{
+        P256Scalar, SignedObject, creation_time_subpacket, digest, hashed_portion,
+        issuer_fingerprint_subpacket, issuer_key_id_subpacket, key_hash_prefix, signature_packet,
+    },
 };
 
 /// RFC 4880 5.2.3.21 key flags: certify | sign.

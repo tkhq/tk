@@ -4,21 +4,30 @@
 //! without loading configuration or credentials. A signing call reads the
 //! registered key table, never a wallet, so it costs one Turnkey request.
 
-use std::env;
-use std::ffi::OsString;
-use std::io::{self, Read, Write};
-use std::os::unix::process::CommandExt;
-use std::path::Path;
-use std::process::{Command, ExitCode};
+use std::{
+    env,
+    ffi::OsString,
+    io::{self, Read, Write},
+    os::unix::process::CommandExt,
+    path::Path,
+    process::{Command, ExitCode},
+};
 
-use crate::wire::openpgp::entity::armored_detached_signature;
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use crate::auth::{self, AuthOptions};
-use crate::errors::{InvalidInput, Malformed, render_error_chain};
-use crate::gpg::registry::{KeyName, SelectError, SigningKeyName};
-use crate::gpg::{agent, selection_error, signer::TurnkeySigner, unix_now};
+use crate::{
+    auth::{self, AuthOptions},
+    errors::{InvalidInput, Malformed, render_error_chain},
+    gpg::{
+        agent,
+        registry::{KeyName, SelectError, SigningKeyName},
+        selection_error,
+        signer::TurnkeySigner,
+        unix_now,
+    },
+    wire::openpgp::entity::armored_detached_signature,
+};
 
 /// gpg's own general error code, so a caller that reads the code sees a gpg
 /// failure rather than a shell "command not found".

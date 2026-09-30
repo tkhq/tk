@@ -4,11 +4,12 @@
 // Test helpers may panic.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::io;
-use std::os::unix::fs::{PermissionsExt, symlink};
-use std::path::{Component, Path, PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs, io,
+    os::unix::fs::{PermissionsExt, symlink},
+    path::{Component, Path, PathBuf},
+};
 
 use assert_cmd::Command;
 use serde_json::{Value, json};

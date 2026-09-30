@@ -1,17 +1,18 @@
 // Asserts on the classified error code.
 #![allow(clippy::disallowed_types)]
-use super::*;
-use crate::errors::{Classification, ErrorCode, classify};
-use clap::Parser;
-use clap::error::ErrorKind;
+use std::{net::TcpListener, sync::OnceLock};
+
+use clap::{Parser, error::ErrorKind};
 use reqwest::Client;
-use std::net::TcpListener;
-use std::sync::OnceLock;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use wiremock::{
     Mock, MockServer, ResponseTemplate,
     matchers::{body_partial_json, path},
 };
+
+use super::*;
+use crate::errors::{Classification, ErrorCode, classify};
+
 #[derive(Debug, Parser)]
 struct RequestCli {
     #[command(flatten)]

@@ -1,11 +1,15 @@
 //! A compressed P256 public key as the CLI accepts and prints it.
 
-use crate::errors::InvalidInput;
+use std::{
+    fmt::{self, Display, Formatter},
+    str::FromStr,
+};
+
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, Display, Formatter};
-use std::str::FromStr;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::generated::external::data::v1::ApiKey;
+
+use crate::errors::InvalidInput;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]

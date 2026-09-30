@@ -4,19 +4,17 @@ mod allowed_hosts;
 mod daemon;
 mod lock;
 
-use std::fmt::{self, Display, Formatter};
-use std::path::PathBuf;
+use std::{
+    fmt::{self, Display, Formatter},
+    path::PathBuf,
+};
 
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
+pub use daemon::is_default_running;
 use serde::{Deserialize, Serialize};
 
-pub use daemon::is_default_running;
-
-use crate::auth::AuthOptions;
-use crate::outcome::Outcome;
-use crate::socket::SocketMode;
-use crate::ssh::registry::SshKeyName;
+use crate::{auth::AuthOptions, outcome::Outcome, socket::SocketMode, ssh::registry::SshKeyName};
 
 #[derive(Debug, ClapArgs)]
 #[command(
@@ -201,8 +199,7 @@ struct InternalRunArgs {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
-    use clap::error::ErrorKind;
+    use clap::{Parser, error::ErrorKind};
 
     use super::*;
 

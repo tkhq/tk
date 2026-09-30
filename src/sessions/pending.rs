@@ -1,15 +1,20 @@
 //! A generated credential awaiting registration, remembered per profile.
 
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, to_vec};
-use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
 use tokio::fs;
 
 use super::public_key::CompressedPublicKey;
-use crate::auth::secure_create;
-use crate::errors::{InvalidInput, Malformed};
+use crate::{
+    auth::secure_create,
+    errors::{InvalidInput, Malformed},
+};
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq))]
@@ -79,9 +84,10 @@ impl PendingSession {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use crate::auth::SecureCreateError;
-    use std::fs;
 
     fn sample() -> PendingSession {
         PendingSession {

@@ -6,14 +6,16 @@ mod commands;
 #[cfg(test)]
 mod extract;
 
-pub use bundle::{Installed, Listed, Shown};
-
-use crate::outcome::Outcome;
 use anyhow::Result;
 use bundle::SkillName;
-use clap::Subcommand;
-use clap::builder::{PathBufValueParser, TypedValueParser};
+pub use bundle::{Installed, Listed, Shown};
+use clap::{
+    Subcommand,
+    builder::{PathBufValueParser, TypedValueParser},
+};
 use install::InstallDir;
+
+use crate::outcome::Outcome;
 
 #[derive(Debug, Subcommand)]
 pub enum SkillsCommand {

@@ -1,5 +1,6 @@
-use crate::run::{Run, result};
 use serde_json::{Value, json};
+
+use crate::run::{Run, result};
 
 const UNSIGNED_EIP1559_TX: &str =
     "02df0180010182520894000000000000000000000000000000000000dead8080c0";

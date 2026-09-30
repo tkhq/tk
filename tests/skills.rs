@@ -2,9 +2,11 @@
 
 // Test fixtures and assertions may panic.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::{Path, PathBuf},
+};
 
 const WORKFLOW_SECTIONS: [&str; 6] = [
     "## Reference",

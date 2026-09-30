@@ -1,8 +1,11 @@
 //! Human durations for credential lifetimes.
 
+use std::{
+    fmt::{self, Display, Formatter},
+    str::FromStr,
+};
+
 use crate::errors::InvalidInput;
-use std::fmt::{self, Display, Formatter};
-use std::str::FromStr;
 
 const MAX_SECONDS: u64 = 365 * 24 * 60 * 60;
 

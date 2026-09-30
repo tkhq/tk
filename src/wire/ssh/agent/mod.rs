@@ -2,25 +2,27 @@
 
 pub mod destination;
 
-use std::io::{self, ErrorKind};
-use std::os::unix::fs::FileTypeExt;
-use std::os::unix::net::UnixListener as StdUnixListener;
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::sync::Arc;
+use std::{
+    io::{self, ErrorKind},
+    os::unix::{fs::FileTypeExt, net::UnixListener as StdUnixListener},
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+};
 
 use anyhow::{Context, Result, anyhow};
+use destination::{DestinationPolicy, Destinations};
 use socket2::{Domain, SockAddr, Socket, Type};
-use tokio::fs;
-use tokio::net::{UnixListener, UnixStream};
-use tokio::signal::unix::{SignalKind, signal};
-use tokio::task::JoinSet;
+use tokio::{
+    fs,
+    net::{UnixListener, UnixStream},
+    signal::unix::{SignalKind, signal},
+    task::JoinSet,
+};
 use tracing::{debug, warn};
 
-use super::Ed25519PublicKey;
-use super::protocol;
+use super::{Ed25519PublicKey, protocol};
 use crate::socket::SocketMode;
-use destination::{DestinationPolicy, Destinations};
 
 /// One identity advertised by the SSH agent.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -1,4 +1,5 @@
 use std::io::{self, IsTerminal};
+
 use tracing_subscriber::EnvFilter;
 
 pub fn init() {

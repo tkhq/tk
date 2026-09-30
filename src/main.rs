@@ -19,11 +19,15 @@ mod ssh;
 mod wallets;
 mod wire;
 
-use crate::cli::Cli;
-use std::env;
-use std::io::{self, Write};
-use std::process::ExitCode;
+use std::{
+    env,
+    io::{self, Write},
+    process::ExitCode,
+};
+
 use tracing::debug;
+
+use crate::cli::Cli;
 
 #[tokio::main]
 async fn main() -> ExitCode {

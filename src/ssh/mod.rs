@@ -2,18 +2,19 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use crate::wire::ssh::Ed25519PublicKey;
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use keys::NamedPrivateKey;
+use registry::{PrivateKeyId, SelectError, SshKeyEntry, SshKeyName};
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::auth::{self, AuthOptions, build_turnkey_client};
-use crate::errors::InvalidInput;
-use crate::outcome::{MachineOnly, Outcome};
-
-use keys::NamedPrivateKey;
-use registry::{PrivateKeyId, SelectError, SshKeyEntry, SshKeyName};
+use crate::{
+    auth::{self, AuthOptions, build_turnkey_client},
+    errors::InvalidInput,
+    outcome::{MachineOnly, Outcome},
+    wire::ssh::Ed25519PublicKey,
+};
 
 pub mod agent;
 pub mod keys;

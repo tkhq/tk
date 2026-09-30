@@ -1,12 +1,13 @@
-use std::io::{self, ErrorKind};
-use std::str::from_utf8;
+use std::{
+    io::{self, ErrorKind},
+    str::from_utf8,
+};
 
-use crate::wire::openpgp::entity::ArmoredSignature;
-use crate::wire::openpgp::key::Fingerprint;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::super::registry::SigningKeyName;
+use crate::wire::openpgp::{entity::ArmoredSignature, key::Fingerprint};
 
 const MAGIC: [u8; 4] = *b"TKGP";
 const VERSION: u8 = 1;

@@ -1,19 +1,21 @@
 //! Live SSH agent coverage: serving the registry, narrowing, and lifecycle.
 
-use std::ffi::OsStr;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::{
+    ffi::OsStr,
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::{Command, Output},
+};
 
 use assert_cmd::Command as TkCommand;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::policy_helpers::SignScope;
-use crate::run::{AGENT_TAG, Run, bare_cli, result, skip};
-use crate::ssh::{
-    check_signature, create_ed25519_key, generate_local_key, locate, register_key, text,
+use crate::{
+    policy_helpers::SignScope,
+    run::{AGENT_TAG, Run, bare_cli, result, skip},
+    ssh::{check_signature, create_ed25519_key, generate_local_key, locate, register_key, text},
 };
 
 /// Stops the agent when the test ends, whether or not it passed.

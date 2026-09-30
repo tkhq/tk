@@ -1,5 +1,4 @@
-use std::env;
-use std::fmt::Display;
+use std::{env, fmt::Display};
 
 pub(crate) fn skip(reason: impl Display) {
     assert!(env::var_os("CI").is_none(), "CI must not skip {reason}");
