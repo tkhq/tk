@@ -76,11 +76,13 @@ anstyle = { version = "1.0.14", default-features = false }
 anyhow = { version = "1.0.104", default-features = false }
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 clap = { version = "4.6.6", features = ["std", "derive", "help", "usage", "error-context", "env"], default-features = false }
+flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
 libc = { version = "0.2.189", default-features = false }
 rand_core = { version = "0.6.4", default-features = false, features = ["getrandom"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
 rpassword = { version = "7.4", default-features = false }
+semver = { version = "1.0.28", default-features = false, features = ["std"] }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
 sha1 = { version = "0.10", default-features = false }
@@ -88,6 +90,7 @@ sha2 = { version = "0.11.0", default-features = false }
 signature = { version = "2.2", default-features = false }
 socket2 = { version = "0.6.5", default-features = false }
 ssh-key = { version = "0.6.7", default-features = false, features = ["ed25519", "p256", "p384", "p521", "rsa", "std"] }
+tar = { version = "0.4.46", default-features = false }
 thiserror = { version = "2.0.20", default-features = false }
 tokio = { version = "=1.53.1", default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }
 toml = { version = "1.1.5", default-features = false, features = ["serde", "parse", "display"] }

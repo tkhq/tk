@@ -28,6 +28,7 @@ use crate::{
     sessions::{self, SessionCommand},
     skills::{self, SkillsCommand},
     ssh::{self, SshCommand},
+    update::{self, UpdateArgs},
     wallets::{PreparedWalletCommand, SignCommand, WalletCommand},
 };
 
@@ -183,6 +184,7 @@ async fn run_operation(
         } => return emit(&mut ctx, generate.run().await),
         Operation::Gpg { command } => return emit(&mut ctx, gpg::run(command, options).await),
         Operation::Skills { command } => return emit(&mut ctx, skills::run(command)),
+        Operation::Update(update) => return emit(&mut ctx, update::run(update).await),
         Operation::Request(request) => {
             run_prepared(request.prepare(), options, async |prepared, auth| {
                 prepared.run(&auth).await
@@ -368,6 +370,11 @@ enum Operation {
         #[command(subcommand)]
         command: SkillsCommand,
     },
+    /// Replace this tk binary with the latest release.
+    ///
+    /// A binary that cargo installed is never replaced; the record names the
+    /// `cargo install` command to run instead.
+    Update(UpdateArgs),
     /// Verify a saved profile with Turnkey and select it.
     Login(LoginArgs),
     /// Verify the selected identity with Turnkey.
@@ -411,6 +418,7 @@ impl Operation {
             Operation::Session { .. } => "session",
             Operation::Gpg { .. } => "gpg",
             Operation::Skills { .. } => "skills",
+            Operation::Update(_) => "update",
             Operation::Login(_) => "login",
             Operation::Whoami => "whoami",
             Operation::Auth { .. } => "auth",

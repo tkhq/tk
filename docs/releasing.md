@@ -2,7 +2,7 @@
 
 Push a `v*` tag to start the `release` workflow. The workflow builds a native
 binary for every supported target, checksums each one, and publishes a GitHub
-release. `install.sh` installs from that release.
+release. `install.sh` and `tk update` install from that release.
 
 1. Open a pull request that bumps `version` under `[package]` in the root
    `Cargo.toml` and refreshes the pinned entry in `Cargo.lock`, and wait for CI

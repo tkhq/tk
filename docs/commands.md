@@ -45,6 +45,7 @@ Subcommands:
 - [`tk session`](#tk-session): Rotate short-lived credentials for agent profiles
 - [`tk gpg`](#tk-gpg): Sign with PGP keys backed by wallet accounts
 - [`tk skills`](#tk-skills): Serve the embedded turnkey-tk agent skills
+- [`tk update`](#tk-update): Replace this tk binary with the latest release
 - [`tk login`](#tk-login): Verify a saved profile with Turnkey and select it
 - [`tk whoami`](#tk-whoami): Verify the selected identity with Turnkey
 - [`tk auth`](#tk-auth): Manage API authentication
@@ -1202,6 +1203,18 @@ tk skills install [OPTIONS] --into <DIR>
 | Argument | Notes | Description |
 |---|---|---|
 | `--into <DIR>` | required | Directory that receives the `turnkey-tk` package; created when missing |
+
+### `tk update`
+
+Replace this tk binary with the latest release
+
+```
+tk update [OPTIONS]
+```
+
+| Argument | Notes | Description |
+|---|---|---|
+| `--tag <TAG>` |  | Install this release or pull request prerelease tag, even an older one, instead of the latest release |
 
 ### `tk login`
 
