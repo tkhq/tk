@@ -1,19 +1,26 @@
-use crate::wire::ssh::Ed25519PublicKey;
 use anyhow::{Context, Result};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
-use turnkey_client::generated::external::data::v1::PrivateKey;
-use turnkey_client::generated::immutable::activity::v1::{
-    CreatePrivateKeysIntentV2, CreatePrivateKeysResultV2, PrivateKeyParams, PrivateKeyResult,
+use turnkey_client::{
+    ActivityResult, TurnkeyClient,
+    generated::{
+        GetPrivateKeyRequest, GetPrivateKeyResponse, GetPrivateKeysRequest, GetPrivateKeysResponse,
+        external::data::v1::PrivateKey,
+        immutable::{
+            activity::v1::{
+                CreatePrivateKeysIntentV2, CreatePrivateKeysResultV2, PrivateKeyParams,
+                PrivateKeyResult,
+            },
+            common::v1::Curve,
+        },
+    },
 };
-use turnkey_client::generated::immutable::common::v1::Curve;
-use turnkey_client::generated::{
-    GetPrivateKeyRequest, GetPrivateKeyResponse, GetPrivateKeysRequest, GetPrivateKeysResponse,
-};
-use turnkey_client::{ActivityResult, TurnkeyClient};
 use uuid::Uuid;
 
-use crate::errors::{ActivityError, ActivityErrorKind, InvalidInput, MissingResource};
-use crate::ssh::registry::PrivateKeyId;
+use crate::{
+    errors::{ActivityError, ActivityErrorKind, InvalidInput, MissingResource},
+    ssh::registry::PrivateKeyId,
+    wire::ssh::Ed25519PublicKey,
+};
 
 pub struct NamedPrivateKey {
     pub id: PrivateKeyId,
@@ -158,12 +165,13 @@ fn ed25519_public_key(private_key: PrivateKey) -> Result<(PrivateKeyId, Ed25519P
 #[allow(clippy::disallowed_types)]
 mod tests {
     use serde_json::{Value, json};
-    use wiremock::matchers::path;
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
 
     use super::*;
-    use crate::auth::{ResolvedAuth, build_turnkey_client};
-    use crate::errors::{ErrorCode, assert_malformed_response, classify};
+    use crate::{
+        auth::{ResolvedAuth, build_turnkey_client},
+        errors::{ErrorCode, assert_malformed_response, classify},
+    };
 
     const ORG: &str = "00000000-0000-4000-8000-000000000001";
     const KEY_ID: &str = "3d7b9d7c-2a0e-4b7f-8f8e-5e1f2d3c4b5a";

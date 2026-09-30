@@ -8,12 +8,16 @@ use turnkey_client::generated::{
     services::coordinator::public::v1::GetApiKeysRequest,
 };
 
-use super::duration::{ExpiresIn, human_seconds};
-use super::public_key::CompressedPublicKey;
-use crate::auth::{Profile, build_turnkey_client, read_key, saved_profile, whoami};
-use crate::errors::{MissingResource, SessionExpiring};
-use crate::operations::{OperationOutput, unix_now};
-use crate::resources::expires_at_unix_ms;
+use super::{
+    duration::{ExpiresIn, human_seconds},
+    public_key::CompressedPublicKey,
+};
+use crate::{
+    auth::{Profile, build_turnkey_client, read_key, saved_profile, whoami},
+    errors::{MissingResource, SessionExpiring},
+    operations::{OperationOutput, unix_now},
+    resources::expires_at_unix_ms,
+};
 
 const COMMAND: &str = "session.status";
 

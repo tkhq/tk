@@ -1,8 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::env::current_exe;
-use std::fs;
-use std::path::Path;
-use std::process::Command;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env::current_exe,
+    fs,
+    path::Path,
+    process::Command,
+};
 
 #[test]
 fn verified_by_tables_name_compiled_e2e_tests() {

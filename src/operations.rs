@@ -1,9 +1,11 @@
-use std::fmt::{self, Display, Formatter};
-use std::fs;
-use std::io::{self, Read};
-use std::mem::take;
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    fmt::{self, Display, Formatter},
+    fs,
+    io::{self, Read},
+    mem::take,
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{Context, Error, Result};
 use clap::{Args, Subcommand, ValueEnum};
@@ -18,12 +20,14 @@ use turnkey_client::generated::{
 };
 use uuid::Uuid;
 
-use crate::auth::ResolvedAuth;
-use crate::errors::{
-    ActivityError, ActivityErrorKind, InvalidInput, Malformed, UnexpectedHttpStatus,
-    transient_status,
+use crate::{
+    auth::ResolvedAuth,
+    errors::{
+        ActivityError, ActivityErrorKind, InvalidInput, Malformed, UnexpectedHttpStatus,
+        transient_status,
+    },
+    sessions::duration::ExpiresIn,
 };
-use crate::sessions::duration::ExpiresIn;
 
 const WALK_PAGE_SIZE: usize = 100;
 

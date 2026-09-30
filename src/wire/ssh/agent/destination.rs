@@ -2,8 +2,7 @@
 
 use anyhow::{Context, Result, anyhow};
 use signature::Verifier;
-use ssh_key::public::KeyData;
-use ssh_key::{HashAlg, PublicKey, Signature};
+use ssh_key::{HashAlg, PublicKey, Signature, public::KeyData};
 
 use super::super::protocol::{
     AgentSignRequest, SessionBind, SignedData, classify_signed_data, parse_session_bind,

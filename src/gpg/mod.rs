@@ -2,28 +2,30 @@
 //! registered entry carries the key, and its organization selects the
 //! credential.
 
-use std::borrow::Cow;
-use std::fmt::{self, Display, Formatter};
-use std::io::{self, Read};
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    borrow::Cow,
+    fmt::{self, Display, Formatter},
+    io::{self, Read},
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
-use crate::wire::openpgp::entity::{UserId, armored_detached_signature, export_public_key};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use registry::{GpgKeyEntry, KeyName, Scope, SelectError, SigningKeyName};
 use serde::Serialize;
+use signer::TurnkeySigner;
 use tokio::fs;
-use uuid::Uuid;
-
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::TurnkeyClient;
+use uuid::Uuid;
 
-use crate::auth::{self, AuthOptions, build_turnkey_client};
-use crate::errors::{InvalidInput, Malformed, MissingResource};
-use crate::outcome::Outcome;
-
-use registry::{GpgKeyEntry, KeyName, Scope, SelectError, SigningKeyName};
-use signer::TurnkeySigner;
+use crate::{
+    auth::{self, AuthOptions, build_turnkey_client},
+    errors::{InvalidInput, Malformed, MissingResource},
+    outcome::Outcome,
+    wire::openpgp::entity::{UserId, armored_detached_signature, export_public_key},
+};
 
 mod agent;
 mod keys;
@@ -494,8 +496,9 @@ fn unix_now() -> Result<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use clap::Parser;
+
+    use super::*;
 
     #[derive(Parser)]
     struct GpgParser {

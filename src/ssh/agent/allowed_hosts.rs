@@ -3,8 +3,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use ssh_key::public::KeyData;
-use ssh_key::{Algorithm, PublicKey};
+use ssh_key::{Algorithm, PublicKey, public::KeyData};
 use tokio::fs;
 
 use crate::errors::{InvalidInput, Malformed};

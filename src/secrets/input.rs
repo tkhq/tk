@@ -1,22 +1,23 @@
 //! Local parsing for `tk secret`. Everything here runs before credentials are
 //! resolved.
 
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::{self, Display, Formatter},
+    fs::File,
+    io::{self, IsTerminal, Read},
+    mem::take,
+    path::Path,
+};
+
 use anyhow::{Context, Result};
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{self, Display, Formatter};
-use std::fs::File;
-use std::io::{self, IsTerminal, Read};
-use std::mem::take;
-use std::path::Path;
-use turnkey_client::generated::SecretMetadata;
-use turnkey_client::generated::immutable::models::v1::KeyValue;
+use turnkey_client::generated::{SecretMetadata, immutable::models::v1::KeyValue};
 use turnkey_enclave_encrypt::QuorumPublicKey;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-use crate::errors::InvalidInput;
-use crate::output::MissingRequiredInput;
+use crate::{errors::InvalidInput, output::MissingRequiredInput};
 
 const MAX_SECRET_BYTES: usize = 1024 * 1024;
 

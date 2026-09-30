@@ -1,11 +1,10 @@
 // Test fixtures and assertions may panic.
 #![allow(clippy::unwrap_used, clippy::panic)]
-use crate::cli::Cli;
+use std::{env, fmt::Write, fs, path::Path};
+
 use clap::{Arg, ArgAction, Command, CommandFactory};
-use std::env;
-use std::fmt::Write;
-use std::fs;
-use std::path::Path;
+
+use crate::cli::Cli;
 
 const UPDATE_ENV: &str = "TK_UPDATE_COMMANDS_MD";
 

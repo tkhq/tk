@@ -1,11 +1,11 @@
 // Asserts on the classified error code.
 #![allow(clippy::disallowed_types)]
-use super::*;
-use crate::errors::{ErrorCode, classify};
 use tempfile::TempDir;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
-use wiremock::matchers::path as route;
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path as route};
+
+use super::*;
+use crate::errors::{ErrorCode, classify};
 
 const ORG: &str = "00000000-0000-4000-8000-000000000001";
 

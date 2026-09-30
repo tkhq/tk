@@ -1,9 +1,15 @@
-use crate::policy_helpers::{allow_once, tag_consensus};
-use crate::run::{AGENT_TAG, HUMAN_TAG, Run};
+use std::{
+    fs::{self, File},
+    time::{Duration, SystemTime},
+};
+
 use serde_json::{Value, json};
-use std::fs::{self, File};
-use std::time::{Duration, SystemTime};
 use uuid::Uuid;
+
+use crate::{
+    policy_helpers::{allow_once, tag_consensus},
+    run::{AGENT_TAG, HUMAN_TAG, Run},
+};
 
 #[test]
 #[ignore]
@@ -94,6 +100,7 @@ fn secret_import_list_and_export_round_trip() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
+
         assert_eq!(
             fs::metadata(&out).unwrap().permissions().mode() & 0o777,
             0o600

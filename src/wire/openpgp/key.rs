@@ -1,14 +1,14 @@
 //! v4 public key packets, fingerprints, and key IDs (RFC 4880 sections
 //! 5.5.2 and 12.2).
 
-use std::fmt::{self, Display, Formatter};
-use std::str::FromStr;
+use std::{
+    fmt::{self, Display, Formatter},
+    str::FromStr,
+};
 
 use sha1::{Digest, Sha1};
 
-use super::OpenPgpError;
-use super::packet::mpi;
-use super::signature::key_hash_prefix;
+use super::{OpenPgpError, packet::mpi, signature::key_hash_prefix};
 
 /// RFC 4880 9.1 algorithm ID for ECDSA.
 const ALGORITHM_ECDSA: u8 = 19;

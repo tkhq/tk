@@ -1,17 +1,20 @@
-use std::env;
-use std::fs;
-use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::{self, Stdio};
-use std::str;
+use std::{
+    env, fs,
+    io::Write,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::{self, Stdio},
+    str,
+};
 
 use assert_cmd::Command;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::policy_helpers::SignScope;
-use crate::run::{AdminLogin, Run, result, signed_commit, skip};
+use crate::{
+    policy_helpers::SignScope,
+    run::{AdminLogin, Run, result, signed_commit, skip},
+};
 
 const USER_ID: &str = "tk e2e <tk-e2e@example.com>";
 const SECOND_USER_ID: &str = "tk e2e second <tk-e2e-2@example.com>";

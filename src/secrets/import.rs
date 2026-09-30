@@ -1,15 +1,17 @@
 //! Imports secrets by encrypting locally and submitting only ciphertext.
 
+use std::{collections::BTreeMap, mem::take};
+
 use anyhow::Result;
 use serde_json::json;
-use std::collections::BTreeMap;
-use std::mem::take;
 use turnkey_client::ActivityResult;
 use zeroize::Zeroizing;
 
 use super::input::{SecretName, UniqueKeyValues, quorum_for};
-use crate::auth::{ResolvedAuth, build_turnkey_client};
-use crate::operations::OperationOutput;
+use crate::{
+    auth::{ResolvedAuth, build_turnkey_client},
+    operations::OperationOutput,
+};
 
 pub(super) async fn run(
     auth: ResolvedAuth,

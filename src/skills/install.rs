@@ -1,15 +1,19 @@
-use super::bundle::{DIGEST, FILES, InstallManifest, Installed, MANIFEST_FILE, ROOT, VERSION};
-use crate::errors::{InvalidInput, Malformed};
+use std::{
+    collections::BTreeSet,
+    env,
+    fs::{self, Permissions},
+    io::{self, ErrorKind},
+    mem::take,
+    os::unix::fs::PermissionsExt,
+    path::{Component, Path, PathBuf},
+};
+
 use anyhow::{Context, Result};
-use std::collections::BTreeSet;
-use std::env;
-use std::fs::{self, Permissions};
-use std::io::{self, ErrorKind};
-use std::mem::take;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 use uuid::Uuid;
+
+use super::bundle::{DIGEST, FILES, InstallManifest, Installed, MANIFEST_FILE, ROOT, VERSION};
+use crate::errors::{InvalidInput, Malformed};
 
 const DIR_MODE: u32 = 0o755;
 const FILE_MODE: u32 = 0o644;

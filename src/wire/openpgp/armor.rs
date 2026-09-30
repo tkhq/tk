@@ -4,9 +4,7 @@ use std::fmt::{self, Display, Formatter};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 
-use super::OpenPgpError;
-use super::key::Fingerprint;
-use super::signature::DetachedSignaturePacket;
+use super::{OpenPgpError, key::Fingerprint, signature::DetachedSignaturePacket};
 
 /// A complete ASCII armored `OpenPGP` signature block with a valid CRC-24 checksum.
 #[derive(PartialEq)]

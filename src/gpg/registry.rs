@@ -3,18 +3,24 @@
 //! entry is checked against its own key when the table is read and cannot
 //! name a key other than the one it describes.
 
-use std::collections::BTreeMap;
-use std::fmt::{self, Display, Formatter};
-use std::mem;
-use std::path::Path;
-use std::str::FromStr;
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display, Formatter},
+    mem,
+    path::Path,
+    str::FromStr,
+};
 
-use crate::wire::openpgp::entity::{OpenPgpKey, SigningKey, UserId};
-use crate::wire::openpgp::key::{Fingerprint, parse_point_hex};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::errors::{InvalidInput, Malformed};
+use crate::{
+    errors::{InvalidInput, Malformed},
+    wire::openpgp::{
+        entity::{OpenPgpKey, SigningKey, UserId},
+        key::{Fingerprint, parse_point_hex},
+    },
+};
 
 const LONG_KEY_ID_CHARS: usize = 16;
 const FINGERPRINT_CHARS: usize = 40;

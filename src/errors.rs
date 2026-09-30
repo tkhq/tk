@@ -1,12 +1,13 @@
 // This module defines ErrorCode and owns its classification.
 #![allow(clippy::disallowed_types)]
-use crate::auth::SelectedIdentity;
-use crate::sessions::public_key::CompressedPublicKey;
+use std::error::Error;
+
 use serde::Serialize;
 use serde_json::{Value, json};
-use std::error::Error;
 use turnkey_client::TurnkeyClientError;
 use uuid::Uuid;
+
+use crate::{auth::SelectedIdentity, sessions::public_key::CompressedPublicKey};
 
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
@@ -326,10 +327,12 @@ pub(crate) fn render_error_chain(error: &anyhow::Error) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use anyhow::anyhow;
     use std::collections::BTreeSet;
+
+    use anyhow::anyhow;
     use strum::IntoEnumIterator;
+
+    use super::*;
 
     #[test]
     fn error_code_wire_names_are_unique() {

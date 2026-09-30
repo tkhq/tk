@@ -5,12 +5,15 @@
 // cargo through stdout directives.
 #![allow(clippy::panic, clippy::unwrap_used, clippy::print_stdout)]
 
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env,
+    fmt::Write,
+    fs,
+    path::{Component, Path, PathBuf},
+};
+
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
-use std::env;
-use std::fmt::Write;
-use std::fs;
-use std::path::{Component, Path, PathBuf};
 
 fn files_under(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {

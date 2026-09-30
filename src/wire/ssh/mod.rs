@@ -2,8 +2,10 @@
 
 use std::str::{self, Utf8Error};
 
-use base64::Engine;
-use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
+};
 use sha2::{Digest, Sha256, Sha512};
 
 pub mod agent;

@@ -3,14 +3,15 @@
 use anyhow::{Context, Result};
 use serde_json::json;
 
-use super::pending::PendingSession;
-use super::public_key::CompressedPublicKey;
-use crate::auth::{
-    Profile, build_turnkey_client, read_key, remove_generated_key, saved_profile, set_profile_key,
-    state_dir, whoami,
+use super::{pending::PendingSession, public_key::CompressedPublicKey};
+use crate::{
+    auth::{
+        Profile, build_turnkey_client, read_key, remove_generated_key, saved_profile,
+        set_profile_key, state_dir, whoami,
+    },
+    errors::InvalidInput,
+    operations::OperationOutput,
 };
-use crate::errors::InvalidInput;
-use crate::operations::OperationOutput;
 
 const COMMAND: &str = "session.activate";
 

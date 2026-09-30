@@ -1,15 +1,19 @@
-use crate::policy_helpers::{SignScope, allow_once};
-use crate::run::{
-    AGENT_TAG, HUMAN_TAG, Run, created_user_id, id_of, one_api_key, result, user_params,
+use std::{
+    collections::BTreeSet,
+    fs,
+    io::Write,
+    path::Path,
+    process::{Command, Stdio},
+    time::{SystemTime, UNIX_EPOCH},
 };
+
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
-use std::fs;
-use std::io::Write;
-use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+
+use crate::{
+    policy_helpers::{SignScope, allow_once},
+    run::{AGENT_TAG, HUMAN_TAG, Run, created_user_id, id_of, one_api_key, result, user_params},
+};
 
 #[test]
 #[ignore]

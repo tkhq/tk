@@ -1,19 +1,24 @@
 // Test fixtures and assertions may panic.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-use super::*;
-use crate::cli::Cli;
-use crate::errors::{ActivityError, ActivityErrorKind, UnexpectedHttpStatus};
-use crate::operations::OperationOutput;
-use crate::output::ErrorMessage;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    sync::LazyLock,
+};
+
 use anyhow::Error;
-use clap::Parser;
-use clap::error::ErrorKind;
+use clap::{Parser, error::ErrorKind};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::sync::LazyLock;
 use strum::IntoEnumIterator;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
+
+use super::*;
+use crate::{
+    cli::Cli,
+    errors::{ActivityError, ActivityErrorKind, UnexpectedHttpStatus},
+    operations::OperationOutput,
+    output::ErrorMessage,
+};
 
 static PUBLIC_KEY: LazyLock<String> =
     LazyLock::new(|| hex::encode(TurnkeyP256ApiKey::generate().compressed_public_key()));

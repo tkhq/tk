@@ -1,8 +1,11 @@
-use crate::policy_helpers::{allow_once, tag_consensus};
-use crate::run::{AGENT_TAG, HUMAN_TAG, Run, assert_unauthenticated, created_user_id, result};
+use std::{collections::BTreeSet, fs};
+
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
-use std::fs;
+
+use crate::{
+    policy_helpers::{allow_once, tag_consensus},
+    run::{AGENT_TAG, HUMAN_TAG, Run, assert_unauthenticated, created_user_id, result},
+};
 
 #[test]
 #[ignore]

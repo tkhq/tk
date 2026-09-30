@@ -1,40 +1,51 @@
-use std::collections::{BTreeMap, btree_map::Entry};
-use std::env;
-use std::ffi::{OsStr, OsString};
-use std::io::{self, ErrorKind};
-use std::path::{Path, PathBuf};
-use std::process::{self, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, btree_map::Entry},
+    env,
+    ffi::{OsStr, OsString},
+    io::{self, ErrorKind},
+    path::{Path, PathBuf},
+    process::{self, Stdio},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use crate::wire::ssh::Ed25519PublicKey;
-use crate::wire::ssh::agent::{self, AgentIdentity, Keyring, SignError, SignFuture};
-use crate::wire::ssh::protocol;
 use anyhow::{Context, Error, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
-use tokio::process::{Child, Command};
-use tokio::time::{sleep, timeout};
+use tokio::{
+    fs,
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::UnixStream,
+    process::{Child, Command},
+    time::{sleep, timeout},
+};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::TurnkeyClient;
 use uuid::Uuid;
 
-use super::lock::{AgentLock, is_lock_held_by_other, resolve_lock_file};
 use super::{
     AgentNotRunning, AgentPathArgs, AgentRunning, AgentStopped, DestinationConstraints,
     InternalRunArgs, ServingArgs, StartArgs,
     allowed_hosts::{self, AllowedHosts},
+    lock::{AgentLock, is_lock_held_by_other, resolve_lock_file},
 };
-use crate::auth::{self, AuthOptions, CredentialSource, LoadedRegistry, ReloadingClient};
-use crate::errors::InvalidInput;
-use crate::outcome::{MachineOnly, Outcome};
-use crate::socket::SocketMode;
-use crate::ssh::registry::{SelectError, SshKeyEntry, SshKeyName};
-use crate::ssh::selection_error;
-use crate::ssh::signer::{BACKOFF, TurnkeySigner};
-use crate::wire::ssh::agent::destination::DestinationPolicy;
+use crate::{
+    auth::{self, AuthOptions, CredentialSource, LoadedRegistry, ReloadingClient},
+    errors::InvalidInput,
+    outcome::{MachineOnly, Outcome},
+    socket::SocketMode,
+    ssh::{
+        registry::{SelectError, SshKeyEntry, SshKeyName},
+        selection_error,
+        signer::{BACKOFF, TurnkeySigner},
+    },
+    wire::ssh::{
+        Ed25519PublicKey,
+        agent::{
+            self, AgentIdentity, Keyring, SignError, SignFuture, destination::DestinationPolicy,
+        },
+        protocol,
+    },
+};
 
 const START_TIMEOUT: Duration = Duration::from_secs(4);
 const STOP_TIMEOUT: Duration = Duration::from_secs(4);
@@ -646,13 +657,14 @@ fn send_signal(pid: u32, signal: i32) -> io::Result<()> {
 mod tests {
     use serde_json::json;
     use tempfile::TempDir;
-    use wiremock::matchers::path;
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
 
     use super::*;
-    use crate::auth::{ResolvedAuth, build_turnkey_client};
-    use crate::errors::{ErrorCode, classify};
-    use crate::ssh::registry::PrivateKeyId;
+    use crate::{
+        auth::{ResolvedAuth, build_turnkey_client},
+        errors::{ErrorCode, classify},
+        ssh::registry::PrivateKeyId,
+    };
 
     const ORG: &str = "00000000-0000-4000-8000-000000000001";
 

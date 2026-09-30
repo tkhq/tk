@@ -1,15 +1,19 @@
 //! Live SSH agent destination constraints: allowed hosts, namespaces, and forwarding.
 
-use std::fs;
-use std::net::TcpListener;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::{
+    fs,
+    net::TcpListener,
+    path::{Path, PathBuf},
+    process::{Child, Command, Output, Stdio},
+};
 
 use serde_json::{Value, json};
 
-use crate::run::{Run, skip};
-use crate::ssh::{check_signature, create_ed25519_key, generate_local_key, locate, register_key};
-use crate::ssh_agent::{Agent, advertised, agent_paths, public_key_file};
+use crate::{
+    run::{Run, skip},
+    ssh::{check_signature, create_ed25519_key, generate_local_key, locate, register_key},
+    ssh_agent::{Agent, advertised, agent_paths, public_key_file},
+};
 
 struct Tools {
     sshd: PathBuf,

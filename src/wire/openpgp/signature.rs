@@ -4,8 +4,10 @@ use std::fmt::{self, Display, Formatter};
 
 use sha2::{Digest, Sha256};
 
-use super::key::Fingerprint;
-use super::packet::{mpi, new_format_packet, subpacket};
+use super::{
+    key::Fingerprint,
+    packet::{mpi, new_format_packet, subpacket},
+};
 
 /// RFC 4880 9.1 and 9.4 algorithm IDs.
 const PUBKEY_ALGORITHM_ECDSA: u8 = 19;

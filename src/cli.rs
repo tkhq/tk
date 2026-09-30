@@ -1,28 +1,35 @@
-use crate::auth::{
-    self, AuthCommand, AuthOptions, LoginArgs, ProfileCommand, ResolvedAuth, SavedProfileCommand,
+use std::{
+    env,
+    ffi::OsString,
+    fmt::Display,
+    io::{self, Write},
+    process::ExitCode,
 };
-use crate::gpg::{self, GpgCommand};
-use crate::keygen::GenerateArgs;
-use crate::operations::{ActivityCommand, RequestArgs, run_activity};
-use crate::output::{ColorChoice, Ctx, ErrorMessage, MessageFormat, Shell, StdCtx};
-use crate::resources::{ApiKeyCommand, PolicyCommand, PreparedResource, UserCommand};
-use crate::secrets::{PreparedSecret, SecretCommand};
-use crate::sessions::{self, SessionCommand};
-use crate::skills::{self, SkillsCommand};
-use crate::ssh::{self, SshCommand};
-use crate::wallets::{PreparedWalletCommand, SignCommand, WalletCommand};
+
 use anyhow::Result;
 use clap::{
     ArgAction, Args, CommandFactory, Parser, Subcommand, builder::FalseyValueParser,
     error::ErrorKind,
 };
 use serde::Serialize;
-use std::env;
-use std::ffi::OsString;
-use std::fmt::Display;
-use std::io::{self, Write};
-use std::process::ExitCode;
 use tracing::debug;
+
+use crate::{
+    auth::{
+        self, AuthCommand, AuthOptions, LoginArgs, ProfileCommand, ResolvedAuth,
+        SavedProfileCommand,
+    },
+    gpg::{self, GpgCommand},
+    keygen::GenerateArgs,
+    operations::{ActivityCommand, RequestArgs, run_activity},
+    output::{ColorChoice, Ctx, ErrorMessage, MessageFormat, Shell, StdCtx},
+    resources::{ApiKeyCommand, PolicyCommand, PreparedResource, UserCommand},
+    secrets::{PreparedSecret, SecretCommand},
+    sessions::{self, SessionCommand},
+    skills::{self, SkillsCommand},
+    ssh::{self, SshCommand},
+    wallets::{PreparedWalletCommand, SignCommand, WalletCommand},
+};
 
 const LONG_ABOUT: &str = r#"CLI for Turnkey backed auth workflows.
 

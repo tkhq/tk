@@ -1,10 +1,11 @@
-use std::fmt::{self, Display, Formatter};
-use std::fs::Permissions;
-use std::os::unix::fs::PermissionsExt;
-use std::str::FromStr;
+use std::{
+    fmt::{self, Display, Formatter},
+    fs::Permissions,
+    os::unix::fs::PermissionsExt,
+    str::FromStr,
+};
 
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug)]

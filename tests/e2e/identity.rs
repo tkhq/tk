@@ -1,9 +1,9 @@
-use crate::run::{AGENT_TAG, AdminLogin, HUMAN_TAG, Run, assert_unauthenticated, result};
+use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+
 use serde_json::{Value, json};
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 use uuid::Uuid;
+
+use crate::run::{AGENT_TAG, AdminLogin, HUMAN_TAG, Run, assert_unauthenticated, result};
 
 fn stored_key(path: &Path, record: &Value) -> Value {
     let stored: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();

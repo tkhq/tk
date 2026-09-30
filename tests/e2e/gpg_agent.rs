@@ -1,14 +1,18 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::{Child, Command, Output, Stdio},
+};
 
 use assert_cmd::Command as TkCommand;
 use tempfile::TempDir;
 
-use crate::gpg::{add_key, create_key, create_occupied_wallet, import_public_key, openpgp_config};
-use crate::policy_helpers::SignScope;
-use crate::run::{Run, signed_commit, skip};
-use crate::ssh::locate;
+use crate::{
+    gpg::{add_key, create_key, create_occupied_wallet, import_public_key, openpgp_config},
+    policy_helpers::SignScope,
+    run::{Run, signed_commit, skip},
+    ssh::locate,
+};
 
 const USER_ID: &str = "tk gpg agent e2e <tk-gpg-agent-e2e@example.com>";
 const BROKER_TAG: &str = "broker";

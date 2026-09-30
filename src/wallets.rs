@@ -1,9 +1,3 @@
-use crate::{
-    auth::{ResolvedAuth, build_turnkey_client},
-    errors::{Malformed, MissingResource},
-    operations::{OperationOutput, submit_activity},
-    resources::BodyArgs,
-};
 use anyhow::Result;
 use clap::Subcommand;
 use serde_json::{json, to_value};
@@ -16,6 +10,13 @@ use turnkey_client::generated::{
     },
 };
 use uuid::Uuid;
+
+use crate::{
+    auth::{ResolvedAuth, build_turnkey_client},
+    errors::{Malformed, MissingResource},
+    operations::{OperationOutput, submit_activity},
+    resources::BodyArgs,
+};
 
 #[derive(Debug, Subcommand)]
 pub enum WalletCommand {
@@ -271,9 +272,10 @@ impl WalletQuery {
 
 #[cfg(test)]
 mod tests {
+    use clap::{Parser, error::ErrorKind};
+
     use super::*;
-    use clap::Parser;
-    use clap::error::ErrorKind;
+
     #[derive(Debug, Parser)]
     struct WalletParser {
         #[command(subcommand)]

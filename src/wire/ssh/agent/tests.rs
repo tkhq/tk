@@ -1,24 +1,30 @@
 //! Tests for the SSH agent protocol and keyring-backed server.
 
-use std::collections::BTreeMap;
-use std::io::{self, Error, ErrorKind};
-use std::path::{Path, PathBuf};
-use std::slice;
-use std::sync::Arc;
+use std::{
+    collections::BTreeMap,
+    io::{self, Error, ErrorKind},
+    path::{Path, PathBuf},
+    slice,
+    sync::Arc,
+};
 
-use crate::wire::ssh::agent::destination::DestinationPolicy;
-use crate::wire::ssh::agent::{self, AgentIdentity, Keyring, SignError, SignFuture};
-use crate::wire::ssh::protocol;
-use crate::wire::ssh::{Ed25519PublicKey, build_signed_data};
 use anyhow::{Result, anyhow};
 use rand_core::OsRng;
 use signature::Signer;
 use ssh_key::{Algorithm, PrivateKey, Signature};
 use tempfile::TempDir;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
-use tokio::task::JoinHandle;
-use tokio::time::{Duration, sleep};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::UnixStream,
+    task::JoinHandle,
+    time::{Duration, sleep},
+};
+
+use crate::wire::ssh::{
+    Ed25519PublicKey,
+    agent::{self, AgentIdentity, Keyring, SignError, SignFuture, destination::DestinationPolicy},
+    build_signed_data, protocol,
+};
 
 fn encode_string(bytes: &[u8], output: &mut Vec<u8>) {
     output.extend_from_slice(&(bytes.len() as u32).to_be_bytes());

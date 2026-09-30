@@ -42,7 +42,7 @@ to fixers rather than inlining the list. Every round:
 **1. Mechanical pass.** Run directly, no agents:
 
 ```bash
-cargo fmt --all
+cargo +nightly-2026-09-01 fmt --all
 cargo clippy --workspace --all-targets --locked -- -D warnings
 git diff origin/main | grep -n '^+.*#\[allow('     # diff mode
 grep -rn '#\[allow(' <paths>                        # path mode
@@ -82,7 +82,7 @@ each violates, and this instruction:
 > <file list>. Do not add doc comments to items you did not create. Delete a
 > unit test as covered by an e2e test only when, by reading the e2e test, every
 > assertion of the unit test is provably covered; you cannot run the e2e suite.
-> Then run `cargo fmt --all`, `cargo clippy --workspace --all-targets --locked
+> Then run `cargo +nightly-2026-09-01 fmt --all`, `cargo clippy --workspace --all-targets --locked
 > -- -D warnings`, and `cargo test --workspace --locked`. Return one paragraph
 > per finding saying what changed, including any change beyond the cited lines.
 > Do not commit.

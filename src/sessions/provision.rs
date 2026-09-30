@@ -15,11 +15,15 @@ use turnkey_client::generated::{
 };
 use uuid::Uuid;
 
-use super::duration::{ExpiresIn, human_seconds};
-use super::public_key::CompressedPublicKey;
-use crate::auth::ResolvedAuth;
-use crate::errors::{ActivityError, ActivityErrorKind};
-use crate::operations::{OperationOutput, query, submit_activity, unix_now};
+use super::{
+    duration::{ExpiresIn, human_seconds},
+    public_key::CompressedPublicKey,
+};
+use crate::{
+    auth::ResolvedAuth,
+    errors::{ActivityError, ActivityErrorKind},
+    operations::{OperationOutput, query, submit_activity, unix_now},
+};
 
 const COMMAND: &str = "session.provision";
 

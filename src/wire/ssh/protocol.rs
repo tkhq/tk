@@ -7,9 +7,11 @@
 use std::io::{self, Error, ErrorKind};
 
 use anyhow::{Result, anyhow};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
-use tokio::time::{Duration, timeout};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::UnixStream,
+    time::{Duration, timeout},
+};
 
 use super::{SSHSIG_PREAMBLE, agent::AgentIdentity, read_ssh_bytes};
 

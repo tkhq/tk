@@ -1,9 +1,12 @@
-use crate::policy_helpers::{allow_once, tag_consensus};
-use crate::run::{AGENT_TAG, HUMAN_TAG, Run, created_user_id, id_of, user_params};
+use std::{fs, io::ErrorKind};
+
 use serde_json::{Value, json};
-use std::fs;
-use std::io::ErrorKind;
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
+
+use crate::{
+    policy_helpers::{allow_once, tag_consensus},
+    run::{AGENT_TAG, HUMAN_TAG, Run, created_user_id, id_of, user_params},
+};
 
 #[test]
 #[ignore]

@@ -1,25 +1,29 @@
 //! Git's ssh-keygen-compatible signing and verification entry point.
 
-use std::env;
-use std::ffi::OsString;
-use std::io::{self, Write};
-use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
-
-use crate::wire::ssh::{
-    PublicKeyParseError, build_signed_data, encode_armored_signature, parse_public_key_line,
+use std::{
+    env,
+    ffi::OsString,
+    io::{self, Write},
+    os::unix::process::CommandExt,
+    path::{Path, PathBuf},
+    process::{Command, ExitCode},
 };
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use tokio::fs;
 
-use crate::auth::{self, AuthOptions};
-use crate::errors::{InvalidInput, render_error_chain};
-use crate::ssh::registry::{SelectError, SshKeyName};
-use crate::ssh::{
-    selection_error,
-    signer::{BACKOFF, TurnkeySigner},
+use crate::{
+    auth::{self, AuthOptions},
+    errors::{InvalidInput, render_error_chain},
+    ssh::{
+        registry::{SelectError, SshKeyName},
+        selection_error,
+        signer::{BACKOFF, TurnkeySigner},
+    },
+    wire::ssh::{
+        PublicKeyParseError, build_signed_data, encode_armored_signature, parse_public_key_line,
+    },
 };
 
 const CANNOT_EXEC: u8 = 2;

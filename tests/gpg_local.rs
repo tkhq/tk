@@ -4,13 +4,14 @@
 // Test helpers may panic.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::fs;
-use std::io::{Error, Read, Write};
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::UnixListener;
-use std::path::{Path, PathBuf};
-use std::process::Output;
-use std::thread;
+use std::{
+    fs,
+    io::{Error, Read, Write},
+    os::unix::{fs::PermissionsExt, net::UnixListener},
+    path::{Path, PathBuf},
+    process::Output,
+    thread,
+};
 
 use assert_cmd::Command;
 use serde_json::{Value, json};

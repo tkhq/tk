@@ -1,8 +1,11 @@
-use std::collections::BTreeMap;
-use std::env;
-use std::fmt::{self, Debug, Formatter};
-use std::fs;
-use std::path::Path;
+use std::{
+    collections::BTreeMap,
+    env,
+    fmt::{self, Debug, Formatter},
+    fs,
+    path::Path,
+};
+
 use uuid::Uuid;
 
 const REQUIRED_KEYS: [&str; 3] = [

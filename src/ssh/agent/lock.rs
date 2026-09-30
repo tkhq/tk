@@ -1,7 +1,9 @@
-use std::fs::{File, OpenOptions};
-use std::io;
-use std::os::fd::AsRawFd;
-use std::path::{Path, PathBuf};
+use std::{
+    fs::{File, OpenOptions},
+    io,
+    os::fd::AsRawFd,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use tokio::task::spawn_blocking;
