@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 const WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
 const INSTALLER: &str = include_str!("../install.sh");
+const UPDATER: &str = include_str!("../src/update.rs");
 
 #[test]
 fn release_tag_must_name_the_manifest_version_and_be_on_main() {
@@ -45,4 +46,17 @@ fn installer_targets_match_the_build_matrix() {
         .collect();
     assert_eq!(matrix.len(), 4);
     assert_eq!(installer, matrix);
+}
+
+#[test]
+fn updater_targets_match_the_build_matrix() {
+    let matrix: BTreeSet<_> = WORKFLOW
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("target: "))
+        .collect();
+    let updater: BTreeSet<_> = UPDATER
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix(r#"Some(""#)?.strip_suffix(r#"")"#))
+        .collect();
+    assert_eq!(updater, matrix);
 }

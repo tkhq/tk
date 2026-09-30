@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::{
     gpg, skills,
     ssh::{self, agent},
+    update,
 };
 
 #[derive(Serialize)]
@@ -45,6 +46,9 @@ pub enum Outcome {
     SkillsListed(skills::Listed),
     SkillsShown(skills::Shown),
     SkillsInstalled(skills::Installed),
+    Updated(update::Updated),
+    AlreadyUpToDate(update::AlreadyUpToDate),
+    UpdateViaCargo(update::UpdateViaCargo),
 }
 
 impl Display for Outcome {
@@ -79,6 +83,9 @@ impl Display for Outcome {
             Outcome::SkillsListed(msg) => msg.fmt(f),
             Outcome::SkillsShown(msg) => msg.fmt(f),
             Outcome::SkillsInstalled(msg) => msg.fmt(f),
+            Outcome::Updated(msg) => msg.fmt(f),
+            Outcome::AlreadyUpToDate(msg) => msg.fmt(f),
+            Outcome::UpdateViaCargo(msg) => msg.fmt(f),
         }
     }
 }
