@@ -86,7 +86,11 @@ pub(crate) struct AdminLogin {
 }
 
 pub(crate) fn bare_cli(home: &Path) -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tk"));
+    cli_at(Path::new(env!("CARGO_BIN_EXE_tk")), home)
+}
+
+pub(crate) fn cli_at(program: &Path, home: &Path) -> Command {
+    let mut cmd = Command::new(program);
     for name in SCRUBBED {
         cmd.env_remove(name);
     }
