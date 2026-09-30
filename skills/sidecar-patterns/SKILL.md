@@ -41,7 +41,7 @@ something other than the agent. Every `tk` step in this workflow is a command an
   mode-restricted to that OS user, or to a supplemental group when its
   clients run as another uid.
 - The OpenPGP socket is signing authority too. The broker alone holds the signing
-  profile, serves one fingerprint, and restarts after its own rotation. The agent's
+  profile and serves one fingerprint. The agent's
   boundary gets the socket and the public key, never the broker's profile or
   registry, and the agent's own profile has no signing policy on that wallet.
 - Alert on expiry from the loop, not from the agent: an expired agent cannot.
@@ -100,7 +100,7 @@ secrets are imported ([managing-secrets](../managing-secrets/SKILL.md)).
    | `session status` exits `0` | nothing; the key is healthy |
    | exits `1` with `session_expiring` and no pending request | `session request`; save `data.publicKey`; if `data.userId` is `null` use the persisted `AGENT_USER_ID` |
    | a pending request exists | `session provision`; `pending` means a human must approve; `alreadyRegistered: true` or `completed` means proceed |
-   | provision completed | `session activate`, then `whoami` as that principal; for `broker`, restart the GPG broker (step 5) |
+   | provision completed | `session activate`, then `whoami` as that principal |
    | activate fails `unauthorized` | the key is not registered yet; leave the request in place and try next tick |
    | the mint activity was rejected | `session request --replace`, alert (step 6), start over next tick |
 

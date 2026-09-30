@@ -64,4 +64,4 @@ gpg --verify release.tar.gz.asc release.tar.gz
 
 - [deploying-signing-broker](../skills/deploying-signing-broker/SKILL.md): isolate the signing credential and session provisioner in separate containers.
 - [signing-git-commits](../skills/signing-git-commits/SKILL.md): creating, registering, and using the key for commits as a non-root agent.
-- [sidecar-patterns](../skills/sidecar-patterns/SKILL.md): where the broker runs, restarts after renewal, and hands its socket to the agent.
+- [sidecar-patterns](../skills/sidecar-patterns/SKILL.md): where the broker runs beside the renewal loop and hands its socket to the agent.

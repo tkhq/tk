@@ -160,7 +160,7 @@ or a shared uid), and the session lifetime.
 7. **Rotate the broker session.** A host timer runs step 5 of
    [provisioning-session-agent](../provisioning-session-agent/SKILL.md) as a state machine: status,
    request, and activate execute in `gpg-broker`; provision executes in `provisioner`, bound to
-   `BROKER_USER_ID` and the configured lifetime. After activation, restart `gpg-broker` so it builds a new API client.
+   `BROKER_USER_ID` and the configured lifetime. The broker signs with the activated key on its next request.
 
 8. **Gate the deployment.** Verify the separation of the model in force: three uids under
    the group model; under the shared uid, one uid for application and broker but separate
@@ -168,7 +168,7 @@ or a shared uid), and the session lifetime.
    only the read-only runtime and public key; the broker alone has its home and runtime
    writable; the provisioner alone has its home. Require a verified signed commit and a socket
    matching the model: `0660` owned by the broker uid and socket gid, or `0600` owned by the
-   shared uid. Stop the broker; signing must fail. Start it, rotate, restart, sign again.
+   shared uid. Stop the broker; signing must fail. Start it, rotate, sign again.
 
 9. **Hand off.** Report image digests, uid/gid assignments, host mount paths, fingerprint, broker
    user id, policy ids, lifetime and timer, socket metadata, and gate results; no credential values or private material.
@@ -179,9 +179,9 @@ or a shared uid), and the session lifetime.
 |---|---|
 | signing-broker.policy-sign, signing-broker.policy-deny, signing-broker.export, signing-broker.serve, signing-broker.client | gpg_agent::foreground_agent_signs_for_a_credential_free_git_client |
 
-Mounts, ownership, supervision, broker loss, and rotation are manual gates. The test
-proves that a broker holding only the two step 1 policies signs for a credential-free
-client, refuses an unserved key, cannot register a credential, and removes its socket.
+Mounts, ownership, supervision, broker loss, and the renewal timer are manual gates. The test
+proves that a broker holding only the two step 1 policies signs for a credential-free client,
+refuses an unserved key, cannot register a credential, signs after a rotation, and removes its socket.
 
 ## Troubleshooting
 
