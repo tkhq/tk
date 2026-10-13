@@ -118,8 +118,9 @@ tk --profile admin --message-format json policy create --name provisioners-no-se
 Containment is the pair: the pinned ALLOW leaves a key proposed on another
 provisioner or a root user with no matching policy, and the self DENY closes
 the one target the default-allow fallback would otherwise rescue. Create one
-self DENY per provisioner user. The language has no negation, so a single
-"not in the set" DENY cannot be written.
+self DENY per provisioner user. A single DENY on
+`!(activity.params.user_id in ['AGENT_USER_ID'])` also expresses "outside the
+set", but its list must then match the ALLOW's list exactly.
 
 ## Signing-key policies
 
