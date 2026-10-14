@@ -374,10 +374,7 @@ fn inspecting_agents_jq_recipes_answer_live_records() {
     let registered_public_key = hex::encode(run.key().compressed_public_key());
     let registered = run.register_api_key(&agent_one_id, "ci-key", &registered_public_key);
     let registered_activity = id_of(&registered);
-    let root_user_id = run.ok(run.admin().arg("whoami"))["data"]["userId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let root_user_id = run.root_user_id();
 
     let tags = run.ok(run.admin().args(["user", "tag", "list"]));
     let listed: BTreeSet<String> = jq_lines(&tags, TAGS.filter, &[]).into_iter().collect();

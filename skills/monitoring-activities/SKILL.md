@@ -20,8 +20,8 @@ on it, and reads who voted. Resuming never resubmits the original command.
   own pending work.
 - Before approving, verify the target: the organization, the activity type,
   and the parameters (for a key registration, the target `userId`, the
-  `publicKey`, and the lifetime). Target tags and lifetimes are not
-  policy-visible, so the approver is the check.
+  `publicKey`, and the lifetime). Target tags are not policy-visible, so
+  the approver is the check that the target is the intended agent.
 - Rejection is final. A rejected activity cannot be approved later; the
   submitter runs a new one.
 - Approve as the intended approver identity. A root approval also satisfies

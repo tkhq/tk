@@ -15,6 +15,7 @@ name ids are noted where they appear. Read
 - [Credential containment](#credential-containment)
 - [Provisioner policies](#provisioner-policies)
 - [Signing-key policies](#signing-key-policies)
+  - [Brokers that share one key](#brokers-that-share-one-key)
 - [Isolation boundaries](#isolation-boundaries)
 - [Anti-patterns](#anti-patterns)
 
@@ -85,20 +86,21 @@ tk --profile admin --message-format json policy create --name agents-no-credenti
 ## Provisioner policies
 
 A provisioner may do one thing: register expiring keys on an explicit set of
-agent users. The target set is the one place an id list is unavoidable,
-because the target's tags are not policy-visible.
+agent users, each key with a bounded lifetime. The target set is the one place
+an id list is unavoidable, because the target's tags are not policy-visible.
+Set the cap in seconds to the longest key you renew; 604800 is seven days.
 
 <!-- shared: provisioners-mint-agent-keys -->
 <!-- example: policy-patterns.provisioners-mint-agent-keys -->
 ```sh
 tk --profile admin --message-format json policy create --name provisioners-mint-agent-keys --effect allow \
   --consensus "approvers.any(user, user.tags.contains('PROVISIONER_TAG')) && approvers.any(user, user.tags.contains('HUMAN_APPROVER_TAG'))" \
-  --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['AGENT_USER_ID']"
+  --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['AGENT_USER_ID'] && activity.params.api_keys.all(k, k.expiration_seconds <= 604800)"
 ```
 
 Drop the `HUMAN_APPROVER_TAG` clause for the unilateral minting row of the
-approval matrix; then a trusted provisioner service, not a policy, enforces
-the lifetime.
+approval matrix. The lifetime clause stays in every row: a key longer than the
+cap, or one that never expires, matches no ALLOW and is denied.
 
 <!-- example: policy-patterns.provisioners-nothing-else -->
 ```sh
@@ -127,8 +129,10 @@ An agent that pushes over SSH or signs commits holds no key material. The
 SSH key is a Turnkey private key served by `tk ssh agent`; the OpenPGP key is a
 wallet account signed through `tk gpg`. Scope by the exact resource, and name
 the one user that serves the key in the consensus: a tag consensus would let
-every tagged agent sign with it. A fleet gets one key and one policy per
-agent. These are allow-always by necessity: Git and SSH wait for a signature
+every tagged agent sign with it. Give each identity that GitHub should see one
+key: an agent that signs as itself gets its own key, and brokers that sign as
+one person share that person's key (see [shared keys](#brokers-that-share-one-key)).
+These are allow-always by necessity: Git and SSH wait for a signature
 synchronously, so an approval-gated variant needs a different design.
 
 <!-- shared: agents-sign-ssh -->
@@ -159,6 +163,25 @@ tk --profile admin --message-format json policy create --name brokers-sign-gpg -
   --consensus "approvers.any(user, user.id == 'BROKER_USER_ID')" \
   --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
 ```
+
+### Brokers that share one key
+
+Several brokers can sign as one person: one Ed25519 key per person, uploaded to
+GitHub once, and one signing ALLOW per broker naming that broker's user id.
+Every broker also carries the `broker` tag under the credential DENY. The
+activity log records which broker signed, and retiring a broker deletes its
+policy and user without rotating the key or its GitHub registration. A new
+broker gets its own policy and joins the provisioner's mint target set.
+
+<!-- example: policy-patterns.brokers-sign-ssh -->
+```sh
+tk --profile admin --message-format json policy create --name broker-1-sign-ssh --effect allow \
+  --consensus "approvers.any(user, user.id == 'BROKER_USER_ID')" \
+  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == 'PRIVATE_KEY_ID'"
+```
+
+Never select signers with the shared `broker` tag: every broker could then
+sign with every person's key.
 
 ## Isolation boundaries
 

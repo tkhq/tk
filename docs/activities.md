@@ -44,5 +44,6 @@ tk policy evaluations --activity-id ACTIVITY_ID
 - [inspecting-agents](../skills/inspecting-agents/SKILL.md): paging pending activities, votes, and mint attribution with jq.
 - [provisioning-agent-identity](../skills/provisioning-agent-identity/SKILL.md): approving the agent's gated `secret export` and reading the denial that fences it.
 - [provisioning-session-agent](../skills/provisioning-session-agent/SKILL.md): approving a pending mint and inspecting it with `activity get` when activation fails.
+- [revoking-agent-keys](../skills/revoking-agent-keys/SKILL.md): matching a delete's key id with `activity get` and reading the `policy evaluations` behind a refused revocation.
 - [signing-git-commits](../skills/signing-git-commits/SKILL.md): waiting on a `pending` wallet creation before scoping the signing policy.
 - [using-ssh](../skills/using-ssh/SKILL.md): locating a failed signing activity with `activity list` and reading its `policy evaluations`.

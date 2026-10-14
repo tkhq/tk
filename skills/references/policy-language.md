@@ -59,7 +59,7 @@ never a bare boolean.
 | Keyword | Fields used here |
 |---|---|
 | `activity` | `type` (full `ACTIVITY_TYPE_*` name), `resource` (`USER`, `CREDENTIAL`, `POLICY`, `SECRET`, `PRIVATE_KEY`, `WALLET`, `ORGANIZATION`, and others), `action` (`CREATE`, `UPDATE`, `DELETE`, `EXPORT`, `IMPORT`, `SIGN`), `params` |
-| `activity.params` | for `ACTIVITY_TYPE_CREATE_API_KEYS_V2`: `user_id` of the target user, as a string. The target's tags and `expirationSeconds` are not exposed |
+| `activity.params` | for `ACTIVITY_TYPE_CREATE_API_KEYS_V2`: `user_id` of the target user, as a string, and `api_keys`, one entry per key with `expiration_seconds` (integer); for `ACTIVITY_TYPE_DELETE_API_KEYS`: `user_id` and `api_key_ids` (list of strings). The target's tags are not exposed |
 | `secret` | `static_properties['KEY']` on `ACTIVITY_TYPE_EXPORT_SECRETS` only; deletion does not load properties |
 | `wallet` | `id` |
 | `private_key` | `id`, `tags` |
@@ -93,10 +93,11 @@ All signing, including the raw-payload signatures behind `tk ssh` and
   scoped to other targets does not close this; only a DENY on
   `activity.resource == 'CREDENTIAL'` for the agent tag does. Provisioners
   need the same DENY outside their exact target set.
-- **Lifetime is not policy-visible.** `CREATE_API_KEYS_V2` exposes the target
-  `user_id` but not `expirationSeconds`. A policy can pin the allowed target
-  users; a human or a trusted provisioner service checks the lifetime from the
-  activity's parameters.
+- **A key without expiration has the largest lifetime.** A missing
+  `expiration_seconds` reads as the maximum, so
+  `activity.params.api_keys.all(k, k.expiration_seconds <= 604800)` also
+  rejects keys that never expire. Use `all` in an ALLOW and `any` with `>` in
+  a DENY; one request can register several keys.
 - **Sessions cannot be minted for another user.** Read/write session
   activities always target the proposer. Cross-user expiring credentials use
   `CREATE_API_KEYS_V2`, which is what `tk session provision` submits.

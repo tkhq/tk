@@ -41,11 +41,11 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
   home sees an empty registry.
 - Host-key verification stays on. `tk` replaces the client key, not the
   trust in the server.
-- When a signing broker holds signing for this deployment, do not create
-  `agents-sign-*` policies. Run this workflow as the broker principal instead:
-  the step 2 policy names `BROKER_USER_ID` in place of `AGENT_USER_ID`, step 4 runs
-  `tk ssh agent start --key SSH_FINGERPRINT` under the broker's `HOME`, and
-  the application receives only the socket, never the broker's profile.
+- When a signing broker holds signing, do not create `agents-sign-*` policies;
+  run this workflow as the broker principal, tagged `BROKER_TAG` under the
+  [deploying-signing-broker](../deploying-signing-broker/SKILL.md) credential DENY.
+  Step 2 names `BROKER_USER_ID` for `AGENT_USER_ID`; step 4 starts `tk ssh agent`
+  under the broker's `HOME`; the application gets only the socket.
 
 ## Instructions
 

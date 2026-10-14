@@ -623,3 +623,57 @@ fn signing_git_commits_ssh_signing_with_scoped_policy() {
         "the refused commit moved HEAD"
     );
 }
+
+#[test]
+#[ignore]
+fn brokers_share_one_signing_key_through_per_broker_policies() {
+    let Some(ssh_keygen) = locate("ssh-keygen") else {
+        skip("the shared-key broker test: ssh-keygen is not on PATH");
+        return;
+    };
+    let run = Run::new();
+    let broker_tag = run.create_tag("broker");
+    run.deny_agent_credentials(&broker_tag);
+    let key_id = create_ed25519_key(&run);
+    let brokers = ["broker-1", "broker-2"].map(|label| {
+        let (user_id, key) = run.create_tagged_user(label, "broker");
+        run.allow_user_signing(
+            &format!("{label}-sign-ssh"),
+            &user_id,
+            SignScope::PrivateKey(&key_id),
+        );
+        key
+    });
+    let (_, unlisted) = run.create_tagged_user("broker-3", "broker");
+
+    let registered = register_key(&run, &mut run.as_user(&brokers[0]), &key_id);
+    let public_key = run.home().join("shared.pub");
+    fs::write(&public_key, format!("{}\n", text(&registered["publicKey"]))).unwrap();
+    let payload = run.home().join("commit.txt");
+    fs::write(&payload, b"signed by a broker\n").unwrap();
+    let signature = run.home().join("commit.txt.sig");
+    let sign = |key| {
+        let mut command = run.as_user(key);
+        command
+            .args(["ssh", "git-sign", "-Y", "sign", "-n", "git", "-f"])
+            .arg(&public_key)
+            .arg(&payload);
+        command
+    };
+
+    for broker in &brokers {
+        assert_eq!(
+            run.ok(&mut sign(broker)),
+            json!({"reason": "git_sign_completed"})
+        );
+        let checked = check_signature(&ssh_keygen, &public_key, &payload, &signature);
+        assert!(
+            checked.status.success(),
+            "{}",
+            String::from_utf8_lossy(&checked.stderr)
+        );
+        fs::remove_file(&signature).unwrap();
+    }
+    run.err_unauthorized(&mut sign(&unlisted));
+    assert!(!signature.exists(), "an unlisted broker signed");
+}

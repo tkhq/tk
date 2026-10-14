@@ -69,6 +69,7 @@ pub(crate) struct Run {
     marker: String,
     pub(crate) secrets: RefCell<Vec<String>>,
     sub_org: Option<String>,
+    root_user_id: Option<String>,
 }
 
 fn now_ms() -> String {
@@ -153,6 +154,7 @@ impl Run {
             marker: format!("tk-e2e-{}", Uuid::new_v4()),
             secrets,
             sub_org: None,
+            root_user_id: None,
         };
         let parameters = json!({
             "subOrganizationName": run.marker,
@@ -175,11 +177,18 @@ impl Run {
             &run.config.organization_id.to_string(),
             &parameters,
         );
-        let sub_org = result(&created, "createSubOrganizationResultV7")["subOrganizationId"]
+        let created = result(&created, "createSubOrganizationResultV7");
+        let sub_org = created["subOrganizationId"]
             .as_str()
             .unwrap_or_else(|| panic!("sub-organization id missing: {created}"))
             .to_string();
         run.sub_org = Some(sub_org);
+        run.root_user_id = Some(
+            created["rootUserIds"][0]
+                .as_str()
+                .unwrap_or_else(|| panic!("root user id missing: {created}"))
+                .to_string(),
+        );
         run
     }
 
@@ -190,6 +199,12 @@ impl Run {
     /// The sub-organization used by this test.
     pub(crate) fn org(&self) -> &str {
         self.sub_org
+            .as_deref()
+            .expect("sub-organization is created before any test command runs")
+    }
+
+    pub(crate) fn root_user_id(&self) -> &str {
+        self.root_user_id
             .as_deref()
             .expect("sub-organization is created before any test command runs")
     }
@@ -786,6 +801,19 @@ impl Run {
             ]),
             "api-key.register",
         )
+    }
+
+    pub(crate) fn register_api_key_id(
+        &self,
+        user_id: &str,
+        name: &str,
+        public_key: &str,
+    ) -> String {
+        let registered = self.register_api_key(user_id, name, public_key);
+        result(&registered, "createApiKeysResult")["apiKeyIds"][0]
+            .as_str()
+            .unwrap()
+            .to_string()
     }
 
     pub(crate) fn create_tag(&self, name: &str) -> String {
