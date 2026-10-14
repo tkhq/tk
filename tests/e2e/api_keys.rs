@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, fs};
 use serde_json::{Value, json};
 
 use crate::{
-    policy_helpers::{allow_once, tag_consensus},
+    policy_helpers::{allow_once, tag_consensus, user_consensus},
     run::{AGENT_TAG, HUMAN_TAG, Run, assert_unauthenticated, created_user_id, result},
 };
 
@@ -356,4 +356,100 @@ fn api_key_list_selects_owner_and_expiry() {
         vec![format!("{user_name}-key")],
         "{all_expiring}"
     );
+}
+
+fn allow_key_deletion(run: &Run, consensus: &str, targets: &[&str]) {
+    let targets = targets
+        .iter()
+        .map(|id| format!("'{id}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    run.create_policy_from_flags(
+        &run.name("revoker-delete-keys"),
+        "allow",
+        consensus,
+        &format!(
+            "activity.type == 'ACTIVITY_TYPE_DELETE_API_KEYS' && activity.params.user_id in [{targets}]"
+        ),
+    );
+}
+
+fn delete_args<'a>(user_id: &'a str, api_key_id: &'a str) -> [&'a str; 6] {
+    [
+        "api-key",
+        "delete",
+        "--user-id",
+        user_id,
+        "--id",
+        api_key_id,
+    ]
+}
+
+#[test]
+#[ignore]
+fn revoker_deletes_keys_only_for_listed_users() {
+    let run = Run::new();
+    let revoker_tag = run.create_tag("revoker");
+    let (_, revoker) = run.create_tagged_user("revoker", "revoker");
+    let (broker_id, broker) = run.create_user("broker");
+    let (other_id, other) = run.create_user("other");
+    allow_key_deletion(&run, &tag_consensus(&revoker_tag), &[&broker_id]);
+
+    let other_key_id = run.api_key_id(&other_id, &hex::encode(other.compressed_public_key()));
+    run.err_unauthorized(
+        run.as_user(&revoker)
+            .args(delete_args(&other_id, &other_key_id)),
+    );
+    run.ok(run.as_user(&other).arg("whoami"));
+
+    let root_id = run.ok(run.admin().arg("whoami"))["data"]["userId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let spare = hex::encode(run.key().compressed_public_key());
+    run.register_api_key(&root_id, &run.name("root-spare"), &spare);
+    let spare_id = run.api_key_id(&root_id, &spare);
+    run.err_unauthorized(run.as_user(&revoker).args(delete_args(&root_id, &spare_id)));
+
+    let broker_key_id = run.api_key_id(&broker_id, &hex::encode(broker.compressed_public_key()));
+    let next = run.key();
+    let next_public = hex::encode(next.compressed_public_key());
+    run.register_api_key(&broker_id, &run.name("broker-next"), &next_public);
+    let deleted = run.submit(
+        run.as_user(&revoker)
+            .args(delete_args(&broker_id, &broker_key_id)),
+        "api-key.delete",
+    );
+    assert_eq!(
+        result(&deleted, "deleteApiKeysResult")["apiKeyIds"],
+        json!([broker_key_id])
+    );
+    assert_unauthenticated(&run.err(run.as_user(&broker).arg("whoami")));
+    run.ok(run.as_user(&next).arg("whoami"));
+
+    let last_id = run.api_key_id(&broker_id, &next_public);
+    let refused = run.err(
+        run.as_user(&revoker)
+            .args(delete_args(&broker_id, &last_id)),
+    );
+    assert_eq!(refused["code"], "api_error", "{refused}");
+    assert_eq!(refused["httpStatus"], 400, "{refused}");
+    run.ok(run.as_user(&next).arg("whoami"));
+}
+
+#[test]
+#[ignore]
+fn credential_deny_blocks_revoker_on_a_denied_tag() {
+    let run = Run::new();
+    let (agent_tag, revoker_id, revoker) = run.create_agent();
+    let (broker_id, broker) = run.create_user("broker");
+    allow_key_deletion(&run, &user_consensus(&revoker_id), &[&broker_id]);
+    run.deny_agent_credentials(&agent_tag);
+
+    let broker_key_id = run.api_key_id(&broker_id, &hex::encode(broker.compressed_public_key()));
+    run.err_unauthorized(
+        run.as_user(&revoker)
+            .args(delete_args(&broker_id, &broker_key_id)),
+    );
+    run.ok(run.as_user(&broker).arg("whoami"));
 }
