@@ -88,8 +88,10 @@ The provisioner needs an ALLOW policy on `ACTIVITY_TYPE_CREATE_API_KEYS_V2`,
 usually with a consensus expression that also requires a human approver. The
 agent needs a DENY on `activity.resource == 'CREDENTIAL'`; without it Turnkey
 lets a user register keys on itself by default, and a short-lived key could
-mint a permanent one. Neither the target user's tags nor `expirationSeconds`
-are visible to policies, so the approver checks both from the record.
+mint a permanent one. Policies see each key's `expiration_seconds` under
+`activity.params.api_keys`, so the provisioner's ALLOW can cap the lifetime; a
+key without expiration reads as the maximum. The target user's tags are not
+visible, so the approver checks the target from the record.
 
 ## Skills
 

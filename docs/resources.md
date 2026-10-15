@@ -121,6 +121,7 @@ activity ID; see [activities](./activities.md).
 - [managing-policies](../skills/managing-policies/SKILL.md): writing, testing, and debugging policies.
 - [provisioning-agent-identity](../skills/provisioning-agent-identity/SKILL.md): the long-lived agent user and the export policies that fence it.
 - [inspecting-agents](../skills/inspecting-agents/SKILL.md): answering who carries a tag and which keys each user holds.
+- [revoking-agent-keys](../skills/revoking-agent-keys/SKILL.md): deleting an agent's key early through a scoped revoker user.
 - [provisioning-session-agent](../skills/provisioning-session-agent/SKILL.md): the agent, provisioner, and containment policies for expiring keys.
 - [using-ssh](../skills/using-ssh/SKILL.md): the allow-always policy scoped to the Ed25519 key an agent serves over SSH.
 - [signing-git-commits](../skills/signing-git-commits/SKILL.md): the empty wallet and the allow-always policies scoped to a signing wallet or private key.

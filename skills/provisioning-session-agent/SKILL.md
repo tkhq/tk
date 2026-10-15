@@ -29,13 +29,14 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
 - The agent generates every keypair. Only `data.publicKey` and `data.userId` cross to
   the provisioner. Neither is secret, but the handoff is authenticated and integrity-checked,
   and the provisioner accepts a key only for the organization, agent user id, and lifetime it expects.
-- Policy sees `activity.params.user_id` only: not the target's tags, not `expirationSeconds`.
-  The approver reads `data.userId`, `data.publicKey`, and `data.expiresIn` from the
-  `session provision` record; in the unilateral-minting row the provisioner service pins the
-  target user id and the lifetime itself. Every id in the mint ALLOW's `in [...]` list is resolved
+- Policy sees `activity.params.user_id` and each key's `expiration_seconds`, not the target's tags.
+  The mint ALLOW pins both the target set and the lifetime cap; keep the cap at or above the
+  `--expires-in` the renewal loop passes. The approver reads `data.userId`, `data.publicKey`, and
+  `data.expiresIn` from the `session provision` record. Every id in the mint ALLOW's `in [...]` list is resolved
   with `user get` and shown before the policy is written; a root-quorum id there mints keys on root.
 - `session status` defaults to `--warn-before 48h`; pass a window shorter than the lifetime.
-- Deleting a local key file revokes nothing; `api-key delete` by root does.
+- Deleting a local key file revokes nothing; `api-key delete` by a scoped revoker does
+  ([revoking-agent-keys](../revoking-agent-keys/SKILL.md)).
 - Persist `AGENT_USER_ID`: after expiry `session request` reports `userId: null`.
 
 ## Instructions
@@ -74,7 +75,7 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
 
    | Policy | Shape |
    |---|---|
-   | `provisioners-mint-agent-keys` | pinned to `AGENT_USER_ID`; drop the `HUMAN_APPROVER_TAG` clause in the unilateral-minting row |
+   | `provisioners-mint-agent-keys` | pinned to `AGENT_USER_ID` and a lifetime cap; drop the `HUMAN_APPROVER_TAG` clause in the unilateral-minting row |
    | `provisioners-nothing-else` | as written |
    | `provisioners-no-self-keys` | one per provisioner |
    | `agents-no-credentials` | as written |
@@ -87,7 +88,7 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
    ```sh
    tk --profile admin --message-format json policy create --name provisioners-mint-agent-keys --effect allow \
      --consensus "approvers.any(user, user.tags.contains('PROVISIONER_TAG')) && approvers.any(user, user.tags.contains('HUMAN_APPROVER_TAG'))" \
-     --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['AGENT_USER_ID']"
+     --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['AGENT_USER_ID'] && activity.params.api_keys.all(k, k.expiration_seconds <= 604800)"
    ```
 
    <!-- shared: provisioners-no-self-keys -->
@@ -174,6 +175,7 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
 | session.provision, session.activate | sessions::provisioning_session_agent_unilateral_mint_unilateral_export |
 | session.policy-mint, session.policy-self-deny, session.provision | sessions::provisioning_session_agent_provisioner_cannot_self_mint |
 | session.policy-mint | sessions::provisioning_session_agent_unpinned_allow_leaves_self_mint_pending |
+| session.policy-mint, session.provision | sessions::provisioning_session_agent_mint_allow_caps_key_lifetime |
 | session.request, session.provision, session.activate | sessions::provisioning_session_agent_recovers_after_expiry |
 | session.status, session.request, session.activate | sessions::session_loop_rotates_an_agent_profile_and_reports_status |
 
@@ -187,7 +189,8 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
 - `session status` exits `1` `session_expiring`: run step 5; firing every
   run means the window exceeds the lifetime.
 - `session provision` fails `unauthorized` 403: no ALLOW selects this
-  provisioner for this target, or the self DENY fired. Inspect with
+  provisioner for this target, `--expires-in` exceeds the mint ALLOW's
+  lifetime cap, or the self DENY fired. Inspect with
   `policy evaluations` when an activity id exists. Do not widen the
   condition to every user; do not use root.
 
@@ -197,3 +200,4 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
 - [provisioning-agent-identity](../provisioning-agent-identity/SKILL.md): the long-lived alternative when nobody can approve renewals.
 - [monitoring-activities](../monitoring-activities/SKILL.md): approve, reject, or wait on a pending mint.
 - [sidecar-patterns](../sidecar-patterns/SKILL.md): where the renewal loop runs and how its alert reaches an operator.
+- [revoking-agent-keys](../revoking-agent-keys/SKILL.md): cut off a session key before it expires.

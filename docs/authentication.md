@@ -56,5 +56,6 @@ the active profile. Credential secrets are never accepted as arguments.
 - [bootstrapping-organization](../skills/bootstrapping-organization/SKILL.md): the root profile and tags an organization needs before its first agent.
 - [managing-identities](../skills/managing-identities/SKILL.md): creating users and rotating the credentials profiles hold.
 - [provisioning-agent-identity](../skills/provisioning-agent-identity/SKILL.md): generating the agent's credential with `profile create` on its own host and proving acceptance with `whoami`.
+- [revoking-agent-keys](../skills/revoking-agent-keys/SKILL.md): the revoker host's own credential and the `whoami` failure that proves a deleted key is dead.
 - [provisioning-session-agent](../skills/provisioning-session-agent/SKILL.md): the agent profile that session keys are activated into and the `whoami` check after each renewal.
 - [sidecar-patterns](../skills/sidecar-patterns/SKILL.md): confirming a renewed key with `whoami` as the agent and pinning `HOME` and `TK_PROFILE` for every process that runs `tk`.

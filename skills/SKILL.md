@@ -28,6 +28,7 @@ request selects and the references that workflow names.
 | "approve this", "what is pending", "wait for the activity", "reject it", "who voted" | [monitoring-activities](monitoring-activities/SKILL.md) |
 | "store a secret", "give the agent its environment", "finish a pending export", "rotate a secret" | [managing-secrets](managing-secrets/SKILL.md) |
 | "provision an agent", "give the agent a permanent key", "fence what the agent can export", "two agents must not read each other's secrets" | [provisioning-agent-identity](provisioning-agent-identity/SKILL.md) |
+| "revoke the agent's key", "task ended, cut off the key", "scoped task finished", "scope a revoker to its agents", "key leaked", "revoker user", "revoke without root" | [revoking-agent-keys](revoking-agent-keys/SKILL.md) |
 | "session keys", "expiring credential", "renew the agent's key", "set up a provisioner", "the session expired" | [provisioning-session-agent](provisioning-session-agent/SKILL.md) |
 | "git over SSH", "ssh with a Turnkey key", "start the ssh agent", "ssh says agent refused operation" | [using-ssh](using-ssh/SKILL.md) |
 | "sign commits", "configure git signing", "gpg.program", "verify-commit fails" | [signing-git-commits](signing-git-commits/SKILL.md) |
@@ -71,6 +72,7 @@ with the user's authorization.
 | agent | a non-root user tagged `agent`; holds only the credentials its route needs |
 | provisioner | a non-root user tagged `provisioner`; proposes expiring API keys for an explicit set of agent users |
 | human-approver | tag on the people who approve `allow-once` activities |
+| revoker | a non-root user tagged `revoker`; deletes API keys on an explicit set of agent users and nothing else |
 | allow-always | ALLOW policy the agent's own vote satisfies alone |
 | allow-once | ALLOW policy whose consensus also requires a distinct `human-approver`; approval is per activity |
 | `consensus=unilateral`, `consensus=approval` | static properties on Secrets choosing which export policy applies |

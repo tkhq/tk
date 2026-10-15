@@ -149,7 +149,8 @@ intended user and the user is not a root quorum member. Deletion is final.
   activity is still pending or was rejected. Inspect it with
   `tk --profile admin --message-format json activity get --id ACTIVITY_ID`.
 - `api-key delete` fails with `unauthorized` when run as the user itself: a
-  credential DENY is in force, which is intended. Run it as root.
+  credential DENY is in force, which is intended. Run it as root, or as a
+  revoker from [revoking-agent-keys](../revoking-agent-keys/SKILL.md).
 - `whoami` fails after `profile set`: the registration has not completed.
   Restore `data.previousApiKeyFile` with another `profile set` and wait on
   the activity.

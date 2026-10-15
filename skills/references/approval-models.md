@@ -19,7 +19,7 @@ same time.
 | | Export needs a human | Export is unilateral |
 |---|---|---|
 | **Minting needs a human** | approval-gated exports and key registration | unattended exports; each new key needs human approval |
-| **Minting is unilateral** | a provisioner renews without a human; each export needs approval | unattended registration and exports; a trusted provisioner service must enforce lifetime and target binding |
+| **Minting is unilateral** | a provisioner renews without a human; each export needs approval | unattended registration and exports; the mint ALLOW pins target and lifetime |
 
 An agent on the long-lived route has no minting row: its one key never
 expires and only the export column applies.
@@ -31,7 +31,7 @@ expires and only the export column applies.
 | A person must see every use of a credential | export needs a human |
 | The workload starts unattended and reads its configuration at boot | export is unilateral for those secrets |
 | A person must see every new key the agent receives | minting needs a human |
-| Renewal must survive nights and weekends | minting is unilateral, with a provisioner service that pins lifetime and target |
+| Renewal must survive nights and weekends | minting is unilateral, with the mint ALLOW pinned to target and lifetime |
 | Git or SSH signing | resource-scoped unilateral ALLOW; these operations wait synchronously for a signature |
 
 ## Approvals per day
@@ -58,11 +58,10 @@ Organizations with both kinds of secrets apply both export policies; the
 
 ## What no cell gives you
 
-- No cell bounds a key's lifetime by policy. `expirationSeconds` is not
-  policy-visible. In the human-minting rows the approver reads the lifetime
-  from `tk session provision`'s record or the console; in the unilateral row a
-  compromised provisioner credential can mint a permanent key for any
-  allowed target.
+- No cell stops a compromised provisioner credential from minting keys up to
+  the cap for any allowed target. The lifetime clause bounds each key, not how
+  many keys are minted; revoke them as in
+  [revoking-agent-keys](../revoking-agent-keys/SKILL.md).
 - No cell revokes an already exported value. Reducing access to a secret means
   rotating the credential at its provider, then replacing the secret.
 - Tag and property selection is shared by every agent with that tag. Use a

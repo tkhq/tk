@@ -329,7 +329,7 @@ fn create_provisioners(run: &Run, agent_id: &str, human_mint: bool) -> Provision
         "allow",
         &mint_consensus,
         &format!(
-            "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['{agent_id}']"
+            "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['{agent_id}'] && activity.params.api_keys.all(k, k.expiration_seconds <= 604800)"
         ),
     );
     run.create_policy_from_flags(
@@ -538,6 +538,44 @@ fn provisioning_session_agent_provisioner_cannot_self_mint() {
         "--id",
         &agent_key_id,
     ]));
+}
+
+#[test]
+#[ignore]
+fn provisioning_session_agent_mint_allow_caps_key_lifetime() {
+    let run = Run::new();
+    let (_, agent_id, _) = run.create_agent();
+    let Provisioners { provisioner, .. } = create_provisioners(&run, &agent_id, false);
+
+    let over_cap = hex::encode(run.key().compressed_public_key());
+    run.err_unauthorized(run.as_user(&provisioner).args([
+        "session",
+        "provision",
+        "--user-id",
+        &agent_id,
+        "--public-key",
+        &over_cap,
+        "--expires-in",
+        "8d",
+    ]));
+    let at_cap = hex::encode(run.key().compressed_public_key());
+    let provisioned = run.submit(
+        run.as_user(&provisioner).args([
+            "session",
+            "provision",
+            "--user-id",
+            &agent_id,
+            "--public-key",
+            &at_cap,
+            "--expires-in",
+            "7d",
+        ]),
+        "session.provision",
+    );
+    assert_eq!(
+        provisioned["data"]["expirationSeconds"], "604800",
+        "{provisioned}"
+    );
 }
 
 #[test]

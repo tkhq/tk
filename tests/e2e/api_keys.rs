@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, fs};
 use serde_json::{Value, json};
 
 use crate::{
-    policy_helpers::{allow_once, tag_consensus},
+    policy_helpers::{allow_once, tag_consensus, user_consensus},
     run::{AGENT_TAG, HUMAN_TAG, Run, assert_unauthenticated, created_user_id, result},
 };
 
@@ -20,11 +20,7 @@ fn registered_api_key_is_listed_for_its_user_and_gone_after_delete() {
         .to_string();
 
     let key_name = run.name("key");
-    let registered = run.register_api_key(&user_id, &key_name, &public_key);
-    let api_key_id = result(&registered, "createApiKeysResult")["apiKeyIds"][0]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let api_key_id = run.register_api_key_id(&user_id, &key_name, &public_key);
 
     let listed = run.ok(run.admin().args(["api-key", "list", "--user-id", &user_id]));
     assert_eq!(listed["command"], "api-key.list");
@@ -81,11 +77,7 @@ fn managing_identities_rotate_and_revoke() {
     assert_eq!(generated["command"], "api-key.generate");
     let next_public = generated["data"]["publicKey"].as_str().unwrap().to_string();
 
-    let registered = run.register_api_key(&user_id, "agent-next", &next_public);
-    let next_id = result(&registered, "createApiKeysResult")["apiKeyIds"][0]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let next_id = run.register_api_key_id(&user_id, "agent-next", &next_public);
 
     let switched = run.ok(run
         .cli()
@@ -355,5 +347,102 @@ fn api_key_list_selects_owner_and_expiry() {
         names(&all_expiring),
         vec![format!("{user_name}-key")],
         "{all_expiring}"
+    );
+}
+
+fn allow_revoker(run: &Run, consensus: &str, target: &str) {
+    run.create_policy_from_flags(
+        &run.name("revoker-delete-agent-keys"),
+        "allow",
+        consensus,
+        &format!(
+            "activity.type == 'ACTIVITY_TYPE_DELETE_API_KEYS' && activity.params.user_id in ['{target}']"
+        ),
+    );
+}
+
+fn delete_key<'a>(user_id: &'a str, api_key_id: &'a str) -> [&'a str; 6] {
+    [
+        "api-key",
+        "delete",
+        "--user-id",
+        user_id,
+        "--id",
+        api_key_id,
+    ]
+}
+
+#[test]
+#[ignore]
+fn revoking_agent_keys_scoped_revoker_deletes_listed_session_key() {
+    let run = Run::new();
+    run.create_tag(AGENT_TAG);
+    let (created, session) = run.create_session_agent("agent", "7d");
+    let agent_id = created_user_id(&created);
+    let revoker_tag = run.create_tag("revoker");
+    let (_, revoker) = run.create_tagged_user("revoker", "revoker");
+    let (other_id, other) = run.create_user("other");
+    allow_revoker(&run, &tag_consensus(&revoker_tag), &agent_id);
+
+    let other_key = run.api_key_id(&other_id, &hex::encode(other.compressed_public_key()));
+    run.err_unauthorized(
+        run.as_user(&revoker)
+            .args(delete_key(&other_id, &other_key)),
+    );
+
+    let root_id = run.root_user_id();
+    let spare = hex::encode(run.key().compressed_public_key());
+    let spare_id = run.register_api_key_id(root_id, &run.name("root-spare"), &spare);
+    run.err_unauthorized(run.as_user(&revoker).args(delete_key(root_id, &spare_id)));
+
+    run.ok(run.as_user(&session).arg("whoami"));
+    let session_key = run.api_key_id(&agent_id, &hex::encode(session.compressed_public_key()));
+    let deleted = run.submit(
+        run.as_user(&revoker)
+            .args(delete_key(&agent_id, &session_key)),
+        "api-key.delete",
+    );
+    assert_eq!(
+        result(&deleted, "deleteApiKeysResult")["apiKeyIds"],
+        json!([session_key])
+    );
+    assert_unauthenticated(&run.err(run.as_user(&session).arg("whoami")));
+
+    let listed = run.ok(run
+        .as_user(&revoker)
+        .args(["api-key", "list", "--user-id", &agent_id]));
+    let keys = listed["data"]["apiKeys"].as_array().unwrap();
+    assert_eq!(keys.len(), 1, "{listed}");
+    assert_eq!(keys[0]["expiresAt"], Value::Null, "{listed}");
+    let anchor = keys[0]["apiKeyId"].as_str().unwrap();
+    let refused = run.err(run.as_user(&revoker).args(delete_key(&agent_id, anchor)));
+    assert_eq!(refused["code"], "api_error", "{refused}");
+    assert_eq!(refused["httpStatus"], 400, "{refused}");
+}
+
+#[test]
+#[ignore]
+fn revoking_agent_keys_credential_deny_blocks_tagged_revoker() {
+    let run = Run::new();
+    let (agent_tag, revoker_id, revoker) = run.create_agent();
+    let (target_id, target) = run.create_user("target");
+    allow_revoker(&run, &user_consensus(&revoker_id), &target_id);
+    let spare = hex::encode(run.key().compressed_public_key());
+    let spare_id = run.register_api_key_id(&target_id, &run.name("spare"), &spare);
+    let deleted = run.submit(
+        run.as_user(&revoker)
+            .args(delete_key(&target_id, &spare_id)),
+        "api-key.delete",
+    );
+    assert_eq!(
+        result(&deleted, "deleteApiKeysResult")["apiKeyIds"],
+        json!([spare_id])
+    );
+    run.deny_agent_credentials(&agent_tag);
+
+    let target_key = run.api_key_id(&target_id, &hex::encode(target.compressed_public_key()));
+    run.err_unauthorized(
+        run.as_user(&revoker)
+            .args(delete_key(&target_id, &target_key)),
     );
 }
