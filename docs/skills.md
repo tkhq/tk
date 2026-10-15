@@ -14,3 +14,7 @@ tk skills show --name managing-policies
 # Install the package as DIR/turnkey-tk, with the docs it links beside it.
 tk skills install --into DIR
 ```
+
+The embedded package matches the installed binary's commands; a repository
+checkout may describe another version, so read skills with `show` rather than
+from a checkout.

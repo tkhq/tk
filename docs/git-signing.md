@@ -29,9 +29,6 @@ git config user.signingkey \
 ```
 
 ```bash
-# Choose a credential when several profiles can access the key's organization.
-export TK_PROFILE=agent
-
 # Sign and verify a commit.
 git commit -S --allow-empty -m test
 git verify-commit HEAD
@@ -39,6 +36,8 @@ git verify-commit HEAD
 # Override the ssh-keygen used for verification if needed.
 export TK_SSH_KEYGEN_PROGRAM=/path/to/ssh-keygen
 ```
+
+Outside CI, point `gpg.ssh.program` at a wrapper as in [GPG signing](#gpg-signing).
 
 For CI:
 
@@ -54,13 +53,22 @@ git config user.signingkey \
 ## GPG signing
 
 Create and import the key as in [GPG signing](./gpg-signing.md), which leaves
-its fingerprint in `$FINGERPRINT`, then point Git at `tk`:
+its fingerprint in `$FINGERPRINT`, then point Git at a wrapper around `tk`:
 
 <!-- shared: git-gpg-signing-config -->
 ```bash
-# Point git at tk as the GPG program.
+# Pin the agent profile for Git's signing process only.
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/tk-sign <<'EOF'
+#!/bin/sh
+export TK_PROFILE=agent
+exec tk "$@"
+EOF
+chmod 755 ~/.local/bin/tk-sign
+
+# Point git at the wrapper as the GPG program.
 git config --global gpg.format openpgp
-git config --global gpg.program tk
+git config --global gpg.program ~/.local/bin/tk-sign
 git config --global user.signingkey "$FINGERPRINT"
 git config --global commit.gpgsign true
 
@@ -69,11 +77,49 @@ git commit -S --allow-empty -m test
 git verify-commit HEAD
 ```
 
-To sign from a process that holds no Turnkey credential, set
-`TK_GPG_AGENT_SOCK` as in [GPG agent](./gpg-signing.md#gpg-agent); Git needs
-no other change.
+Git passes `tk` no flags, so the profile comes from the wrapper. Under a
+different `HOME` than the one holding the key registry, add
+`export HOME=AGENT_HOME` to the wrapper. In CI, where every `tk` call runs as
+one identity, `gpg.program tk` with `TK_PROFILE` or the `TURNKEY_*` bundle in
+the environment is enough. To sign from a process that holds no Turnkey
+credential, set `TK_GPG_AGENT_SOCK` as in
+[GPG agent](./gpg-signing.md#gpg-agent); Git needs no other change.
+
+## Human and agent on one machine
+
+When a human signs with their own key under the same OS user and `HOME` as an
+agent, create the wrapper from [GPG signing](#gpg-signing) but skip its
+`git config --global` lines, which replace the signing setup of every process
+under that `HOME`, and give the agent's process the configuration instead:
+
+```bash
+# Set these in the agent process's environment only.
+export GIT_CONFIG_COUNT=6
+export GIT_CONFIG_KEY_0=gpg.format       GIT_CONFIG_VALUE_0=openpgp
+export GIT_CONFIG_KEY_1=gpg.program      GIT_CONFIG_VALUE_1="$HOME/.local/bin/tk-sign"
+export GIT_CONFIG_KEY_2=user.signingkey  GIT_CONFIG_VALUE_2="$FINGERPRINT"
+export GIT_CONFIG_KEY_3=commit.gpgsign   GIT_CONFIG_VALUE_3=true
+export GIT_CONFIG_KEY_4=user.name        GIT_CONFIG_VALUE_4=Agent
+export GIT_CONFIG_KEY_5=user.email       GIT_CONFIG_VALUE_5=agent@example.com
+# Verify against a GnuPG home of the agent's own, not the human's keyring.
+export GNUPGHOME="$HOME/.config/turnkey/tk/gnupg"
+mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
+```
+
+Import the key into that GnuPG home as in [GPG signing](./gpg-signing.md).
+Git applies the `GIT_CONFIG_KEY_n` and `GIT_CONFIG_VALUE_n` pairs above every
+config file and only in processes that inherit them, so the human's
+`gpg.program`, `user.signingkey`, identity, and keyring stay as they are. Set
+them where the agent runtime defines its environment: for example, the `env`
+map in Claude Code's `~/.claude/settings.json`, Codex's `shell_environment_policy`
+`set` table in `~/.codex/config.toml`, the equivalent setting in another
+agent runtime, or a CI job's `env`. Such a map does not expand `$HOME` or
+`$FINGERPRINT`, so write literal values there. A sandbox can block signing,
+which calls Turnkey: for example, Codex's `workspace-write` sandbox has no
+network access by default, so set `network_access = true` under
+`[sandbox_workspace_write]` or approve the escalation.
 
 ## Skills
 
-- [signing-git-commits](../skills/signing-git-commits/SKILL.md): the GPG-first procedure, scoped policies, and the HOME wrapper.
+- [signing-git-commits](../skills/signing-git-commits/SKILL.md): the GPG-first procedure, scoped policies, and the signing wrapper.
 - [deploying-signing-broker](../skills/deploying-signing-broker/SKILL.md): configuring Git in the application container to sign through the broker's socket.

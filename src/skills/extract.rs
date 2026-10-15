@@ -245,12 +245,18 @@ impl<'a> Tokenizer<'a> {
             self.chars.next();
             return Ok(Part::Subst(self.take_until_balanced()?));
         }
+        let braced = self.chars.next_if(|(_, c)| *c == '{').is_some();
         let mut name = String::new();
         while let Some((_, c)) = self
             .chars
             .next_if(|(_, c)| c.is_ascii_alphanumeric() || *c == '_')
         {
             name.push(c);
+        }
+        if braced && self.chars.next_if(|(_, c)| *c == '}').is_none() {
+            return Err("only ${NAME} brace expansion is supported"
+                .to_owned()
+                .into());
         }
         if name.is_empty() {
             return Err("bare $ is not a supported construct".to_owned().into());

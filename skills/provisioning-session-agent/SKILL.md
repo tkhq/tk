@@ -6,12 +6,13 @@ description: Provision or renew a non-root Turnkey agent's expiring API keys thr
 # Provisioning a session agent
 
 Result: a tagged non-root agent on expiring API keys, a tagged provisioner that
-may register keys on that agent and nothing else, one cell's policy set, and a
-renewal loop the agent host runs by itself. Pick the branch first: **first
+may register keys on that agent and nothing else, the minting row's policies,
+and a renewal loop the agent host runs by itself. Pick the branch first: **first
 provisioning** runs steps 1 to 5; **renewal** runs step 5 only; **recovery** runs
 one branch of step 6. A renewal never repeats bootstrap, replaces a policy, or
-recreates the agent. Inputs: the root profile (`admin`), the `agent`,
-`provisioner`, and `human-approver` tags from bootstrapping, the cell chosen from
+recreates the agent. Inputs: the root profile (`admin`), `AGENT_TAG`,
+`PROVISIONER_TAG`, and `HUMAN_APPROVER_TAG` set to the tag ids from
+bootstrapping, the minting row chosen from
 [approval-models.md](../references/approval-models.md), the agent host, and the provisioner host.
 
 ## Reference
@@ -59,9 +60,9 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
    tk --profile admin --message-format json user create --user-name agent --tag-name agent --public-key PUBLIC_KEY --expires-in 7d --anchor-key
    ```
 
-   Persist `data.activity.result.createUsersResult.userIds[0]` as `AGENT_USER_ID`.
+   Set `AGENT_USER_ID` to `data.activity.result.createUsersResult.userIds[0]` and persist it.
 
-3. **Create the provisioner and the cell's policies.** Root. The
+3. **Create the provisioner and the minting row's policies.** Root. The
    provisioner's key comes from step 1's command run on the provisioner
    host as `--profile-name provisioner`:
 
@@ -70,7 +71,7 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
    tk --profile admin --message-format json user create --user-name provisioner --tag-name provisioner --public-key PROVISIONER_PUBLIC_KEY
    ```
 
-   Save its id as `PROVISIONER_USER_ID`. Apply the cell's set from
+   Set `PROVISIONER_USER_ID` to its id. Apply the minting row's set from
    [policy-patterns.md](../references/policy-patterns.md):
 
    | Policy | Shape |
@@ -79,7 +80,6 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
    | `provisioners-nothing-else` | as written |
    | `provisioners-no-self-keys` | one per provisioner |
    | `agents-no-credentials` | as written |
-   | the column's export policy | from the chosen cell |
 
    The two that carry ids:
 
@@ -87,16 +87,16 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
    <!-- example: session.policy-mint -->
    ```sh
    tk --profile admin --message-format json policy create --name provisioners-mint-agent-keys --effect allow \
-     --consensus "approvers.any(user, user.tags.contains('PROVISIONER_TAG')) && approvers.any(user, user.tags.contains('HUMAN_APPROVER_TAG'))" \
-     --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['AGENT_USER_ID'] && activity.params.api_keys.all(k, k.expiration_seconds <= 604800)"
+     --consensus "approvers.any(user, user.tags.contains('${PROVISIONER_TAG}')) && approvers.any(user, user.tags.contains('${HUMAN_APPROVER_TAG}'))" \
+     --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['${AGENT_USER_ID}'] && activity.params.api_keys.all(k, k.expiration_seconds <= 604800)"
    ```
 
    <!-- shared: provisioners-no-self-keys -->
    <!-- example: session.policy-self-deny -->
    ```sh
    tk --profile admin --message-format json policy create --name provisioners-no-self-keys --effect deny \
-     --consensus "approvers.any(user, user.tags.contains('PROVISIONER_TAG'))" \
-     --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id == 'PROVISIONER_USER_ID'"
+     --consensus "approvers.any(user, user.tags.contains('${PROVISIONER_TAG}'))" \
+     --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id == '${PROVISIONER_USER_ID}'"
    ```
 
    Adding an agent later edits the `in [...]` list. Before the edit, resolve every id in the
@@ -161,9 +161,15 @@ recreates the agent. Inputs: the root profile (`admin`), the `agent`,
    - *Concurrent renewal*: one writer per profile. A second `session request` while one is
      pending fails `invalid_input` naming the pending public key; never `--replace` from a second process.
 
-7. **Hand off.** Report `AGENT_USER_ID`, `PROVISIONER_USER_ID`, the policy
-   ids, `data.expiresAt`, any pending mint activity id, and the exact
-   `session status` command the timer runs. Stop.
+7. **Hand off.** Report `AGENT_USER_ID`, `AGENT_TAG`, and the agent's profile name and host;
+   `PROVISIONER_USER_ID`, `PROVISIONER_TAG`, and the provisioner's profile name and host; the
+   minting row in force; each policy's name and id; the current key's `data.expiresAt` from
+   `session status`; the step-5 results from the real users, which are the acceptance; any mint
+   activity id still awaiting approval; and the exact step-5 commands each host runs and the agent
+   host's timer interval. The capability workflows start from this identity:
+   [managing-secrets](../managing-secrets/SKILL.md) for exports,
+   [signing-git-commits](../signing-git-commits/SKILL.md) for commit signing,
+   and [using-ssh](../using-ssh/SKILL.md) for SSH. Stop.
 
 ## Verified by
 

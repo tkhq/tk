@@ -23,12 +23,13 @@ from a non-root credential, with denials explained by `policy evaluations`.
   denied at submission instead of waiting for approval.
 - Test from the constrained credential. Root success proves nothing about
   agent access.
-- Keep expressions in files or single-quoted arguments exactly as written;
-  do not rebuild them in shell.
+- Keep expressions exactly as written; only the `${UPPER_SNAKE}` id
+  variables interpolate.
 
 ## Instructions
 
-Inputs: the root profile (`admin`), the tag ids from the bootstrap, and the
+Inputs: the root profile (`admin`), `AGENT_TAG` and the other tag ids from
+[bootstrapping-organization](../bootstrapping-organization/SKILL.md), and the
 approval cell. Read [policy-language.md](../references/policy-language.md)
 for grammar and [policy-patterns.md](../references/policy-patterns.md) for
 the policy set.
@@ -43,7 +44,7 @@ the policy set.
    <!-- example: policies.create -->
    ```sh
    tk --profile admin --message-format json policy create --name agents-export-unilateral --effect allow \
-     --consensus "approvers.any(user, user.tags.contains('AGENT_TAG'))" \
+     --consensus "approvers.any(user, user.tags.contains('${AGENT_TAG}'))" \
      --condition "activity.type == 'ACTIVITY_TYPE_EXPORT_SECRETS' && secret.static_properties['consensus'] == 'unilateral'" \
      --notes "allow-always: agents read unilateral secrets alone"
    ```

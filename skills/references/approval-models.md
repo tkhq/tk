@@ -1,7 +1,9 @@
 # Approval models
 
-Every workflow that sets up an agent asks the operator to pick a cell of this
-matrix first. Columns apply per secret (its `consensus` property); rows apply
+Each workflow that grants an agent a capability asks the operator for its
+part of this matrix: [managing-secrets](../managing-secrets/SKILL.md) the
+export column, [provisioning-session-agent](../provisioning-session-agent/SKILL.md)
+the minting row. Columns apply per secret (its `consensus` property); rows apply
 to the minting policy for a provisioner and its target set. One agent can
 hold unilateral configuration values and approval-gated credentials at the
 same time.

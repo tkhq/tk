@@ -97,4 +97,4 @@ visible, so the approver checks the target from the record.
 
 - [deploying-signing-broker](../skills/deploying-signing-broker/SKILL.md): place the signing broker and its session provisioner in separate containers.
 - [sidecar-patterns](../skills/sidecar-patterns/SKILL.md): where each command runs in a deployment and the renewal state machine around them.
-- [provisioning-session-agent](../skills/provisioning-session-agent/SKILL.md): the operator procedure, approval cell, renewal, and recovery around these four commands.
+- [provisioning-session-agent](../skills/provisioning-session-agent/SKILL.md): the operator procedure, minting row, renewal, and recovery around these four commands.

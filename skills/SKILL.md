@@ -26,8 +26,8 @@ request selects and the references that workflow names.
 | "create a user", "add a tag", "rotate an API key", "revoke this credential", "add a profile on this machine" | [managing-identities](managing-identities/SKILL.md) |
 | "write a policy", "why was this denied", "require approval for X", "update the consensus" | [managing-policies](managing-policies/SKILL.md) |
 | "approve this", "what is pending", "wait for the activity", "reject it", "who voted" | [monitoring-activities](monitoring-activities/SKILL.md) |
-| "store a secret", "give the agent its environment", "finish a pending export", "rotate a secret" | [managing-secrets](managing-secrets/SKILL.md) |
-| "provision an agent", "give the agent a permanent key", "fence what the agent can export", "two agents must not read each other's secrets" | [provisioning-agent-identity](provisioning-agent-identity/SKILL.md) |
+| "store a secret", "give the agent its environment", "finish a pending export", "rotate a secret", "fence what the agent can export", "two agents must not read each other's secrets" | [managing-secrets](managing-secrets/SKILL.md) |
+| "provision an agent", "give the agent a permanent key", "create the agent user", "stop the agent registering keys" | [provisioning-agent-identity](provisioning-agent-identity/SKILL.md) |
 | "revoke the agent's key", "task ended, cut off the key", "scoped task finished", "scope a revoker to its agents", "key leaked", "revoker user", "revoke without root" | [revoking-agent-keys](revoking-agent-keys/SKILL.md) |
 | "session keys", "expiring credential", "renew the agent's key", "set up a provisioner", "the session expired" | [provisioning-session-agent](provisioning-session-agent/SKILL.md) |
 | "git over SSH", "ssh with a Turnkey key", "start the ssh agent", "ssh says agent refused operation" | [using-ssh](using-ssh/SKILL.md) |

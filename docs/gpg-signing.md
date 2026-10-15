@@ -38,6 +38,12 @@ tk gpg keys export --key FINGERPRINT
 tk gpg keys remove --key FINGERPRINT
 ```
 
+Keys are registered in the profile registry under `HOME` (see
+[authentication](./authentication.md)), shared by every profile there; each
+entry names its organization, and signing picks a credential for that
+organization. On a `HOME` that already holds the key, `keys add` rewrites its
+entry.
+
 ```bash
 # Choose a credential when several profiles can access the key's organization.
 export TK_PROFILE=agent

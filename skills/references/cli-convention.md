@@ -135,7 +135,11 @@ definitions in `cargo test`, with these substitutions:
 | `ACTIVITY_ID` | an activity UUID |
 | `PUBLIC_KEY`, `02…` | a compressed P-256 public key, 66 hex characters starting `02` or `03` |
 | `SSH_FINGERPRINT`, `FINGERPRINT` | an opaque key fingerprint |
-| `$NAME` | a shell variable set by an earlier step, named in that step |
+| `$NAME`, `${NAME}` | a shell variable set by an earlier step, named in that step |
+
+A placeholder inside a policy expression is always the shell variable,
+`'${AGENT_TAG}'` inside a double-quoted argument, so a copied command
+interpolates it.
 
 Values that belong to the user (a name, a lifetime, a path) appear as
 literals such as `agent`, `7d`, or `./policy.json`.

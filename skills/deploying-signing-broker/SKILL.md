@@ -50,22 +50,22 @@ or a shared uid), and the session lifetime.
    <!-- example: signing-broker.policy-deny -->
    ```sh
    tk --profile admin --message-format json policy create --name brokers-no-credentials --effect deny \
-     --consensus "approvers.any(user, user.tags.contains('BROKER_TAG'))" \
+     --consensus "approvers.any(user, user.tags.contains('${BROKER_TAG}'))" \
      --condition "activity.resource == 'CREDENTIAL'"
    ```
 
    Then create the broker user and provision its expiring key with [provisioning-session-agent](../provisioning-session-agent/SKILL.md)
-   steps 1, 2, 4, and 5, tag `BROKER_TAG`, profile `broker`; save its user id as `BROKER_USER_ID`.
+   steps 1, 2, 4, and 5, tag `BROKER_TAG`, profile `broker`; set `BROKER_USER_ID` to its user id.
    Keep all three provisioner policies from its step 3 (`provisioners-mint-agent-keys` extended with
-   `BROKER_USER_ID`, `provisioners-nothing-else`, `provisioners-no-self-keys`); skip only its export
-   policy: the broker gets none. Root then completes the broker's GPG policy set:
+   `BROKER_USER_ID`, `provisioners-nothing-else`, `provisioners-no-self-keys`); the broker gets no
+   export policy. Root then completes the broker's GPG policy set:
 
    <!-- shared: brokers-sign-gpg -->
    <!-- example: signing-broker.policy-sign -->
    ```sh
    tk --profile admin --message-format json policy create --name brokers-sign-gpg --effect allow \
-     --consensus "approvers.any(user, user.id == 'BROKER_USER_ID')" \
-     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
+     --consensus "approvers.any(user, user.id == '${BROKER_USER_ID}')" \
+     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == '${WALLET_ID}'"
    ```
 
 2. **Lay out host state.** Create mode-`0700` homes for the application, broker, and

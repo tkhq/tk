@@ -92,9 +92,9 @@ which human approves. The organization id comes from step 1.
    tk --profile admin --message-format json user tag create --name human-approver
    ```
 
-   Each record is `command: "user.tag.create"`; save
-   `data.activity.result.createUserTagResult.userTagId` as `AGENT_TAG`,
-   `PROVISIONER_TAG`, and `HUMAN_APPROVER_TAG`. A `pending` status means a
+   Each record is `command: "user.tag.create"`; set `AGENT_TAG`,
+   `PROVISIONER_TAG`, and `HUMAN_APPROVER_TAG` to each
+   `data.activity.result.createUserTagResult.userTagId`. A `pending` status means a
    policy already gates tag creation; wait on the activity before the next
    step.
 
@@ -115,8 +115,10 @@ which human approves. The organization id comes from step 1.
 7. **Choose the approval model.** Read
    [approval-models.md](../references/approval-models.md) with the user and
    record the cell: whether exports need a human, and whether minting does.
-   Do not create policies here; the provisioning workflows apply the policy
-   set for the chosen cell.
+   Do not create policies here; the provisioning workflows apply the
+   credential and minting policies, and
+   [managing-secrets](../managing-secrets/SKILL.md) applies the export
+   policy for the chosen cell.
 
 8. **Hand off.** Report the organization id, the profile name, the root
    user id, the three tag ids, the approver's user id, and the chosen cell.

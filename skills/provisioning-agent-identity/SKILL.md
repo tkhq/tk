@@ -1,47 +1,58 @@
 ---
 name: provisioning-agent-identity
-description: Provision a non-root Turnkey agent user on one never-expiring, policy-scoped API key with tk, and fence it with the export policies and credential DENY. Use when an agent needs a permanent credential and the policies that bound it; not for wallets and not for expiring session keys, which provisioning-session-agent covers.
+description: Provision a non-root, tagged Turnkey agent user on one never-expiring API key generated on the agent host, fenced by the credential DENY, and prove the identity from the agent's own credential. Use when an agent needs a permanent credential before any capability is granted; not for secrets, signing, or SSH access, which their own workflows add, and not for expiring session keys (provisioning-session-agent).
 ---
 
 # Provisioning an agent identity
 
 Result: a tagged non-root user whose single API key never expires, whose
-private half exists only on the agent host, and whose reach is exactly the
-export policies for the chosen approval column plus a DENY on its own
-credentials. Acceptance is proven from the agent's credential, never root's.
+private half exists only on the agent host, and which cannot change its own
+credentials. The identity grants no capability: exports, signing, and SSH
+access are each added by their own workflow. Acceptance is proven from the
+agent's credential, never root's.
 
 ## Reference
 
-- [resources](../../docs/resources.md): `user create` flags, `api-key` records, `policy create` flags.
-- [secrets](../../docs/secrets.md): `secret export` and `secret env` records and pending state.
+- [resources](../../docs/resources.md): `user tag`, `user create`, `api-key` records, and `policy create` flags.
 - [authentication](../../docs/authentication.md): `profile create`, `login`, and `whoami` records and the credential file location.
-- [activities](../../docs/activities.md): `activity approve` on the pending export and the `policy evaluations` record for a denial.
+- [activities](../../docs/activities.md): `activity wait` on a pending user creation.
 
 ## Rules
 
-- Principal separation: root creates the user and policies and then stops.
-  The agent never runs as root, and root never runs the agent's workload.
+- Principal separation: root creates the tag, the user, and the DENY and then
+  stops. The agent never runs as root, and root never runs the agent's
+  workload.
 - The private key is generated on the agent host by `profile create`. Only
   `data.publicKey` travels to root; a key generated on root's machine and
   copied over is not this route.
 - `agents-no-credentials` is mandatory. Self-targeted credential changes
   default-allow, so without the DENY the agent can register itself another
   permanent key.
-- Policies select tags and secret properties, not names or ids. Adding a
-  secret is one import with the right properties; adding an agent is one
-  tagged `user create`.
+- Policies select the tag, not names or ids. Adding an agent is one tagged
+  `user create`; the DENY already covers it.
 - Every acceptance check runs with `--profile agent`. A root success proves
   nothing, because a satisfied root quorum bypasses policies.
 
 ## Instructions
 
-Inputs: the root profile (`admin`), `AGENT_TAG` and `HUMAN_APPROVER_TAG` from
-[bootstrapping-organization](../bootstrapping-organization/SKILL.md), the
-export column chosen from
-[approval-models.md](../references/approval-models.md), and the host the agent
-runs on. There is no minting row here: the one key never expires.
+Inputs: the root profile (`admin`) and the host the agent runs on. There is
+no minting row here: the one key never expires.
 
-1. **Generate the credential on the agent host.** On that host, with no
+1. **Ensure the agent tag.** Root. List the tags and create `agent` only
+   when no tag carries that name:
+
+   <!-- example: agent-identity.tag -->
+   ```sh
+   tk --profile admin --message-format json user tag list
+   tk --profile admin --message-format json user tag create --name agent
+   ```
+
+   Set `AGENT_TAG` to the id of the tag named `agent`, from the list or from
+   `data.activity.result.createUserTagResult.userTagId`.
+   [bootstrapping-organization](../bootstrapping-organization/SKILL.md)
+   creates the same tag; never create a second one.
+
+2. **Generate the credential on the agent host.** On that host, with no
    profile yet:
 
    <!-- example: agent-identity.profile-create -->
@@ -53,7 +64,7 @@ runs on. There is no minting row here: the one key never expires.
    writes are described in
    [managing-identities](../managing-identities/SKILL.md).
 
-2. **Create the tagged user.** Root, with the public key from step 1 and
+3. **Create the tagged user.** Root, with the public key from step 2 and
    no `--expires-in`:
 
    <!-- example: agent-identity.user-create -->
@@ -61,29 +72,26 @@ runs on. There is no minting row here: the one key never expires.
    tk --profile admin --message-format json user create --user-name agent --tag-name agent --public-key PUBLIC_KEY
    ```
 
-   Save `data.activity.result.createUsersResult.userIds[0]` as
-   `AGENT_USER_ID`. `pending` means a policy gates user creation; wait on the
-   activity before step 3.
+   Set `AGENT_USER_ID` to `data.activity.result.createUsersResult.userIds[0]`.
+   `pending` means a policy gates user creation; wait on the activity before
+   step 4.
 
-3. **Apply the policy set for the export column.** Root. From
-   [policy-patterns.md](../references/policy-patterns.md) create
-   `agents-export-unilateral` for the unilateral column,
-   `agents-export-with-approval` for the human column, or both when the
-   organization holds both kinds of secrets, and always the DENY:
+4. **Deny credential changes.** Root, once per organization; the tag makes it
+   shared by every agent:
 
    <!-- shared: agents-no-credentials -->
    <!-- example: agent-identity.no-credentials -->
    ```sh
    tk --profile admin --message-format json policy create --name agents-no-credentials --effect deny \
-     --consensus "approvers.any(user, user.tags.contains('AGENT_TAG'))" \
+     --consensus "approvers.any(user, user.tags.contains('${AGENT_TAG}'))" \
      --condition "activity.resource == 'CREDENTIAL'"
    ```
 
-   Each record is `command: "policy.create"` with
-   `data.activity.result.createPolicyResult.policyId`. Skip a policy that
-   already exists with the same name; the tags make it shared by every agent.
+   The record is `command: "policy.create"` with
+   `data.activity.result.createPolicyResult.policyId`. Skip it when a policy
+   with this name already exists.
 
-4. **Log in and verify on the agent host.**
+5. **Log in and verify on the agent host.**
 
    <!-- example: agent-identity.login -->
    ```sh
@@ -93,16 +101,10 @@ runs on. There is no minting row here: the one key never expires.
 
    Proceed when `whoami` returns `data.userId` equal to `AGENT_USER_ID`.
 
-5. **Acceptance test from the agent credential.** With one
-   `consensus=unilateral` secret and one `consensus=approval` secret imported
-   by root as in [managing-secrets](../managing-secrets/SKILL.md):
+6. **Acceptance test from the agent credential.**
 
    <!-- example: agent-identity.acceptance -->
    ```sh
-   tk --profile agent --message-format json secret export --name service/API_TOKEN --out ./api-token
-   tk --profile agent --message-format json secret export --name service/DEPLOY_KEY --out ./deploy-key
-   tk --profile approver --message-format json activity approve --id ACTIVITY_ID
-   tk --profile agent --message-format json secret export --name service/DEPLOY_KEY --out ./deploy-key
    tk --profile agent --message-format json api-key register --input-json '{"userId":"AGENT_USER_ID","apiKeys":[{"apiKeyName":"escape","publicKey":"PUBLIC_KEY","curveType":"API_KEY_CURVE_P256"}]}'
    tk --profile agent --message-format json api-key list --user-id AGENT_USER_ID
    ```
@@ -111,81 +113,48 @@ runs on. There is no minting row here: the one key never expires.
 
    | Command | Expect |
    |---|---|
-   | unilateral export | `completed` with `data.out` |
-   | approval export | `pending` with `activity.id`, and pending until a non-root `human-approver` votes |
-   | rerun after the approval | `completed` |
    | self-registration | `code: "unauthorized"` and `httpStatus: 403` |
    | key list | exactly one key, its `credential.publicKey` equal to `PUBLIC_KEY` and `expiresAt` `null` |
 
    Any other outcome is a policy defect; do not proceed on it.
 
-6. **Isolate agents from each other**, when more than one exists. A shared
-   `agent` tag gives every agent the same secrets. Give each boundary its
-   own tag and a `scope` property on its secrets, and write one export
-   policy per tag-and-scope pair instead of the shared one:
-
-   <!-- example: agent-identity.isolation -->
-   ```sh
-   tk --profile admin --message-format json policy create --name billing-agent-export --effect allow \
-     --consensus "approvers.any(user, user.tags.contains('BILLING_AGENT_TAG'))" \
-     --condition "activity.type == 'ACTIVITY_TYPE_EXPORT_SECRETS' && secret.static_properties['consensus'] == 'unilateral' && secret.static_properties['scope'] == 'billing'"
-   tk --profile billing --message-format json secret export --name ops/TOKEN
-   tk --profile billing --message-format json secret env --name-prefix ops/
-   ```
-
-   Add the cross-agent check to the acceptance test: both commands as the
-   other agent fail with `unauthorized` 403, `secret env` included, because
-   `--name-prefix` selects and only the policy authorizes.
-
-7. **Hand off.** Report `AGENT_USER_ID`, the profile name and host, the
-   policy ids created, the acceptance results from step 5, and the approval
-   column in force. The agent's startup command is the `secret env` line
-   from [managing-secrets](../managing-secrets/SKILL.md). Stop.
+7. **Hand off.** Report `AGENT_USER_ID`, `AGENT_TAG`, the profile name and
+   host, the DENY's policy id, and the acceptance results from step 6. Stop.
 
 ## Verified by
 
 | Examples | Test |
 |---|---|
-| agent-identity.profile-create, agent-identity.user-create, agent-identity.no-credentials, agent-identity.login, agent-identity.acceptance | api_keys::provisioning_agent_identity_long_lived_route |
-| agent-identity.isolation | api_keys::provisioning_agent_identity_isolation_denies_cross_agent_export |
+| agent-identity.tag, agent-identity.profile-create, agent-identity.user-create, agent-identity.no-credentials, agent-identity.login, agent-identity.acceptance | api_keys::provisioning_agent_identity_long_lived_route |
 
 ## Troubleshooting
 
-- `user create` fails with `not_found` for `--tag-name agent`: the tags
-  from bootstrapping do not exist in this organization. Create them first;
-  do not substitute `--tag` with a guessed id.
+- `user tag create` fails with `api_error` and a 400: a tag named `agent`
+  already exists. Read its id from the list in step 1.
+- `user create` fails with `not_found` for `--tag-name agent`: step 1 did not
+  run in this organization. Create the tag first; do not substitute `--tag`
+  with a guessed id.
 - `login` fails with `unauthorized` 401 or 403: the create activity is pending or
   rejected, or `PUBLIC_KEY` was mistyped. Compare
   `tk --profile admin --message-format json api-key list --user-id AGENT_USER_ID`
-  with `data.publicKey` from step 1.
-- The unilateral export fails with `unauthorized` 403: no export policy
-  selects this tag for this property. Check the secret carries
-  `consensus=unilateral` and the policy's `AGENT_TAG` is the id, not the
-  name; `policy evaluations --activity-id ACTIVITY_ID` shows the clause when an activity
-  exists.
-- The approval export returns `completed` without a human vote: the
-  approver is root, or the secret carries `consensus=unilateral`. Fix the
-  property or the approver; root approval proves nothing.
-- The self-registration in step 5 returns `completed` or `pending`: the DENY
-  is missing or names the wrong tag. First create `agents-no-credentials` and
+  with `data.publicKey` from step 2.
+- The self-registration in step 6 returns `completed` or `pending`: the DENY
+  is missing or names the wrong tag, such as the `''` an unset `AGENT_TAG`
+  leaves. First create `agents-no-credentials` and
   verify it by rerunning the self-registration. Only then list the agent's
   keys with `tk --profile admin --message-format json api-key list --user-id AGENT_USER_ID`,
   delete every unauthorized key with `api-key delete` as root, and rotate the
   runtime credential. Deleting first leaves a window to register another key.
-- `secret env` fails with `approval_required`: the selection includes an
-  `approval` secret. Startup paths add `--property consensus=unilateral`.
-- `secret env` fails with `unauthorized` 403: the prefix selected a secret
-  outside this agent's scope. Narrow the prefix or fix the `scope` property.
 
 ## Related Skills
 
 - [managing-identities](../managing-identities/SKILL.md): rotate or revoke
   the agent's key later.
-- [managing-policies](../managing-policies/SKILL.md): debug a denial with
-  `policy evaluations` or adjust the export set.
-- [managing-secrets](../managing-secrets/SKILL.md): import the secrets the
-  acceptance test reads and the startup `secret env`.
+- [managing-secrets](../managing-secrets/SKILL.md): grant this agent
+  exports and give its process a startup environment.
+- [signing-git-commits](../signing-git-commits/SKILL.md): grant this agent
+  a scoped signing key for its commits.
+- [using-ssh](../using-ssh/SKILL.md): grant this agent a Turnkey-held SSH
+  key.
 - [provisioning-session-agent](../provisioning-session-agent/SKILL.md): the
   expiring-key alternative when a permanent credential is not acceptable.
-- [monitoring-activities](../monitoring-activities/SKILL.md): approve the
-  pending export in step 5.

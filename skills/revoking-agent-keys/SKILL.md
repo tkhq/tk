@@ -36,8 +36,9 @@ only to create the revoker and its policy.
 
 ## Instructions
 
-Inputs: the root profile (`admin`), the agent user ids to cover, and the host
-that runs the revoker.
+Inputs: the root profile (`admin`), `AGENT_USER_ID` for each agent user to
+cover (one quoted entry each in the `in [...]` list), and the host that runs
+the revoker.
 
 1. **Create the revoker's profile and tag.** On the revoker host, generate
    its credential and send `data.publicKey` (`PUBLIC_KEY`) to root:
@@ -47,8 +48,8 @@ that runs the revoker.
    tk --message-format json --organization-id ORG_UUID profile create --profile-name revoker
    ```
 
-   Root creates the tag, saving `data.activity.result.createUserTagResult.userTagId`
-   as `REVOKER_TAG`:
+   Root creates the tag and sets `REVOKER_TAG` to
+   `data.activity.result.createUserTagResult.userTagId`:
 
    <!-- example: revoking.tag-create -->
    ```sh
@@ -62,7 +63,7 @@ that runs the revoker.
    tk --profile admin --message-format json user create --user-name revoker --tag-name revoker --public-key PUBLIC_KEY
    ```
 
-   Save `data.activity.result.createUsersResult.userIds[0]` as `REVOKER_USER_ID`.
+   Set `REVOKER_USER_ID` to `data.activity.result.createUsersResult.userIds[0]`.
 
 3. **Allow deletion on the listed agents.** Root. Show each id from
    `user get` first:
@@ -71,8 +72,8 @@ that runs the revoker.
    ```sh
    tk --profile admin --message-format json user get --id AGENT_USER_ID
    tk --profile admin --message-format json policy create --name revoker-delete-agent-keys --effect allow \
-     --consensus "approvers.any(user, user.tags.contains('REVOKER_TAG'))" \
-     --condition "activity.type == 'ACTIVITY_TYPE_DELETE_API_KEYS' && activity.params.user_id in ['AGENT_USER_ID']"
+     --consensus "approvers.any(user, user.tags.contains('${REVOKER_TAG}'))" \
+     --condition "activity.type == 'ACTIVITY_TYPE_DELETE_API_KEYS' && activity.params.user_id in ['${AGENT_USER_ID}']"
    ```
 
    A new agent user is added to this list, as to the provisioner's mint
