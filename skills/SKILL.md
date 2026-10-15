@@ -13,6 +13,11 @@ cron job, a CI runner. These workflows set one up and operate it. The `tk`
 binary carries this package: `tk skills install --into DIR` writes it as
 `DIR/turnkey-tk`.
 
+After a fresh install, and before bootstrapping a Turnkey organization, show
+the human the permission settings from
+[configuring-agent-permissions](configuring-agent-permissions/SKILL.md) for
+them to apply, so the agent runs `tk` without a prompt on every call.
+
 Read [cli-convention.md](references/cli-convention.md) once per task. It
 defines the JSON record every command prints, how pending work is resumed,
 and the placeholders the examples use. Then load only the workflow the
@@ -22,6 +27,7 @@ request selects and the references that workflow names.
 
 | Request sounds like | Load |
 |---|---|
+| "just installed tk", "tk keeps asking for permission", "allow tk in my agent harness" | [configuring-agent-permissions](configuring-agent-permissions/SKILL.md) |
 | "set up Turnkey for our agents", "create the root profile", "which approval model" | [bootstrapping-organization](bootstrapping-organization/SKILL.md) |
 | "create a user", "add a tag", "rotate an API key", "revoke this credential", "add a profile on this machine" | [managing-identities](managing-identities/SKILL.md) |
 | "write a policy", "why was this denied", "require approval for X", "update the consensus" | [managing-policies](managing-policies/SKILL.md) |

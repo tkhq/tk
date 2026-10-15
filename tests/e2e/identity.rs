@@ -208,8 +208,10 @@ fn login_creates_registry_and_profile_commands_behave() {
 
 #[test]
 #[ignore]
-fn profile_flag_beats_ambient_bundle() {
+fn profile_selection_beats_ambient_and_active_profile() {
     let run = Run::new();
+    let (agent_id, agent) = run.create_user("agent");
+    run.login_as("agent", &agent);
     let AdminLogin { name, .. } = run.login_admin();
     let status = run.ok(run.cli().env("TURNKEY_API_PRIVATE_KEY", "unused").args([
         "--profile",
@@ -220,6 +222,14 @@ fn profile_flag_beats_ambient_bundle() {
     assert_eq!(status["data"]["credentialSource"], "profile");
     assert_eq!(status["data"]["profile"], name);
     assert_eq!(status["data"]["publicKey"], run.config.public_key);
+
+    let list = run.ok(run.cli().args(["profile", "list"]));
+    assert_eq!(list["data"]["activeProfile"], name);
+    assert!(list["data"]["profiles"]["agent"].is_object(), "{list}");
+
+    let whoami = run.ok(run.cli().env("TK_PROFILE", "agent").arg("whoami"));
+    assert_eq!(whoami["command"], "auth.whoami");
+    assert_eq!(whoami["data"]["userId"], agent_id, "{whoami}");
 }
 
 #[test]

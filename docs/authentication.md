@@ -54,6 +54,7 @@ the active profile. Credential secrets are never accepted as arguments.
 ## Skills
 
 - [bootstrapping-organization](../skills/bootstrapping-organization/SKILL.md): the root profile and tags an organization needs before its first agent.
+- [configuring-agent-permissions](../skills/configuring-agent-permissions/SKILL.md): pinning `TK_PROFILE` to the agent's profile in the harness environment and checking it with `whoami`.
 - [managing-identities](../skills/managing-identities/SKILL.md): creating users and rotating the credentials profiles hold.
 - [provisioning-agent-identity](../skills/provisioning-agent-identity/SKILL.md): generating the agent's credential with `profile create` on its own host and proving acceptance with `whoami`.
 - [revoking-agent-keys](../skills/revoking-agent-keys/SKILL.md): the revoker host's own credential and the `whoami` failure that proves a deleted key is dead.
