@@ -1,14 +1,14 @@
 ---
 name: conforming-to-agents-md
-description: Use when a tk branch is about to be marked ready for review, or when asked to check a PR against AGENTS.md, remove dead code, de-slop, or clean up a branch before merge. Also use after finishing any feature work in this repo, before opening or un-drafting the PR.
+description: Use when a tk branch is about to be marked ready for review, or when asked to check a PR against AGENTS.md, remove dead code, de-slop, or clean up a branch before merge. Covers Rust code, docs, skills, and help text. Also use after finishing any feature work in this repo, before opening or un-drafting the PR.
 ---
 
 # Conforming to AGENTS.md
 
 ## Overview
 
-Drive a branch to zero violations of `AGENTS.md`, zero dead code, and zero slop by
-looping: sweep with parallel reviewers, fix findings with serial fixers, re-sweep.
+Drive a branch to zero violations of `AGENTS.md`, zero dead code, and zero slop
+in its Rust code, `docs/`, `skills/`, `README.md`, and help text by looping: sweep with parallel reviewers, fix findings with serial fixers, re-sweep.
 The loop ends only when a fresh sweep returns nothing.
 
 A finding is a definite violation of a written rule. Hedged observations are not
@@ -44,14 +44,19 @@ to fixers rather than inlining the list. Every round:
 ```bash
 cargo +nightly-2026-09-01 fmt --all
 cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --locked --test skills
+cargo test --locked --bin tk -- skills commands_reference
 git diff origin/main | grep -n '^+.*#\[allow('     # diff mode
 grep -rn '#\[allow(' <paths>                        # path mode
 ```
 
-Fix anything reported before any reviewer runs. A new `#[allow(...)]` is a finding
+The two `cargo test` lines run the structural checks on skills and docs: links,
+example ids, `## Verified by` mappings, shared blocks, runtime labels, line
+budgets, and the generated `docs/commands.md`. Fix anything reported before any
+reviewer runs. A new `#[allow(...)]` is a finding
 unless it carries a `reason` naming the specific false positive.
 
-**2. Sweep.** Spawn three reviewers in parallel, each read-only, each given the
+**2. Sweep.** Spawn the reviewers below in parallel, each read-only, each given the
 scope (diff command or file list), the finding record format below, and the list
 of findings skipped in earlier rounds under the heading "Already adjudicated, do
 not report". Each reviewer's prompt starts with: "Read the entire `AGENTS.md` at
@@ -59,18 +64,25 @@ the repo root before reviewing and apply it throughout."
 
 | Reviewer | Checklist |
 |---|---|
-| Rules | Every section of `AGENTS.md` except Reviews |
+| Rules | Every section of `AGENTS.md` except Reviews, and except Skills and docs, Docs, and Help text when the Docs reviewer runs |
 | Dead code | Items nothing uses: functions, fields, variants, derives, `pub` on module-local items, arms for inputs no caller produces, imports, features, tests of deleted code |
 | Slop | [slop-rules.md](slop-rules.md) in this skill's directory |
+| Docs | The Skills and docs, Docs, and Help text sections of `AGENTS.md`, and the prose rules in [slop-rules.md](slop-rules.md). Runs when the scope touches `docs/`, `skills/`, `README.md`, a Clap doc comment, or a command's behavior or record shape |
 
-**3. Merge.** Concatenate the three lists into one numbered list. Delete any
+The Docs reviewer also checks that the surfaces agree. A changed command has
+matching `--help`, `docs/<area>.md` description, `skills/` steps that invoke it,
+and the e2e test behind each step. A fact appears in exactly one doc. Every
+command, flag, path, and link in touched prose exists in the tree. A skill's
+`## Reference` and a doc's `## Skills` footer still list each other.
+
+**3. Merge.** Concatenate the lists into one numbered list. Delete any
 record whose `rule` field is empty or whose `summary` field, in the reviewer's own
 words and not in quoted rule text, contains "consider", "borderline",
 "acceptable", "minor", "not harmful", or "may". Two records with the same file
 and line are duplicates regardless of rule; keep the one whose rule is an
 `AGENTS.md` sentence. Records with the same file, same rule, and same fix
 collapse into one record listing every line. Order by rule violations first,
-then dead code, then slop.
+then docs, then dead code, then slop.
 
 **4. Fix.** Spawn fixers in parallel when their fixes touch disjoint files, and
 combine findings that touch the same file into one fixer. A fixer receives its
@@ -83,7 +95,8 @@ each violates, and this instruction:
 > unit test as covered by an e2e test only when, by reading the e2e test, every
 > assertion of the unit test is provably covered; you cannot run the e2e suite.
 > Then run `cargo +nightly-2026-09-01 fmt --all`, `cargo clippy --workspace --all-targets --locked
-> -- -D warnings`, and `cargo test --workspace --locked`. Return one paragraph
+> -- -D warnings`, and `cargo test --workspace --locked`, which includes the
+> skills and docs checks. Return one paragraph
 > per finding saying what changed, including any change beyond the cited lines.
 > Do not commit.
 
@@ -110,6 +123,9 @@ rule: Coding style — "Default to inlining one-use helpers"
 summary: `next_free_index` has one caller and adds no name the call site lacks.
 fix: Inline the body into the `Create` arm and delete the function.
 ```
+
+For a doc or skill, `line` is the Markdown line and `fix` gives the
+replacement text or the file the fact moves to.
 
 The `rule` field quotes the `AGENTS.md` sentence, or names the slop rule by its
 heading, or reads `dead code`. No other values.

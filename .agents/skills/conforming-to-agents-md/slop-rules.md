@@ -67,3 +67,25 @@ what the user can change.
 ## Leftover scaffolding
 
 Commented-out code. Delete it.
+
+## Prose filler
+
+A sentence in a doc, skill, or help text that announces, summarizes, or
+transitions instead of stating a fact or directing an action: "This section
+explains", "In summary", "Note that", "As mentioned above".
+
+## Prose hedging
+
+"May", "might", "should generally", or "in most cases" in a doc or skill where
+the code gives one behavior. State the behavior.
+
+## Negative parallelism
+
+"Not just X, but Y", "It's not X. It's Y.", or "not merely X" in a doc or skill.
+State Y directly.
+
+## Stale reference
+
+A command, flag, path, record field, error code, or skill name in a touched doc
+or skill that the tree no longer has, or that a later change on the branch
+renamed.
