@@ -1,6 +1,6 @@
 ---
 name: refactoring-iteratively
-description: Use when asked to find refactors, simplify, clean up, or improve code in the tk repo with no line-count target given, or when a branch already conforms to AGENTS.md and the question is whether it can be made simpler, more correct, or faster.
+description: Use when asked to find refactors, simplify, clean up, or improve code in the tk repo with no line-count target given, or when a branch already conforms to AGENTS.md and the question is whether it can be made simpler, more correct, or faster. Covers Rust code, docs, and skills.
 ---
 
 # Refactoring Iteratively
@@ -39,6 +39,8 @@ A candidate is rejected at scan time if it:
 - Changes a public function signature, a serialized shape, a CLI flag, or an error message text
 - Restates a style preference with no payoff object
 - Touches only tests, unless it collapses duplicated setup
+- Rewords a doc or skill for tone with no payoff object
+- Changes what a documented command does, rather than where the fact lives
 
 ## The loop
 
@@ -46,7 +48,7 @@ Track state in `<scratchpad>/refactor/`: `round-N.md` for raw reviewer output
 and `round-N-merged.md` for the ranked list. Pass the merged file's path to
 fixers rather than inlining the list. Every round:
 
-**1. Scan.** Spawn three reviewers in parallel, read-only. Each prompt starts with:
+**1. Scan.** Spawn the reviewers below in parallel, read-only. Each prompt starts with:
 "Read the entire `AGENTS.md` at the repo root before reviewing and apply it
 throughout." Each also receives the candidates rejected or reverted in earlier
 rounds under the heading "Already adjudicated, do not report". Each returns
@@ -57,6 +59,7 @@ candidate records in the shape below.
 | Simplicity | Duplication, one-use helpers, nested conditionals, impossible-state handling, defensive checks callers cannot trigger, wrapper types with one field and no invariant |
 | Correctness | States a type allows but the code assumes away, checks repeated at several depths, fallible steps below the boundary, `String` where a domain type exists, silent defaults on malformed data |
 | Performance | Clones of owned values on their last use, `.to_string()` in loops, repeated file or network reads for the same resource in one command, allocations a borrow would avoid |
+| Docs | Runs when the scope touches `docs/` or `skills/`. A fact stated in several docs or skills that collapses to one place plus links, a procedure in an area doc that moves to a skill, a flag or record detail in a skill that moves to its doc, a skill near its line budget carrying restatement, e2e tests behind skill examples that collapse into one test |
 
 **2. Rank.** Merge into one list. Drop any record failing the qualification test.
 Order by payoff over blast radius: a one-file change that removes a duplicate
@@ -71,7 +74,8 @@ context, and:
 > editing only these files: <file list>. Preserve behavior, public signatures,
 > serialized shapes, and error text. Do not add doc comments to items you did
 > not create. Then run `cargo +nightly-2026-09-01 fmt --all`, `cargo clippy --workspace
-> --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked`.
+> --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked`,
+> which includes the skills and docs checks.
 > If a test fails, revert your change with `git checkout -- <files>` and report
 > why. Return one paragraph per candidate. Do not commit.
 
@@ -94,7 +98,7 @@ change: Store `Uuid` in `TurnkeySigner`; call `.to_string()` once at the wire ca
 
 ## Red flags
 
-- A payoff sentence with "cleaner", "clearer", "more idiomatic", or "better"
+- A payoff sentence with "cleaner", "clearer", "more idiomatic", "reads better", or "better"
 - Applying a candidate the reviewer rated as marginal to have something to do
 - Running two fixers on the same file at once
 - Skipping `cargo test` because clippy passed
