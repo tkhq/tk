@@ -38,10 +38,12 @@ rather than left pending.
 | logical | `&&`, `\|\|` | `a && b` |
 | comparison | `==`, `!=`, `<`, `>`, `<=`, `>=` | `activity.type == 'ACTIVITY_TYPE_CREATE_USER_TAG'` |
 | membership | `in` | `activity.resource in ['USER', 'POLICY']` |
+| negation | `!` | `!(activity.kind in ['SIGN_RAW_PAYLOAD'])` |
 | field access | `x.field`, `x['key']` | `secret.static_properties['consensus']` |
 | list functions | `any(item, pred)`, `all(item, pred)`, `contains(v)`, `filter(item, pred)`, `count()` | `approvers.filter(user, user.tags.contains('TAG_ID')).count() >= 2` |
 
-Strings use single quotes. Ids compare as strings. Property values are
+`!` binds tighter than `&&` and `||`, so wrap what it negates in
+parentheses: `!(x in [...])`, not `!x in [...]`. Strings use single quotes. Ids compare as strings. Property values are
 strings end to end: write `secret.static_properties['consensus'] == 'approval'`,
 never a bare boolean.
 
@@ -104,9 +106,6 @@ All signing, including the raw-payload signatures behind `tk ssh` and
 - **Every user needs one persistent authenticator.** A user whose only
   credentials are expiring API keys is rejected. `--anchor-key` on
   `tk user create` registers a never-expiring key whose private half is discarded.
-- **There is no negation operator.** Express "outside the set" as a pinned
-  ALLOW plus an explicit DENY for the one case the default-allow fallback
-  would otherwise rescue: the submitter itself.
 - **No short-circuiting across resource types.** A condition that reads
   `wallet.id` errors when the activity targets a private key. Write one policy
   per resource type.
