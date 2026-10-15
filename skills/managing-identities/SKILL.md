@@ -137,6 +137,13 @@ intended user and the user is not a root quorum member. Deletion is final.
 
 ## Troubleshooting
 
+- `login` fails: follow `details.nextStep` when present, checking its
+  condition first. A missing profile is `not_found`. A key Turnkey does not
+  accept is `unauthorized`; register `details.publicKey` on a user, then log
+  in again.
+  A missing credential file is `not_found` and a malformed one
+  `invalid_input`; neither carries `nextStep`. See
+  [cli-convention](../references/cli-convention.md) for the full `details`.
 - `user create` fails with `not_found` for `--tag-name`: the tag does not
   exist in this organization. Create it with
   `tk --profile admin --message-format json user tag create --name agent` or

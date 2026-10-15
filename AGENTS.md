@@ -80,6 +80,7 @@ Default guidance for coding-agent runs in this repository.
 - Use Clap field types, defaults, value parsers, argument groups, and conflicts
   to enforce CLI invariants during parsing instead of recreating the same
   validation in command execution.
+- Each flag has one spelling; do not add aliases.
 - Keep fields on Clap `Args` structs private unless another construction path is
   intentional. Downstream functions should accept validated domain inputs, not
   a publicly constructible bag of CLI options.
@@ -295,6 +296,7 @@ Default guidance for coding-agent runs in this repository.
   describes, not again on the command.
 - Statuses, error codes, record fields, and other commands appear in
   backticks; literal examples stay literal. Value names are `UPPER_SNAKE`.
-- The root help states prompting, JSON output, and exit codes, and points at
-  the `cli-convention` reference for record shapes and error codes. A test
+- The root help states prompting, JSON output, and exit codes, points at
+  the embedded skills for multi-step tasks, and points at the
+  `cli-convention` reference for record shapes and error codes. A test
   binds the error-code table in that reference to the `ErrorCode` enum.

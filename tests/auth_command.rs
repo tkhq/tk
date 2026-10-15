@@ -200,6 +200,65 @@ async fn typed_client_http_status_is_classified_end_to_end() {
 }
 
 #[test]
+fn missing_and_malformed_credential_files_fail_differently() {
+    let temp = TempDir::new().unwrap();
+    registry(&temp);
+    let directory = temp.path().join(".config/turnkey");
+    fs::remove_file(directory.join("agent.json")).unwrap();
+    let agent_key = format!("{}/agent.json", directory.display());
+    let missing = failure(
+        command(&temp).args(["--profile", "agent", "auth", "status"]),
+        1,
+    );
+    assert_eq!(
+        missing,
+        json!({
+            "reason": "command_error",
+            "code": "not_found",
+            "details": {"path": agent_key},
+            "message": format!("credential file {agent_key} does not exist"),
+        })
+    );
+
+    fs::write(directory.join("admin.json"), "not json").unwrap();
+    let malformed = failure(
+        command(&temp).args(["--profile", "admin", "auth", "status"]),
+        1,
+    );
+    assert_eq!(malformed["code"], "invalid_input");
+    assert_eq!(malformed.get("details"), None);
+}
+
+#[test]
+fn an_unselected_identity_names_the_next_step() {
+    let temp = TempDir::new().unwrap();
+    let none_saved = failure(command(&temp).arg("whoami"), 1);
+    assert_eq!(
+        none_saved,
+        json!({
+            "reason": "command_error",
+            "code": "invalid_input",
+            "details": {
+                "nextStep": "run tk profile create --profile-name NAME --organization-id ORG_UUID",
+                "profiles": [],
+            },
+            "message": "try: run tk profile create --profile-name NAME --organization-id ORG_UUID: no profile is selected and no credential environment is set; no profiles are saved",
+        })
+    );
+
+    let partial = failure(
+        command(&temp)
+            .env("TURNKEY_API_PRIVATE_KEY", "01")
+            .arg("whoami"),
+        1,
+    );
+    assert_eq!(
+        partial["message"],
+        "partial credential environment: set TURNKEY_ORGANIZATION_ID and TURNKEY_API_PUBLIC_KEY too, or unset the rest"
+    );
+}
+
+#[test]
 fn invalid_key_length_is_an_error_without_panic() {
     let temp = TempDir::new().unwrap();
     let parsed = failure(
@@ -262,13 +321,6 @@ fn profile_create_and_login_reject_local_mismatches() {
     assert_eq!(empty_create["code"], "usage_error");
     let empty_login = failure(command(&temp).args(["login", "--profile-name", ""]), 2);
     assert_eq!(empty_login["code"], "usage_error");
-
-    let missing_profile = failure(command(&temp).arg("login"), 1);
-    assert_eq!(missing_profile["code"], "invalid_input");
-    assert_eq!(
-        missing_profile["message"],
-        "profile default does not exist; run tk profile create --profile-name default --organization-id <org>"
-    );
 
     output(command(&temp).args(["--organization-id", ORG, "profile", "create"]));
 

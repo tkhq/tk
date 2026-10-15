@@ -24,8 +24,9 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
 - Signing waits synchronously, so the policy is allow-always for the agent
   user, scoped to the exact resource: `wallet.id` for GPG, `private_key.id`
   for SSH. See [policy-patterns.md](../references/policy-patterns.md#signing-key-policies).
-- Local verification is the success criterion. A hosting provider's "Verified"
-  badge needs the public key and committer email there; this makes no claim.
+- Local verification is the success criterion. A hosting provider's
+  "Verified" badge is an external step this workflow makes no claim about;
+  for a GPG key on GitHub, see [gpg-signing](../../docs/gpg-signing.md#github).
 - SSH signing has two paths. Direct: `gpg.ssh.program` runs `tk` (step 6),
   so git's process runs `tk` and git's boundary holds the Turnkey credential.
   Agent: `gpg.ssh.program` is `ssh-keygen` with `SSH_AUTH_SOCK` on the

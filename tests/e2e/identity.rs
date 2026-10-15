@@ -158,8 +158,19 @@ fn login_creates_registry_and_profile_commands_behave() {
         "--organization-id",
         org,
     ]));
-    assert_eq!(unknown["code"], "invalid_input");
-    assert_eq!(unknown["message"], "profile no-such-profile does not exist");
+    assert_eq!(
+        unknown,
+        json!({
+            "reason": "command_error",
+            "code": "not_found",
+            "details": {
+                "nextStep": "unless no-such-profile is a typo for a saved profile, run tk profile create --profile-name no-such-profile --organization-id ORG_UUID",
+                "profile": "no-such-profile",
+                "profiles": [name],
+            },
+            "message": format!("try: unless no-such-profile is a typo for a saved profile, run tk profile create --profile-name no-such-profile --organization-id ORG_UUID: profile no-such-profile does not exist; saved profiles: {name}"),
+        })
+    );
     let malformed = run.err(run.cli().args([
         "profile",
         "set",
@@ -293,6 +304,16 @@ fn login_with_unregistered_credential_fails_and_selects_nothing() {
     let error = run.err(run.cli().args(["login", "--profile-name", &name]));
     assert_eq!(error["reason"], "command_error");
     assert_unauthenticated(&error);
+    let public_key = hex::encode(key.compressed_public_key());
+    assert_eq!(
+        error["details"],
+        json!({
+            "nextStep": format!("if organization {} is correct, register public key {public_key} (API_KEY_CURVE_P256) on a user there, then run tk login --profile-name {name}", run.org()),
+            "organizationId": run.org(),
+            "publicKey": public_key,
+            "profile": name,
+        })
+    );
     assert_eq!(
         run.ok(run.cli().args(["profile", "list"]))["data"]["activeProfile"],
         Value::Null
@@ -347,9 +368,35 @@ fn profile_create_generates_a_credential_that_logs_in_once_registered() {
 
     let unregistered = run.err(run.cli().args(["login", "--profile-name", &name]));
     assert_unauthenticated(&unregistered);
+    let unselected = run.err(run.cli().args(["auth", "status"]));
     assert_eq!(
-        run.err(run.cli().args(["auth", "status"]))["code"],
-        "invalid_input"
+        unselected,
+        json!({
+            "reason": "command_error",
+            "code": "invalid_input",
+            "details": {
+                "nextStep": format!("run tk login --profile-name {name}"),
+                "profiles": [name],
+            },
+            "message": format!("try: run tk login --profile-name {name}: no profile is selected and no credential environment is set; saved profiles: {name}"),
+        })
+    );
+    let missing = run.err(
+        run.cli()
+            .args(["login", "--profile-name", "no-such-profile"]),
+    );
+    assert_eq!(
+        missing,
+        json!({
+            "reason": "command_error",
+            "code": "not_found",
+            "details": {
+                "nextStep": "unless no-such-profile is a typo for a saved profile, run tk profile create --profile-name no-such-profile --organization-id ORG_UUID",
+                "profile": "no-such-profile",
+                "profiles": [name],
+            },
+            "message": format!("try: unless no-such-profile is a typo for a saved profile, run tk profile create --profile-name no-such-profile --organization-id ORG_UUID: profile no-such-profile does not exist; saved profiles: {name}"),
+        })
     );
 
     let (user_id, _) = run.create_user("fresh-login");
@@ -445,7 +492,16 @@ fn profile_set_switches_the_credential_file() {
             ])
             .arg(run.home().join("absent.json")),
     );
-    assert_eq!(missing["code"], "invalid_input", "{missing}");
+    let absent = run.home().join("absent.json").display().to_string();
+    assert_eq!(
+        missing,
+        json!({
+            "reason": "command_error",
+            "code": "not_found",
+            "details": {"path": absent},
+            "message": format!("credential file {absent} does not exist"),
+        })
+    );
     assert_eq!(
         run.ok(run
             .cli()

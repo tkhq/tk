@@ -135,12 +135,14 @@ which human approves. The organization id comes from step 1.
 
 ## Troubleshooting
 
-- `login` fails with `unauthorized` (401 or 403): the profile's public key is not
-  registered on a user in that organization. Add it to the root user at
-  https://app.turnkey.com, then rerun the same `login`.
+- `login` fails with `unauthorized` (401 or 403): the profile's public key,
+  `details.publicKey`, is not registered on a user in that organization. Add
+  it to the root user at https://app.turnkey.com, then rerun the same `login`.
 - `login` fails with `invalid_input` naming `profile set`: the profile was
   saved with a different organization or endpoint. Run the `tk profile set`
   command the message names, then `login` again.
+- `login` fails with any other error: see
+  [managing-identities](../managing-identities/SKILL.md).
 - `user tag create` fails with `api_error` and a 400: a tag with that name
   already exists. Read the id from `tk --profile admin --message-format json user tag list`.
 - `user update` returns `status: "pending"`: an existing policy gates user

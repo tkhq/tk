@@ -23,6 +23,8 @@ TK_NON_INTERACTIVE=true to fail fast instead.
 --message-format json prints one JSON record per line, each with a `reason`
 field; error records also carry a `code`. JSON output never prompts.
 
+Before a multi-step task, read its workflow: `tk skills list`, then
+`tk skills show --name NAME`.
 Record shapes and error codes: `tk skills show --name references/cli-convention`.
 Exit codes: 0 success, 1 runtime error, 2 usage error.
 ```

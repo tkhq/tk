@@ -137,7 +137,7 @@ no minting row here: the one key never expires.
 - `login` fails with `unauthorized` 401 or 403: the create activity is pending or
   rejected, or `PUBLIC_KEY` was mistyped. Compare
   `tk --profile admin --message-format json api-key list --user-id AGENT_USER_ID`
-  with `data.publicKey` from step 2.
+  with the error's `details.publicKey`.
 - The self-registration in step 6 returns `completed` or `pending`: the DENY
   is missing or names the wrong tag, such as the `''` an unset `AGENT_TAG`
   leaves. First create `agents-no-credentials` and
