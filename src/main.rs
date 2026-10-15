@@ -16,6 +16,7 @@ mod sessions;
 mod skills;
 mod socket;
 mod ssh;
+mod update;
 mod wallets;
 mod wire;
 

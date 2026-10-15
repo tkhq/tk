@@ -36,5 +36,6 @@ mod skills;
 mod ssh;
 mod ssh_agent;
 mod ssh_agent_destinations;
+mod update;
 mod users;
 mod wallets;
