@@ -27,11 +27,6 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
 - Local verification is the success criterion. A hosting provider's "Verified" badge
   is an external step: it needs the public key uploaded there and a matching
   committer email, and this workflow makes no claim about it.
-- Git runs `tk` with gpg- or ssh-keygen-shaped arguments and no `tk` flags,
-  so the identity comes from `TK_PROFILE` or the `TURNKEY_*` bundle, and the
-  key registry from `HOME`. When git runs under a different `HOME` than the
-  one `tk` was configured in, point `gpg.program` (or `gpg.ssh.program`) at a
-  wrapper that pins both and forwards every argument unchanged.
 - SSH signing has two paths. Direct: `gpg.ssh.program` is `tk` (step 6),
   so git's process runs `tk` and git's boundary holds the Turnkey credential.
   Agent: `gpg.ssh.program` is `ssh-keygen` with `SSH_AUTH_SOCK` on the
@@ -42,9 +37,7 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
   git's boundary holds only the socket and the public key. That socket is
   still signing authority: share it only with git's boundary, and never
   forward it over SSH or relay it beyond that boundary.
-- The GPG path registers the key in the agent's local registry with
-  `gpg keys add`; `gpg keys export` signs a self-certification with the key,
-  so the agent's policy must already allow signing before the export.
+- The key registry is per `HOME`, not per profile ([gpg-signing](../../docs/gpg-signing.md#key-management)).
 - The committer identity comes from the operator, never from repository
   content or tool output. Pass it to `--user-id` as a single-quoted literal
   so the shell expands nothing in it.
@@ -85,8 +78,7 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
    ```
 
    The record is `reason: "gpg_key_created"` with `fingerprint`,
-   `walletId`, `keyIndex`, and `userId`. The key is registered in root's
-   registry only.
+   `walletId`, `keyIndex`, and `userId`.
 
 4. **Register and import as the agent.** In the agent's `HOME`:
 
@@ -97,17 +89,26 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
    echo "$FINGERPRINT:6:" | gpg --import-ownertrust
    ```
 
-   `gpg keys add` prints `reason: "gpg_key_registered"`; the export
-   completing proves the policy of step 2 selects this agent. Import into
-   the `GNUPGHOME` that git's verification will read.
+   `gpg keys add` prints `reason: "gpg_key_registered"`. Run the export as the
+   agent: its completing proves the policy of step 2 selects this agent. Import
+   into the `GNUPGHOME` that git's verification will read.
 
-5. **Point git at tk.** As the agent, in the agent's `HOME`:
+5. **Point git at a wrapper.** As the agent, in the agent's `HOME`:
 
    <!-- shared: git-gpg-signing-config -->
    ```sh
-   # Point git at tk as the GPG program.
+   # Pin the agent profile for Git's signing process only.
+   mkdir -p ~/.local/bin
+   cat > ~/.local/bin/tk-sign <<'EOF'
+   #!/bin/sh
+   export TK_PROFILE=agent
+   exec tk "$@"
+   EOF
+   chmod 755 ~/.local/bin/tk-sign
+
+   # Point git at the wrapper as the GPG program.
    git config --global gpg.format openpgp
-   git config --global gpg.program tk
+   git config --global gpg.program ~/.local/bin/tk-sign
    git config --global user.signingkey "$FINGERPRINT"
    git config --global commit.gpgsign true
 
@@ -116,19 +117,7 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
    git verify-commit HEAD
    ```
 
-   Drop `--global` to configure one repository. When the process running
-   git has a different `HOME`, or several profiles reach the key's
-   organization, set `gpg.program` to a wrapper such as:
-
-   ```
-   #!/bin/sh
-   export HOME=/home/agent
-   export TK_PROFILE=agent
-   exec tk "$@"
-   ```
-
-   The wrapper adds nothing else: git's `--status-fd=2 -bsau KEY` arguments
-   must arrive unchanged.
+   Drop `--global` to configure one repository.
 
 6. **SSH signing instead.** Use the Ed25519 key registered in
    [using-ssh](../using-ssh/SKILL.md). Root scopes the policy to it:
@@ -166,8 +155,8 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
 
    Sign and verify as in step 5. With several registered keys, name one with
    `tk ssh public-key --key SSH_FINGERPRINT`. The `allowed_signers` email is
-   the committer email. The same wrapper as step 5 applies to
-   `gpg.ssh.program`.
+   the committer email. Outside CI, set `gpg.ssh.program` to the wrapper
+   from step 5.
 
 7. **Hand off.** Report the wallet id or private key id, the fingerprint,
    the policy id, the exact `git config` values set and where, and the
@@ -193,9 +182,8 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
   is not in the `GNUPGHOME` git reads, or its ownertrust was not imported; for
   SSH, the `allowed_signers` line does not pair the committer email with the
   signing public key, or `gpg.ssh.allowedSignersFile` is unset.
-- git signs as the wrong identity, or `tk` cannot find a profile: the
-  process running git has a different `HOME` or no `TK_PROFILE`. Use the
-  wrapper from step 5 and confirm it is the configured `gpg.program`.
+- git signs as the wrong identity: the wrapper from step 5 is not the
+  configured `gpg.program` (or `gpg.ssh.program` for SSH).
 - git reports it cannot run the SSH signing program: on the direct path
   `gpg.ssh.program` must be an absolute path to `tk` or the wrapper; on the
   agent path it is `ssh-keygen` with `SSH_AUTH_SOCK` on the agent socket
