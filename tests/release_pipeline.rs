@@ -5,13 +5,35 @@ use std::{collections::BTreeSet, fs, path::Path};
 const WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
 const INSTALLER: &str = include_str!("../install.sh");
 const UPDATER: &str = include_str!("../src/update.rs");
+const MANIFEST: &str = include_str!("../Cargo.toml");
 
 #[test]
 fn release_tag_must_name_the_manifest_version_and_be_on_main() {
     assert!(WORKFLOW.contains(r#"if [ "$GITHUB_REF_NAME" != "v$manifest_version" ]; then"#));
     assert!(WORKFLOW.contains("fetch-depth: 0"));
     assert!(WORKFLOW.contains(r#"git merge-base --is-ancestor "$GITHUB_SHA" origin/main"#));
-    assert!(WORKFLOW.contains("needs: validate"));
+}
+
+#[test]
+fn nothing_is_published_until_every_archive_is_signed_and_verified() {
+    let needs: Vec<_> = WORKFLOW
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("needs: "))
+        .collect();
+    assert_eq!(needs, ["validate", "build", "sign", "publish"]);
+    assert!(WORKFLOW.contains(r#"rsign verify "$archive" -P "$pubkey" -x "$archive.sig""#));
+    assert!(WORKFLOW.contains("[package.metadata.binstall.signing]"));
+    assert!(WORKFLOW.contains("dist/*.sig"));
+    assert!(WORKFLOW.contains("dist/minisign.pub"));
+}
+
+#[test]
+fn binstall_resolves_the_release_archive_layout() {
+    assert!(WORKFLOW.contains(r#"package="tk-${TARGET}-${GITHUB_REF_NAME}""#));
+    assert!(MANIFEST.contains(
+        r#"pkg-url = "{ repo }/releases/download/v{ version }/tk-{ target }-v{ version }{ archive-suffix }""#
+    ));
+    assert!(MANIFEST.contains(r#"bin-dir = "tk-{ target }-v{ version }/{ bin }{ binary-ext }""#));
 }
 
 #[test]
