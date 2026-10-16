@@ -1,6 +1,6 @@
 //! Release pipeline invariants that a broken release would otherwise be the
 //! first to catch.
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fs, path::Path};
 
 const WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
 const INSTALLER: &str = include_str!("../install.sh");
@@ -16,21 +16,32 @@ fn release_tag_must_name_the_manifest_version_and_be_on_main() {
 
 #[test]
 fn every_action_is_pinned_to_a_commit_with_a_version_comment() {
-    let uses: Vec<_> = WORKFLOW
-        .lines()
-        .filter_map(|line| line.trim_start().strip_prefix("- uses: "))
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows");
+    let workflows: Vec<_> = fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
         .collect();
-    assert!(!uses.is_empty());
-    for reference in uses {
-        let (action, comment) = reference
-            .split_once(" # ")
-            .unwrap_or_else(|| panic!("`{reference}` should carry a version comment"));
-        let (_, sha) = action.split_once('@').unwrap();
-        assert!(
-            sha.len() == 40 && sha.chars().all(|c| c.is_ascii_hexdigit()),
-            "`{action}` should be pinned to a full commit SHA"
-        );
-        assert!(!comment.trim().is_empty());
+    assert!(!workflows.is_empty());
+    for path in workflows {
+        let name = path.display();
+        let workflow = fs::read_to_string(&path).unwrap();
+        let uses = workflow.lines().filter_map(|line| {
+            let line = line.trim_start();
+            line.strip_prefix("- ")
+                .unwrap_or(line)
+                .strip_prefix("uses: ")
+        });
+        for reference in uses {
+            let (action, comment) = reference
+                .split_once(" # ")
+                .unwrap_or_else(|| panic!("{name}: `{reference}` should carry a version comment"));
+            let (_, sha) = action.split_once('@').unwrap();
+            assert!(
+                sha.len() == 40 && sha.chars().all(|c| c.is_ascii_hexdigit()),
+                "{name}: `{action}` should be pinned to a full commit SHA"
+            );
+            assert!(!comment.trim().is_empty());
+        }
     }
 }
 
