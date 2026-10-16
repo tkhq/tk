@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::{
     ActivityResult, TurnkeyClient,
     generated::{
@@ -19,6 +18,7 @@ use uuid::Uuid;
 use crate::{
     errors::{ActivityError, ActivityErrorKind, InvalidInput, MissingResource},
     ssh::registry::PrivateKeyId,
+    stamper::Stamper,
     wire::ssh::Ed25519PublicKey,
 };
 
@@ -29,7 +29,7 @@ pub struct NamedPrivateKey {
 }
 
 pub async fn create_private_key(
-    client: &TurnkeyClient<TurnkeyP256ApiKey>,
+    client: &TurnkeyClient<Stamper>,
     organization_id: Uuid,
     name: String,
 ) -> Result<NamedPrivateKey> {
@@ -101,7 +101,7 @@ pub async fn create_private_key(
 }
 
 pub async fn get_private_key(
-    client: &TurnkeyClient<TurnkeyP256ApiKey>,
+    client: &TurnkeyClient<Stamper>,
     organization_id: Uuid,
     requested_id: &PrivateKeyId,
 ) -> Result<Ed25519PublicKey> {
@@ -165,6 +165,7 @@ fn ed25519_public_key(private_key: PrivateKey) -> Result<(PrivateKeyId, Ed25519P
 #[allow(clippy::disallowed_types)]
 mod tests {
     use serde_json::{Value, json};
+    use turnkey_api_key_stamper::TurnkeyP256ApiKey;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
 
     use super::*;

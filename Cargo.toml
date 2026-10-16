@@ -25,6 +25,10 @@ include = [
 name = "tk"
 path = "src/main.rs"
 
+[features]
+# PC/SC links dynamically on Linux, which the static musl release binaries cannot do.
+yubikey = ["dep:p256", "dep:yubikey"]
+
 [lints.rust]
 missing_docs = "deny"
 # Coding style
@@ -79,6 +83,7 @@ clap = { version = "4.6.6", features = ["std", "derive", "help", "usage", "error
 flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
 libc = { version = "0.2.189", default-features = false }
+p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "std"], optional = true }
 rand_core = { version = "0.6.4", default-features = false, features = ["getrandom"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
 rpassword = { version = "7.4", default-features = false }
@@ -100,6 +105,7 @@ turnkey_api_key_stamper = "0.16.0"
 turnkey_client = "0.16.0"
 turnkey_enclave_encrypt = "0.16.0"
 uuid = { version = "1", default-features = false, features = ["serde", "std", "v4"] }
+yubikey = { version = "0.8.0", default-features = false, optional = true }
 zeroize = { version = "1.8", default-features = false, features = ["alloc", "serde"] }
 
 [build-dependencies]
@@ -107,6 +113,7 @@ sha2 = { version = "0.11.0", default-features = false }
 
 [dev-dependencies]
 assert_cmd = { version = "2.2.2", default-features = false }
+der = { version = "0.7", default-features = false }
 predicates = { version = "3.1.4", default-features = false }
 ssh-key = { version = "0.6.7", default-features = false, features = ["rand_core"] }
 strum = { version = "0.28.0", default-features = false, features = ["derive", "std", "strum_macros"] }

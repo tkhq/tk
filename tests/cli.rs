@@ -200,6 +200,39 @@ fn profile_set_requires_a_change_and_agent_keys_repeat() {
 }
 
 #[test]
+fn profile_create_rejects_yubikey_flag_misuse_while_parsing() {
+    let home = tempfile::tempdir().expect("temporary home");
+    for (arguments, message) in [
+        (
+            &["--yubikey-slot", "f9"][..],
+            "PIV slot f9 cannot hold a signing key",
+        ),
+        (
+            &["--yubikey-serial", "12345678"],
+            "the following required arguments were not provided",
+        ),
+        (
+            &["--yubikey-slot", "9a", "--api-key-file", "key.json"],
+            "'--yubikey-slot <SLOT>' cannot be used with '--api-key-file <API_KEY_FILE>'",
+        ),
+    ] {
+        Command::new(env!("CARGO_BIN_EXE_tk"))
+            .args([
+                "--organization-id",
+                "00000000-0000-4000-8000-000000000001",
+                "profile",
+                "create",
+            ])
+            .args(arguments)
+            .env("HOME", home.path())
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(message));
+    }
+    assert!(!home.path().join(".config").exists());
+}
+
+#[test]
 fn agent_start_rejects_bad_destination_constraint_inputs() {
     let home = tempfile::tempdir().expect("temporary home");
     let start = |arguments: &[&str]| {

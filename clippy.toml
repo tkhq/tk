@@ -3,6 +3,7 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-print-in-tests = true
 avoid-breaking-exported-api = false
+doc-valid-idents = ["YubiKey", ".."]
 disallowed-types = [
   { path = "tk::errors::ErrorCode", reason = "assign ErrorCode only in crate::errors::classify and the output layer" },
 ]

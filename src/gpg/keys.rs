@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
 use tracing::debug;
-use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::{
     ActivityResult, TurnkeyClient,
     generated::{
@@ -23,6 +22,7 @@ use uuid::Uuid;
 use crate::{
     errors::{ActivityError, ActivityErrorKind, MissingResource},
     gpg::KeySummary,
+    stamper::Stamper,
     wire::openpgp::{
         entity::{OpenPgpKey, SigningKey, UserId},
         key::parse_point_hex,
@@ -76,7 +76,7 @@ pub struct WalletKeys {
 }
 
 pub async fn read_wallet(
-    client: &TurnkeyClient<TurnkeyP256ApiKey>,
+    client: &TurnkeyClient<Stamper>,
     organization_id: Uuid,
     wallet_id: Uuid,
 ) -> Result<WalletKeys> {
@@ -194,7 +194,7 @@ fn sort_accounts(accounts: Vec<WalletAccount>) -> Result<WalletKeys> {
 }
 
 pub async fn create_key(
-    client: &TurnkeyClient<TurnkeyP256ApiKey>,
+    client: &TurnkeyClient<Stamper>,
     organization_id: Uuid,
     wallet_id: Uuid,
     index: u32,

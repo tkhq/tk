@@ -8,12 +8,9 @@ use turnkey_client::generated::{
     services::coordinator::public::v1::GetApiKeysRequest,
 };
 
-use super::{
-    duration::{ExpiresIn, human_seconds},
-    public_key::CompressedPublicKey,
-};
+use super::duration::{ExpiresIn, human_seconds};
 use crate::{
-    auth::{Profile, build_turnkey_client, read_key, saved_profile, whoami},
+    auth::{Profile, build_turnkey_client, load_stamper, saved_profile, whoami},
     errors::{MissingResource, SessionExpiring},
     operations::{OperationOutput, unix_now},
     resources::expires_at_unix_ms,
@@ -36,11 +33,11 @@ pub(super) async fn run(args: StatusArgs) -> Result<OperationOutput> {
     let Profile {
         organization_id,
         api_base_url,
-        api_key_file,
+        credential,
     } = saved_profile(&name).await?;
-    let key = read_key(&api_key_file).await?;
-    let public_key = CompressedPublicKey::from(&key);
-    let client = build_turnkey_client(key, &api_base_url)?;
+    let stamper = load_stamper(credential).await?;
+    let public_key = stamper.public_key();
+    let client = build_turnkey_client(stamper, &api_base_url)?;
     let identity = whoami(&client, organization_id).await?;
     let listed = client
         .get_api_keys(GetApiKeysRequest {

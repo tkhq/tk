@@ -11,7 +11,7 @@ use std::{
 use anyhow::{Context, Error, Result, bail};
 use clap::{Args, Subcommand, builder::NonEmptyStringValueParser};
 use reqwest::{Client, ClientBuilder, Url, redirect::Policy};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 use serde_json::json;
 use tokio::{
     fs::{self, OpenOptions},
@@ -38,6 +38,8 @@ use crate::{
     ssh::registry::{
         SelectError as SshSelectError, SshKeyEntry, SshKeyName, SshKeyTable, StoredSshKey,
     },
+    stamper::Stamper,
+    yubikey::{PivSlot, YubiKeyCredential, YubiKeySerial},
 };
 
 const DEFAULT_URL: &str = "https://api.turnkey.com";
@@ -116,7 +118,7 @@ pub enum SavedProfileCommand {
         #[arg(long = "profile-name", value_parser = NonEmptyStringValueParser::new())]
         name: String,
     },
-    /// Select a saved profile after checking its credential file.
+    /// Select a saved profile after checking its credential.
     Use {
         /// Saved profile to select.
         #[arg(long = "profile-name", value_parser = NonEmptyStringValueParser::new())]
@@ -152,8 +154,18 @@ pub struct CreateArgs {
     name: String,
     /// Existing P256 credential JSON file to use; without it, a fresh
     /// credential is written under ~/.config/turnkey/tk/api-keys/.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "yubikey_slot")]
     api_key_file: Option<PathBuf>,
+    /// YubiKey PIV slot whose P256 key signs this profile's requests, such as 9a.
+    ///
+    /// Every request then waits for a touch on the YubiKey. The key must be
+    /// generated on the device with PIN policy `never` and touch policy
+    /// `always` or `cached`; the private key never leaves the device.
+    #[arg(long, value_name = "SLOT")]
+    yubikey_slot: Option<PivSlot>,
+    /// Serial number of the YubiKey to use; defaults to the only connected YubiKey.
+    #[arg(long, value_name = "SERIAL", requires = "yubikey_slot")]
+    yubikey_serial: Option<YubiKeySerial>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -202,12 +214,83 @@ impl Default for Registry {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
+#[derive(Deserialize, PartialEq)]
+#[cfg_attr(test, derive(Debug))]
+#[serde(try_from = "StoredProfile")]
 pub(crate) struct Profile {
     pub(crate) organization_id: Uuid,
     pub(crate) api_base_url: ApiBaseUrl,
-    pub(crate) api_key_file: PathBuf,
+    pub(crate) credential: Credential,
+}
+
+#[derive(Clone, PartialEq)]
+#[cfg_attr(test, derive(Debug))]
+pub(crate) enum Credential {
+    File(PathBuf),
+    YubiKey(YubiKeyCredential),
+}
+
+impl Credential {
+    fn file(&self) -> Option<&Path> {
+        match self {
+            Self::File(path) => Some(path),
+            Self::YubiKey(_) => None,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredProfile {
+    organization_id: Uuid,
+    api_base_url: ApiBaseUrl,
+    api_key_file: Option<PathBuf>,
+    yubikey: Option<YubiKeyCredential>,
+}
+
+impl TryFrom<StoredProfile> for Profile {
+    type Error = InvalidInput;
+
+    fn try_from(stored: StoredProfile) -> Result<Self, Self::Error> {
+        let StoredProfile {
+            organization_id,
+            api_base_url,
+            api_key_file,
+            yubikey,
+        } = stored;
+        let credential = match (api_key_file, yubikey) {
+            (Some(path), None) => Credential::File(path),
+            (None, Some(yubikey)) => Credential::YubiKey(yubikey),
+            (Some(_), Some(_)) => {
+                return Err(InvalidInput(
+                    "a profile holds either api_key_file or yubikey, not both".into(),
+                ));
+            }
+            (None, None) => {
+                return Err(InvalidInput(
+                    "a profile needs api_key_file or yubikey".into(),
+                ));
+            }
+        };
+        Ok(Self {
+            organization_id,
+            api_base_url,
+            credential,
+        })
+    }
+}
+
+impl Serialize for Profile {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut profile = serializer.serialize_struct("Profile", 3)?;
+        profile.serialize_field("organization_id", &self.organization_id)?;
+        profile.serialize_field("api_base_url", &self.api_base_url)?;
+        match &self.credential {
+            Credential::File(path) => profile.serialize_field("api_key_file", path)?,
+            Credential::YubiKey(yubikey) => profile.serialize_field("yubikey", yubikey)?,
+        }
+        profile.end()
+    }
 }
 
 #[derive(Debug)]
@@ -291,7 +374,7 @@ impl ApiBaseUrl {
 pub struct ResolvedAuth {
     pub org_id: Uuid,
     pub api_base_url: ApiBaseUrl,
-    pub stamper: TurnkeyP256ApiKey,
+    pub stamper: Stamper,
     pub source: CredentialSource,
     pub http: OnceLock<Client>,
 }
@@ -315,7 +398,7 @@ impl ResolvedAuth {
             org_id: Uuid::parse_str(org_id).expect("test organization ID is a UUID"),
             api_base_url: ApiBaseUrl::try_from(api_base_url.to_owned())
                 .expect("test API base URL is a valid HTTP(S) URL"),
-            stamper,
+            stamper: stamper.into(),
             source: CredentialSource::Environment,
             http: OnceLock::new(),
         }
@@ -327,9 +410,9 @@ fn transport(builder: ClientBuilder) -> ClientBuilder {
 }
 
 pub fn build_turnkey_client(
-    stamper: TurnkeyP256ApiKey,
+    stamper: Stamper,
     api_base_url: &ApiBaseUrl,
-) -> Result<TurnkeyClient<TurnkeyP256ApiKey>> {
+) -> Result<TurnkeyClient<Stamper>> {
     TurnkeyClient::builder()
         .api_key(stamper)
         .base_url(api_base_url.as_str())
@@ -339,14 +422,14 @@ pub fn build_turnkey_client(
 }
 
 pub(crate) struct ReloadingClient {
-    public_key: Vec<u8>,
+    public_key: CompressedPublicKey,
     api_base_url: ApiBaseUrl,
-    client: Arc<TurnkeyClient<TurnkeyP256ApiKey>>,
+    client: Arc<TurnkeyClient<Stamper>>,
 }
 
 impl ReloadingClient {
     pub(crate) fn connect(auth: ResolvedAuth) -> Result<Self> {
-        let public_key = auth.stamper.compressed_public_key();
+        let public_key = auth.stamper.public_key();
         let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
         Ok(Self {
             public_key,
@@ -355,7 +438,7 @@ impl ReloadingClient {
         })
     }
 
-    pub(crate) fn client(&self) -> &Arc<TurnkeyClient<TurnkeyP256ApiKey>> {
+    pub(crate) fn client(&self) -> &Arc<TurnkeyClient<Stamper>> {
         &self.client
     }
 
@@ -363,13 +446,13 @@ impl ReloadingClient {
         cached: &Mutex<Self>,
         options: &AuthOptions,
         organization_id: Uuid,
-    ) -> Result<Arc<TurnkeyClient<TurnkeyP256ApiKey>>> {
+    ) -> Result<Arc<TurnkeyClient<Stamper>>> {
         let auth = LoadedRegistry::load()
             .await?
             .resolve_for_organization(options, organization_id)
             .await?;
         let mut cached = cached.lock().unwrap_or_else(PoisonError::into_inner);
-        if auth.stamper.compressed_public_key() != cached.public_key
+        if auth.stamper.public_key() != cached.public_key
             || auth.api_base_url != cached.api_base_url
         {
             *cached = Self::connect(auth)?;
@@ -379,7 +462,7 @@ impl ReloadingClient {
 }
 
 pub(crate) async fn whoami(
-    client: &TurnkeyClient<TurnkeyP256ApiKey>,
+    client: &TurnkeyClient<Stamper>,
     organization_id: Uuid,
 ) -> Result<GetWhoamiResponse> {
     client
@@ -473,15 +556,14 @@ async fn load(path: &Path) -> Result<Registry> {
         );
     }
     let registry: Registry = toml::from_str(&text).map_err(malformed)?;
-    if let Some((name, profile)) = registry
-        .profiles
-        .iter()
-        .find(|(_, profile)| profile.api_key_file.is_relative())
-    {
+    if let Some((name, file)) = registry.profiles.iter().find_map(|(name, profile)| {
+        let file = profile.credential.file()?;
+        file.is_relative().then_some((name, file))
+    }) {
         return Err(InvalidInput(format!(
             "profile {name} in {} has relative api_key_file {}; use an absolute path",
             path.display(),
-            profile.api_key_file.display()
+            file.display()
         ))
         .into());
     }
@@ -822,7 +904,7 @@ fn resolve_environment(options: &AuthOptions) -> Result<Option<ResolvedAuth>> {
     Ok(Some(ResolvedAuth {
         org_id: org,
         api_base_url: endpoint_override(options)?.unwrap_or_default(),
-        stamper: parse_key(&private, &public)?,
+        stamper: parse_key(&private, &public)?.into(),
         source: CredentialSource::Environment,
         http: OnceLock::new(),
     }))
@@ -836,14 +918,21 @@ async fn resolve_profile(
     let Profile {
         organization_id,
         api_base_url,
-        api_key_file,
+        credential,
     } = profile;
     Ok(ResolvedAuth {
         org_id: options.organization_id.unwrap_or(*organization_id),
         api_base_url: endpoint_override(options)?.unwrap_or_else(|| api_base_url.clone()),
-        stamper: read_key(api_key_file).await?,
+        stamper: load_stamper(credential.clone()).await?,
         source: CredentialSource::Profile(name),
         http: OnceLock::new(),
+    })
+}
+
+pub(crate) async fn load_stamper(credential: Credential) -> Result<Stamper> {
+    Ok(match credential {
+        Credential::File(path) => read_key(&path).await?.into(),
+        Credential::YubiKey(yubikey) => Stamper::YubiKey(yubikey),
     })
 }
 
@@ -869,7 +958,7 @@ pub(crate) async fn remove_generated_key(path: &Path) -> bool {
         if registry
             .profiles
             .values()
-            .any(|profile| profile.api_key_file == path)
+            .any(|profile| profile.credential.file() == Some(&path))
         {
             return Ok(false);
         }
@@ -924,7 +1013,7 @@ pub async fn load_gpg_keys() -> Result<GpgKeyTable> {
 pub async fn open_gpg_key(
     options: &AuthOptions,
     key: Option<KeyName>,
-) -> Result<Result<(GpgKeyEntry, TurnkeyClient<TurnkeyP256ApiKey>), SelectError>> {
+) -> Result<Result<(GpgKeyEntry, TurnkeyClient<Stamper>), SelectError>> {
     let (entry, auth) = match resolve_gpg_key(options, key).await? {
         Ok(resolved) => resolved,
         Err(error) => return Ok(Err(error)),
@@ -986,7 +1075,7 @@ pub async fn load_ssh_keys() -> Result<SshKeyTable> {
 pub async fn open_ssh_key(
     options: &AuthOptions,
     key: Option<SshKeyName>,
-) -> Result<Result<(SshKeyEntry, TurnkeyClient<TurnkeyP256ApiKey>), SshSelectError>> {
+) -> Result<Result<(SshKeyEntry, TurnkeyClient<Stamper>), SshSelectError>> {
     let mut registry = LoadedRegistry::load().await?;
     let entry = match registry.take_ssh_keys()?.select(key) {
         Ok(entry) => entry,
@@ -1028,6 +1117,9 @@ pub async fn run_auth(command: AuthCommand, options: &AuthOptions) -> Result<Ope
     match command {
         AuthCommand::Status => {
             let auth = resolve(options).await?;
+            if let Stamper::YubiKey(yubikey) = &auth.stamper {
+                yubikey.confirm()?;
+            }
             let source = auth.source.to_string();
             let profile = match &auth.source {
                 CredentialSource::Environment => None,
@@ -1035,7 +1127,7 @@ pub async fn run_auth(command: AuthCommand, options: &AuthOptions) -> Result<Ope
             };
             Ok(OperationOutput::result(
                 "auth.status",
-                json!({"ready": true, "profile": profile, "organizationId": auth.org_id, "apiBaseUrl": auth.api_base_url, "publicKey": hex::encode(auth.stamper.compressed_public_key()), "credentialSource": source}),
+                json!({"ready": true, "profile": profile, "organizationId": auth.org_id, "apiBaseUrl": auth.api_base_url, "publicKey": auth.stamper.public_key(), "credentialSource": source}),
             ))
         }
         AuthCommand::Whoami => {
@@ -1046,7 +1138,7 @@ pub async fn run_auth(command: AuthCommand, options: &AuthOptions) -> Result<Ope
                 source,
                 http: _,
             } = resolve(options).await?;
-            let public_key = CompressedPublicKey::from(&stamper);
+            let public_key = stamper.public_key();
             let client = build_turnkey_client(stamper, &api_base_url)?;
             let identity = whoami(&client, org_id)
                 .await
@@ -1091,7 +1183,7 @@ async fn login(args: LoginArgs, options: &AuthOptions) -> Result<OperationOutput
     let Profile {
         organization_id,
         api_base_url,
-        api_key_file,
+        credential,
     } = &profile;
     if let Some(requested) = options.organization_id
         && requested != *organization_id
@@ -1109,8 +1201,8 @@ async fn login(args: LoginArgs, options: &AuthOptions) -> Result<OperationOutput
         ))
         .into());
     }
-    let stamper = read_key(api_key_file).await?;
-    let public_key = CompressedPublicKey::from(&stamper);
+    let stamper = load_stamper(credential.clone()).await?;
+    let public_key = stamper.public_key();
     let client = build_turnkey_client(stamper, api_base_url)?;
     let identity = whoami(&client, *organization_id).await.map_err(|error| {
         rejected(
@@ -1142,7 +1234,12 @@ pub async fn create_profile(
     organization_id: Uuid,
     api_base_url: ApiBaseUrl,
 ) -> Result<OperationOutput> {
-    let CreateArgs { name, api_key_file } = args;
+    let CreateArgs {
+        name,
+        api_key_file,
+        yubikey_slot,
+        yubikey_serial,
+    } = args;
     let path = registry_path()?;
     let _lock = registry_lock(&path).await?;
     let mut registry = load(&path).await?;
@@ -1156,23 +1253,38 @@ pub async fn create_profile(
         }
         Entry::Vacant(slot) => slot,
     };
-    let (api_key_file, public_key, generated) = match api_key_file {
-        Some(file) => {
+    let (credential, public_key, generated) = match (api_key_file, yubikey_slot) {
+        (Some(file), _) => {
             let resolved = fs::canonicalize(&file)
                 .await
                 .context("resolve credential path")?;
             let key = read_key(&resolved).await?;
-            (resolved, CompressedPublicKey::from(&key), None)
+            (
+                Credential::File(resolved),
+                CompressedPublicKey::from(&key),
+                None,
+            )
         }
-        None => {
+        (None, Some(piv_slot)) => {
+            let yubikey =
+                YubiKeyCredential::discover(yubikey_serial, piv_slot).with_context(|| {
+                    format!("use YubiKey slot {piv_slot} for profile {}", slot.key())
+                })?;
+            (
+                Credential::YubiKey(yubikey.clone()),
+                yubikey.public_key,
+                None,
+            )
+        }
+        (None, None) => {
             let GeneratedApiKey { public_key, path } = generate(None).await?;
-            (path.clone(), public_key, Some(path))
+            (Credential::File(path.clone()), public_key, Some(path))
         }
     };
     let profile = Profile {
         organization_id,
         api_base_url,
-        api_key_file,
+        credential,
     };
     let name = slot.key();
     let record = json!({
@@ -1191,14 +1303,14 @@ pub async fn create_profile(
     Ok(OperationOutput::result("profile.create", record))
 }
 
-pub(crate) async fn set_profile_key(name: &str, api_key_file: PathBuf) -> Result<PathBuf> {
+pub(crate) async fn set_profile_key(name: &str, api_key_file: PathBuf) -> Result<Credential> {
     let path = registry_path()?;
     let _lock = registry_lock(&path).await?;
     let mut registry = load(&path).await?;
     let Some(profile) = registry.profiles.get_mut(name) else {
         return Err(registry.missing(name.to_owned()).into());
     };
-    let previous = mem::replace(&mut profile.api_key_file, api_key_file);
+    let previous = mem::replace(&mut profile.credential, Credential::File(api_key_file));
     save(&path, &registry).await?;
     Ok(previous)
 }
@@ -1235,7 +1347,12 @@ pub async fn run_profile(
             let Some(profile) = registry.profiles.get(&name) else {
                 return Err(registry.missing(name).into());
             };
-            read_key(&profile.api_key_file).await?;
+            match &profile.credential {
+                Credential::File(path) => {
+                    read_key(path).await?;
+                }
+                Credential::YubiKey(yubikey) => yubikey.confirm()?,
+            }
             registry.active_profile = Some(name.clone());
             save(&path, &registry).await?;
             Ok(OperationOutput::result(
@@ -1276,9 +1393,11 @@ pub async fn run_profile(
                     Err(error) => return Err(error).context("resolve credential path"),
                 };
                 let key = read_key(&current).await?;
-                let previous = mem::replace(&mut profile.api_key_file, current);
+                let previous = mem::replace(&mut profile.credential, Credential::File(current));
                 record["publicKey"] = CompressedPublicKey::from(&key).to_string().into();
-                record["previousApiKeyFile"] = previous.to_string_lossy().into();
+                if let Credential::File(previous) = previous {
+                    record["previousApiKeyFile"] = previous.to_string_lossy().into();
+                }
             }
             record["profile"] = serde_json::to_value(&*profile)?;
             save(&path, &registry).await?;
@@ -1297,6 +1416,74 @@ mod tests {
             ApiBaseUrl::default(),
             ApiBaseUrl::try_from(DEFAULT_URL.to_owned()).unwrap()
         );
+    }
+
+    const PROFILES: &str = r#"version = 1
+active_profile = "hardware"
+
+[profiles.file]
+organization_id = "00000000-0000-4000-8000-000000000001"
+api_base_url = "https://api.turnkey.com"
+api_key_file = "/keys/02ab.json"
+
+[profiles.hardware]
+organization_id = "00000000-0000-4000-8000-000000000001"
+api_base_url = "https://api.turnkey.com"
+
+[profiles.hardware.yubikey]
+serial = 12345678
+slot = "9a"
+public_key = "02abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123"
+"#;
+
+    #[test]
+    fn profiles_round_trip_through_the_persisted_registry() {
+        let registry: Registry = toml::from_str(PROFILES).unwrap();
+        let profile = |credential| Profile {
+            organization_id: Uuid::from_u128(0x00000000_0000_4000_8000_000000000001),
+            api_base_url: ApiBaseUrl::default(),
+            credential,
+        };
+        let yubikey = toml::from_str(
+            r#"
+serial = 12345678
+slot = "9a"
+public_key = "02abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123"
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            registry.profiles,
+            BTreeMap::from([
+                (
+                    "file".to_owned(),
+                    profile(Credential::File(PathBuf::from("/keys/02ab.json")))
+                ),
+                ("hardware".to_owned(), profile(Credential::YubiKey(yubikey))),
+            ])
+        );
+        assert_eq!(toml::to_string_pretty(&registry).unwrap(), PROFILES);
+    }
+
+    #[test]
+    fn a_profile_needs_exactly_one_credential() {
+        let both = PROFILES.replace(
+            "[profiles.hardware.yubikey]",
+            "api_key_file = \"/keys/02ab.json\"\n\n[profiles.hardware.yubikey]",
+        );
+        let neither = PROFILES.replace("api_key_file = \"/keys/02ab.json\"\n", "");
+        for (text, message) in [
+            (
+                both,
+                "a profile holds either api_key_file or yubikey, not both",
+            ),
+            (neither, "a profile needs api_key_file or yubikey"),
+        ] {
+            let Err(error) = toml::from_str::<Registry>(&text) else {
+                panic!("a profile without exactly one credential parsed");
+            };
+            assert_eq!(error.message(), message);
+        }
     }
 
     #[test]

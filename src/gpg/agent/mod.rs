@@ -30,7 +30,6 @@ use tokio::{
     time::timeout,
 };
 use tracing::warn;
-use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::TurnkeyClient;
 use uuid::Uuid;
 
@@ -45,6 +44,7 @@ use crate::{
     auth::{self, AuthOptions, CredentialSource, ReloadingClient, config_dir},
     outcome::{MachineOnly, Outcome},
     socket::{SocketMode, open_agent_lock, restrict_agent_socket, try_lock_agent},
+    stamper::Stamper,
     wire::openpgp::{
         entity::{ArmoredSignature, SigningKey, armored_detached_signature},
         key::Fingerprint,
@@ -94,7 +94,7 @@ struct State {
 }
 
 enum Credential {
-    Fixed(Arc<TurnkeyClient<TurnkeyP256ApiKey>>),
+    Fixed(Arc<TurnkeyClient<Stamper>>),
     FromRegistry {
         options: AuthOptions,
         cached: Mutex<ReloadingClient>,
@@ -102,7 +102,7 @@ enum Credential {
 }
 
 impl State {
-    async fn client(&self) -> Result<Arc<TurnkeyClient<TurnkeyP256ApiKey>>> {
+    async fn client(&self) -> Result<Arc<TurnkeyClient<Stamper>>> {
         let (options, cached) = match &self.credential {
             Credential::Fixed(client) => return Ok(Arc::clone(client)),
             Credential::FromRegistry { options, cached } => (options, cached),

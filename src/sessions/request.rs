@@ -9,8 +9,8 @@ use turnkey_client::generated::GetWhoamiResponse;
 use super::pending::PendingSession;
 use crate::{
     auth::{
-        Profile, SecureCreateError, build_turnkey_client, read_key, remove_generated_key,
-        saved_profile, state_dir, whoami,
+        Credential, Profile, SecureCreateError, build_turnkey_client, load_stamper,
+        remove_generated_key, saved_profile, state_dir, whoami,
     },
     errors::{InvalidInput, is_unauthorized},
     keygen::{GeneratedApiKey, generate},
@@ -21,6 +21,12 @@ const COMMAND: &str = "session.request";
 
 pub(super) async fn run(name: String, replace: bool) -> Result<OperationOutput> {
     let profile = saved_profile(&name).await?;
+    if let Credential::YubiKey(_) = profile.credential {
+        return Err(InvalidInput(format!(
+            "profile {name} signs with a YubiKey; a session key would replace it with a key stored on disk"
+        ))
+        .into());
+    }
     let user_id = current_user_id(&profile).await?;
     let state = state_dir()?;
 
@@ -83,9 +89,9 @@ async fn current_user_id(profile: &Profile) -> Result<Option<String>> {
     let Profile {
         organization_id,
         api_base_url,
-        api_key_file,
+        credential,
     } = profile;
-    let client = build_turnkey_client(read_key(api_key_file).await?, api_base_url)?;
+    let client = build_turnkey_client(load_stamper(credential.clone()).await?, api_base_url)?;
     match whoami(&client, *organization_id).await {
         Ok(GetWhoamiResponse { user_id, .. }) => Ok(Some(user_id)),
         Err(error) if is_unauthorized(&error) => {
