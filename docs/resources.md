@@ -44,12 +44,12 @@ whose private half is generated locally and discarded.
 ```bash
 tk policy list
 tk policy get --id POLICY_ID
-tk policy create --input-file - <<'EOF'
+tk policy create --input-file - <<EOF
 {
   "policyName": "agents-sign-only",
   "effect": "EFFECT_ALLOW",
-  "condition": "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'",
-  "consensus": "approvers.any(user, user.id == 'USER_ID')",
+  "condition": "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == '${WALLET_ID}'",
+  "consensus": "approvers.any(user, user.id == '${USER_ID}')",
   "notes": "the agent user may sign with one wallet"
 }
 EOF
@@ -65,7 +65,7 @@ Flags cover the single-policy case:
 
 ```bash
 tk policy create --name agents-export --effect allow \
-  --consensus "approvers.any(user, user.tags.contains('TAG_ID'))" \
+  --consensus "approvers.any(user, user.tags.contains('${TAG_ID}'))" \
   --condition "activity.type == 'ACTIVITY_TYPE_EXPORT_SECRETS'"
 ```
 
@@ -119,7 +119,8 @@ activity ID; see [activities](./activities.md).
 - [bootstrapping-organization](../skills/bootstrapping-organization/SKILL.md): the three tags and the tagged approver.
 - [managing-identities](../skills/managing-identities/SKILL.md): users, tags, key rotation, and revocation as one procedure.
 - [managing-policies](../skills/managing-policies/SKILL.md): writing, testing, and debugging policies.
-- [provisioning-agent-identity](../skills/provisioning-agent-identity/SKILL.md): the long-lived agent user and the export policies that fence it.
+- [provisioning-agent-identity](../skills/provisioning-agent-identity/SKILL.md): the tagged long-lived agent user and the credential DENY that fences it.
+- [managing-secrets](../skills/managing-secrets/SKILL.md): the export policies per approval column and per isolation scope.
 - [inspecting-agents](../skills/inspecting-agents/SKILL.md): answering who carries a tag and which keys each user holds.
 - [revoking-agent-keys](../skills/revoking-agent-keys/SKILL.md): deleting an agent's key early through a scoped revoker user.
 - [provisioning-session-agent](../skills/provisioning-session-agent/SKILL.md): the agent, provisioner, and containment policies for expiring keys.

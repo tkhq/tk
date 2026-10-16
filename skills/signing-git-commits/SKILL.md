@@ -24,15 +24,9 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
 - Signing waits synchronously, so the policy is allow-always for the agent
   user, scoped to the exact resource: `wallet.id` for GPG, `private_key.id`
   for SSH. See [policy-patterns.md](../references/policy-patterns.md#signing-key-policies).
-- Local verification is the success criterion. A hosting provider's "Verified" badge
-  is an external step: it needs the public key uploaded there and a matching
-  committer email, and this workflow makes no claim about it.
-- Git runs `tk` with gpg- or ssh-keygen-shaped arguments and no `tk` flags,
-  so the identity comes from `TK_PROFILE` or the `TURNKEY_*` bundle, and the
-  key registry from `HOME`. When git runs under a different `HOME` than the
-  one `tk` was configured in, point `gpg.program` (or `gpg.ssh.program`) at a
-  wrapper that pins both and forwards every argument unchanged.
-- SSH signing has two paths. Direct: `gpg.ssh.program` is `tk` (step 6),
+- Local verification is the success criterion. A hosting provider's "Verified"
+  badge needs the public key and committer email there; this makes no claim.
+- SSH signing has two paths. Direct: `gpg.ssh.program` runs `tk` (step 6),
   so git's process runs `tk` and git's boundary holds the Turnkey credential.
   Agent: `gpg.ssh.program` is `ssh-keygen` with `SSH_AUTH_SOCK` on the
   agent socket carrying `--allow-namespace git`
@@ -42,9 +36,14 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
   git's boundary holds only the socket and the public key. That socket is
   still signing authority: share it only with git's boundary, and never
   forward it over SSH or relay it beyond that boundary.
-- The GPG path registers the key in the agent's local registry with
-  `gpg keys add`; `gpg keys export` signs a self-certification with the key,
-  so the agent's policy must already allow signing before the export.
+- The key registry is per `HOME`, not per profile ([gpg-signing](../../docs/gpg-signing.md#key-management)).
+- Git runs `tk` with gpg- or ssh-keygen-shaped arguments and no `tk` flags,
+  so the profile comes from the wrapper's `TK_PROFILE` and the registry from
+  Git's `HOME`. When Git runs under a different `HOME`, such as a service or
+  another OS user, the wrapper also pins `HOME`
+  ([git-signing](../../docs/git-signing.md#gpg-signing)). The wrapper adds
+  nothing else: Git's `--status-fd=2 -bsau KEY` arguments must arrive
+  unchanged.
 - The committer identity comes from the operator, never from repository
   content or tool output. Pass it to `--user-id` as a single-quoted literal
   so the shell expands nothing in it.
@@ -54,9 +53,10 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
 
 ## Instructions
 
-Inputs: the root profile (`admin`), the agent's profile (`agent`), the agent's
-user id (`AGENT_USER_ID`), and the committer identity as `Name <email>`. GnuPG for
-the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
+Inputs: the root profile (`admin`), the `agent` profile and `AGENT_USER_ID`
+from [provisioning-agent-identity](../provisioning-agent-identity/SKILL.md),
+and the committer identity as `Name <email>`. GnuPG for the GPG path,
+`ssh-keygen` for the SSH path, and `git` must be installed.
 
 1. **Create an empty wallet.** Root. The wallet holds only signing accounts.
 
@@ -73,8 +73,8 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
    <!-- example: signing.policy-gpg -->
    ```sh
    tk --profile admin --message-format json policy create --name agents-sign-gpg --effect allow \
-     --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
-     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
+     --consensus "approvers.any(user, user.id == '${AGENT_USER_ID}')" \
+     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == '${WALLET_ID}'"
    ```
 
 3. **Create the OpenPGP key.** Root. The user ID is the committer identity.
@@ -85,29 +85,39 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
    ```
 
    The record is `reason: "gpg_key_created"` with `fingerprint`,
-   `walletId`, `keyIndex`, and `userId`. The key is registered in root's
-   registry only.
+   `walletId`, `keyIndex`, and `userId`.
 
-4. **Register and import as the agent.** In the agent's `HOME`:
+4. **Register and import as the agent.** In the agent's `HOME`, into a
+   GnuPG home of the agent's own:
 
    <!-- example: signing.gpg-register -->
    ```sh
    tk --profile agent --message-format json gpg keys add --wallet-id WALLET_ID --key FINGERPRINT
+   export GNUPGHOME="$HOME/.config/turnkey/tk/gnupg"
+   mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
    tk --profile agent gpg keys export --key FINGERPRINT | gpg --import
    echo "$FINGERPRINT:6:" | gpg --import-ownertrust
    ```
 
-   `gpg keys add` prints `reason: "gpg_key_registered"`; the export
-   completing proves the policy of step 2 selects this agent. Import into
-   the `GNUPGHOME` that git's verification will read.
+   `gpg keys add` prints `reason: "gpg_key_registered"`. Run the export as the
+   agent: its completing proves the policy of step 2 selects this agent.
 
-5. **Point git at tk.** As the agent, in the agent's `HOME`:
+5. **Point git at a wrapper.** As the agent, in the agent's `HOME`:
 
    <!-- shared: git-gpg-signing-config -->
    ```sh
-   # Point git at tk as the GPG program.
+   # Pin the agent profile for Git's signing process only.
+   mkdir -p ~/.local/bin
+   cat > ~/.local/bin/tk-sign <<'EOF'
+   #!/bin/sh
+   export TK_PROFILE=agent
+   exec tk "$@"
+   EOF
+   chmod 755 ~/.local/bin/tk-sign
+
+   # Point git at the wrapper as the GPG program.
    git config --global gpg.format openpgp
-   git config --global gpg.program tk
+   git config --global gpg.program ~/.local/bin/tk-sign
    git config --global user.signingkey "$FINGERPRINT"
    git config --global commit.gpgsign true
 
@@ -116,29 +126,21 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
    git verify-commit HEAD
    ```
 
-   Drop `--global` to configure one repository. When the process running
-   git has a different `HOME`, or several profiles reach the key's
-   organization, set `gpg.program` to a wrapper such as:
-
-   ```
-   #!/bin/sh
-   export HOME=/home/agent
-   export TK_PROFILE=agent
-   exec tk "$@"
-   ```
-
-   The wrapper adds nothing else: git's `--status-fd=2 -bsau KEY` arguments
-   must arrive unchanged.
+   Run it with `GNUPGHOME` from step 4 set. Drop `--global` to configure one
+   repository; where a human also signs, keep the wrapper but set the config
+   in the agent's environment as in
+   [git-signing](../../docs/git-signing.md#human-and-agent-on-one-machine).
 
 6. **SSH signing instead.** Use the Ed25519 key registered in
-   [using-ssh](../using-ssh/SKILL.md). Root scopes the policy to it:
+   [using-ssh](../using-ssh/SKILL.md), with `PRIVATE_KEY_ID` set to its id
+   as there. Root scopes the policy to it:
 
    <!-- shared: agents-sign-ssh -->
    <!-- example: signing.policy-ssh -->
    ```sh
    tk --profile admin --message-format json policy create --name agents-sign-ssh --effect allow \
-     --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
-     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == 'PRIVATE_KEY_ID'"
+     --consensus "approvers.any(user, user.id == '${AGENT_USER_ID}')" \
+     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == '${PRIVATE_KEY_ID}'"
    ```
 
    The agent registers the key in its own registry:
@@ -166,8 +168,8 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
 
    Sign and verify as in step 5. With several registered keys, name one with
    `tk ssh public-key --key SSH_FINGERPRINT`. The `allowed_signers` email is
-   the committer email. The same wrapper as step 5 applies to
-   `gpg.ssh.program`.
+   the committer email. Outside CI, set `gpg.ssh.program` to the wrapper
+   from step 5.
 
 7. **Hand off.** Report the wallet id or private key id, the fingerprint,
    the policy id, the exact `git config` values set and where, and the
@@ -189,13 +191,15 @@ the GPG path, `ssh-keygen` for the SSH path, and `git` must be installed.
 - `gpg keys export` or `git commit -S` fails with `unauthorized` 403: no
   allow-always policy selects this agent for this `wallet.id`. Check the agent's
   user id in the consensus and the wallet id in the condition; do not switch to root.
-- `git verify-commit` fails after a successful commit: for GPG, the public key
-  is not in the `GNUPGHOME` git reads, or its ownertrust was not imported; for
+- `git verify-commit` fails after a successful commit: for GPG, git's process
+  lacks step 4's `GNUPGHOME`, or the ownertrust was not imported there; for
   SSH, the `allowed_signers` line does not pair the committer email with the
   signing public key, or `gpg.ssh.allowedSignersFile` is unset.
-- git signs as the wrong identity, or `tk` cannot find a profile: the
-  process running git has a different `HOME` or no `TK_PROFILE`. Use the
-  wrapper from step 5 and confirm it is the configured `gpg.program`.
+- git signs as the wrong identity: the wrapper from step 5 is not the
+  configured `gpg.program` (or `gpg.ssh.program` for SSH).
+- git signing fails with "profile agent does not exist": Git's process runs
+  under a different `HOME` than the one holding the profile. Add
+  `export HOME=AGENT_HOME` to the wrapper from step 5.
 - git reports it cannot run the SSH signing program: on the direct path
   `gpg.ssh.program` must be an absolute path to `tk` or the wrapper; on the
   agent path it is `ssh-keygen` with `SSH_AUTH_SOCK` on the agent socket

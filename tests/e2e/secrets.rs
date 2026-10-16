@@ -588,6 +588,103 @@ fn secret_delete_removes_it_from_listing_and_export() {
 
 #[test]
 #[ignore]
+fn managing_secrets_agent_export_acceptance() {
+    let run = Run::new();
+    let (agent_tag, _, agent) = run.create_agent();
+    let human_tag = run.create_tag(HUMAN_TAG);
+    let (_, human) = run.create_tagged_user("human", HUMAN_TAG);
+    run.allow_agent_export(&tag_consensus(&agent_tag), "unilateral");
+    run.allow_agent_export(&allow_once(&agent_tag, &human_tag), "approval");
+
+    let prefix = run.name("service");
+    run.import_secret_from_file(&format!("{prefix}/API_TOKEN"), "unilateral", "tok-1");
+    run.import_secret_from_file(&format!("{prefix}/DEPLOY_KEY"), "approval", "deploy-1");
+    run.login_as("agent", &agent);
+    let export = |name: &str, out: &str| {
+        let mut command = run.cli();
+        command
+            .args(["--profile", "agent", "secret", "export", "--name"])
+            .arg(format!("{prefix}/{name}"))
+            .arg("--out")
+            .arg(run.home().join(out));
+        command
+    };
+
+    let token = run.ok(&mut export("API_TOKEN", "api-token"));
+    assert_eq!(token["status"], "completed", "{token}");
+    assert_eq!(
+        fs::read_to_string(run.home().join("api-token")).unwrap(),
+        "tok-1"
+    );
+
+    let pending = run.ok(&mut export("DEPLOY_KEY", "deploy-key"));
+    assert_eq!(pending["status"], "pending", "{pending}");
+    assert!(!run.home().join("deploy-key").exists());
+    let activity = pending["activity"]["id"].as_str().unwrap().to_string();
+    run.approve_and_wait(&human, &activity);
+    let deploy = run.ok(&mut export("DEPLOY_KEY", "deploy-key"));
+    assert_eq!(deploy["status"], "completed", "{deploy}");
+    assert_eq!(deploy["activity"]["id"], activity);
+    assert_eq!(
+        fs::read_to_string(run.home().join("deploy-key")).unwrap(),
+        "deploy-1"
+    );
+}
+
+#[test]
+#[ignore]
+fn managing_secrets_isolation_denies_cross_agent_export() {
+    let run = Run::new();
+    let agents = [("billing", "billing-agent"), ("ops", "ops-agent")].map(|(scope, tag)| {
+        let tag_id = run.create_tag(tag);
+        let (_, key) = run.create_tagged_user(scope, tag);
+        run.create_policy_from_flags(
+            &run.name(&format!("{tag}-export")),
+            "allow",
+            &tag_consensus(&tag_id),
+            &format!(
+                "activity.type == 'ACTIVITY_TYPE_EXPORT_SECRETS' && secret.static_properties['consensus'] == 'unilateral' && secret.static_properties['scope'] == '{scope}'"
+            ),
+        );
+        let name = format!("{}/TOKEN", run.name(scope));
+        run.submit(
+            run.admin()
+                .args([
+                    "secret",
+                    "import",
+                    "--name",
+                    &name,
+                    "--property",
+                    "consensus=unilateral",
+                    "--property",
+                    &format!("scope={scope}"),
+                ])
+                .write_stdin(format!("{scope}-token")),
+            "secret.import",
+        );
+        (scope, key, name)
+    });
+    let [(_, billing, billing_name), (_, ops, ops_name)] = &agents;
+
+    for (scope, key, own) in &agents {
+        let exported = run.ok(run.as_user(key).args(["secret", "export", "--name", own]));
+        assert_eq!(exported["status"], "completed", "{exported}");
+        assert_eq!(exported["data"]["value"], format!("{scope}-token"));
+    }
+    for (key, other) in [(billing, ops_name), (ops, billing_name)] {
+        run.err_unauthorized(run.as_user(key).args(["secret", "export", "--name", other]));
+    }
+
+    run.err_unauthorized(run.as_user(billing).args([
+        "secret",
+        "env",
+        "--name-prefix",
+        &format!("{}/", run.name("ops")),
+    ]));
+}
+
+#[test]
+#[ignore]
 fn managing_secrets_env_and_rotation() {
     let run = Run::new();
     let agent_tag = run.create_tag(AGENT_TAG);

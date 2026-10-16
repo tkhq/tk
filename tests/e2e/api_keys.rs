@@ -3,8 +3,8 @@ use std::{collections::BTreeSet, fs};
 use serde_json::{Value, json};
 
 use crate::{
-    policy_helpers::{allow_once, tag_consensus, user_consensus},
-    run::{AGENT_TAG, HUMAN_TAG, Run, assert_unauthenticated, created_user_id, result},
+    policy_helpers::{tag_consensus, user_consensus},
+    run::{AGENT_TAG, Run, assert_unauthenticated, created_user_id, result},
 };
 
 #[test]
@@ -142,52 +142,26 @@ fn managing_identities_rotate_and_revoke() {
 #[ignore]
 fn provisioning_agent_identity_long_lived_route() {
     let run = Run::new();
+    let tags = run.ok(run.admin().args(["user", "tag", "list"]));
+    assert_eq!(tags["data"]["userTags"], json!([]), "{tags}");
     let (agent_tag, agent_id, agent) = run.create_agent();
-    let human_tag = run.create_tag(HUMAN_TAG);
-    let (_, human) = run.create_tagged_user("human", HUMAN_TAG);
-    run.allow_agent_export(&tag_consensus(&agent_tag), "unilateral");
-    run.allow_agent_export(&allow_once(&agent_tag, &human_tag), "approval");
     run.deny_agent_credentials(&agent_tag);
-
-    let prefix = run.name("service");
-    run.import_secret_from_file(&format!("{prefix}/API_TOKEN"), "unilateral", "tok-1");
-    run.import_secret_from_file(&format!("{prefix}/DEPLOY_KEY"), "approval", "deploy-1");
 
     run.login_as("agent", &agent);
     let whoami = run.ok(run.cli().args(["--profile", "agent", "whoami"]));
     assert_eq!(whoami["command"], "auth.whoami");
     assert_eq!(whoami["data"]["userId"], agent_id, "{whoami}");
 
-    let token = run.ok(run.as_user(&agent).args([
-        "secret",
-        "export",
-        "--name",
-        &format!("{prefix}/API_TOKEN"),
+    run.assert_api_key_register_denied(run.cli().args(["--profile", "agent"]), &agent_id);
+
+    let listed = run.ok(run.cli().args([
+        "--profile",
+        "agent",
+        "api-key",
+        "list",
+        "--user-id",
+        &agent_id,
     ]));
-    assert_eq!(token["status"], "completed", "{token}");
-    assert_eq!(token["data"]["value"], "tok-1");
-
-    let deploy_args = [
-        "secret",
-        "export",
-        "--name",
-        &format!("{prefix}/DEPLOY_KEY"),
-    ];
-    let pending = run.ok(run.as_user(&agent).args(deploy_args));
-    assert_eq!(pending["status"], "pending", "{pending}");
-    assert_eq!(pending["data"]["value"], Value::Null, "{pending}");
-    let activity = pending["activity"]["id"].as_str().unwrap().to_string();
-    run.approve_and_wait(&human, &activity);
-    let deploy = run.ok(run.as_user(&agent).args(deploy_args));
-    assert_eq!(deploy["status"], "completed", "{deploy}");
-    assert_eq!(deploy["activity"]["id"], activity);
-    assert_eq!(deploy["data"]["value"], "deploy-1");
-
-    run.assert_api_key_register_denied(&mut run.as_user(&agent), &agent_id);
-
-    let listed = run.ok(run
-        .as_user(&agent)
-        .args(["api-key", "list", "--user-id", &agent_id]));
     let keys = listed["data"]["apiKeys"].as_array().unwrap();
     assert_eq!(keys.len(), 1, "{listed}");
     assert_eq!(
@@ -195,58 +169,6 @@ fn provisioning_agent_identity_long_lived_route() {
         hex::encode(agent.compressed_public_key())
     );
     assert_eq!(keys[0]["expiresAt"], Value::Null, "{listed}");
-}
-
-#[test]
-#[ignore]
-fn provisioning_agent_identity_isolation_denies_cross_agent_export() {
-    let run = Run::new();
-    let agents = [("billing", "billing-agent"), ("ops", "ops-agent")].map(|(scope, tag)| {
-        let tag_id = run.create_tag(tag);
-        let (_, key) = run.create_tagged_user(scope, tag);
-        run.create_policy_from_flags(
-            &run.name(&format!("{tag}-export")),
-            "allow",
-            &tag_consensus(&tag_id),
-            &format!(
-                "activity.type == 'ACTIVITY_TYPE_EXPORT_SECRETS' && secret.static_properties['consensus'] == 'unilateral' && secret.static_properties['scope'] == '{scope}'"
-            ),
-        );
-        let name = format!("{}/TOKEN", run.name(scope));
-        run.submit(
-            run.admin()
-                .args([
-                    "secret",
-                    "import",
-                    "--name",
-                    &name,
-                    "--property",
-                    "consensus=unilateral",
-                    "--property",
-                    &format!("scope={scope}"),
-                ])
-                .write_stdin(format!("{scope}-token")),
-            "secret.import",
-        );
-        (scope, key, name)
-    });
-    let [(_, billing, billing_name), (_, ops, ops_name)] = &agents;
-
-    for (scope, key, own) in &agents {
-        let exported = run.ok(run.as_user(key).args(["secret", "export", "--name", own]));
-        assert_eq!(exported["status"], "completed", "{exported}");
-        assert_eq!(exported["data"]["value"], format!("{scope}-token"));
-    }
-    for (key, other) in [(billing, ops_name), (ops, billing_name)] {
-        run.err_unauthorized(run.as_user(key).args(["secret", "export", "--name", other]));
-    }
-
-    run.err_unauthorized(run.as_user(billing).args([
-        "secret",
-        "env",
-        "--name-prefix",
-        &format!("{}/", run.name("ops")),
-    ]));
 }
 
 #[test]

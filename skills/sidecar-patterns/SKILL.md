@@ -57,9 +57,10 @@ something other than the agent. Every `tk` step in this workflow is a command an
 Inputs: the agent profile (`agent`) and its persisted user id (`AGENT_USER_ID`), the
 provisioner profile (`provisioner`) on the sidecar, the scope prefix (`service/`), the
 chosen approval cell, and the key lifetime and renewal lead time. Prerequisites: the
-agent and provisioner exist with their policies
+agent and provisioner exist with their minting policies
 ([provisioning-session-agent](../provisioning-session-agent/SKILL.md)), and the
-secrets are imported ([managing-secrets](../managing-secrets/SKILL.md)).
+export policies and secrets exist
+([managing-secrets](../managing-secrets/SKILL.md) steps 1 and 2).
 
 1. **Lay out the principals.** Decide, and record, which OS user, `HOME`,
    and profile each of these runs as: the agent process, the renewal loop

@@ -568,7 +568,7 @@ fn unsupported(start_line: usize, body: &str) -> Unsupported {
 fn extractor_handles_quotes_json_heredocs_and_substitution() {
     let body = r#"# a comment line
 tk --profile admin --message-format json policy create --name "spaced name" --effect allow \
-  --consensus "approvers.any(user, user.id == 'USER_ID')" \
+  --consensus "approvers.any(user, user.id == '${USER_ID}')" \
   --condition 'activity.type == "x"'   # trailing comment
 tk user create --input-json '{
   "users": [{"userName": "agent"}]
@@ -604,7 +604,7 @@ tk activity wait --id ACTIVITY_ID --timeout 60; tk activity get --id ACTIVITY_ID
                 "--effect",
                 "allow",
                 "--consensus",
-                "approvers.any(user, user.id == 'USER_ID')",
+                &format!("approvers.any(user, user.id == '{UUID_FIXTURE}')"),
                 "--condition",
                 r#"activity.type == "x""#,
             ],
@@ -941,7 +941,13 @@ tk whoami
     assert_eq!(unknown_var.message, "unknown shell variable $WHO");
 
     let braced_var = unsupported(1, "tk user get --id ${WHO}");
-    assert_eq!(braced_var.message, "bare $ is not a supported construct");
+    assert_eq!(braced_var.message, "unknown shell variable $WHO");
+
+    let default_var = unsupported(1, "tk user get --id ${USER_ID:-x}");
+    assert_eq!(
+        default_var.message,
+        "only ${NAME} brace expansion is supported"
+    );
 
     let subshell = unsupported(1, "(cd dir && tk whoami)");
     assert_eq!(subshell.message, "bare `(` at column 0 is not supported");

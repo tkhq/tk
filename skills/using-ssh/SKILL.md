@@ -10,8 +10,8 @@ Ed25519 key that exists only inside Turnkey. `tk ssh agent` answers the
 OpenSSH agent protocol on a Unix socket and turns each challenge into a
 policy-checked signing activity under the agent's own credential.
 
-Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
-(`AGENT_USER_ID`), and the host or git host that will hold the public key.
+Inputs: the root profile (`admin`), the `agent` profile and `AGENT_USER_ID` from
+[provisioning-agent-identity](../provisioning-agent-identity/SKILL.md), and the host or git host that will hold the public key.
 
 ## Reference
 
@@ -56,7 +56,7 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
    tk --profile admin --message-format json ssh keys create --name agent-ssh
    ```
 
-   Save the record's `privateKeyId` as `PRIVATE_KEY_ID`; the policy and the
+   Set `PRIVATE_KEY_ID` to the record's `privateKeyId`; the policy and the
    agent host both need it. Rerunning with the same name registers the
    existing key instead of creating a second one.
 
@@ -66,8 +66,8 @@ Inputs: the root profile (`admin`), the agent's profile (`agent`) and user id
    <!-- example: ssh.policy -->
    ```sh
    tk --profile admin --message-format json policy create --name agents-sign-ssh --effect allow \
-     --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
-     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == 'PRIVATE_KEY_ID'"
+     --consensus "approvers.any(user, user.id == '${AGENT_USER_ID}')" \
+     --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == '${PRIVATE_KEY_ID}'"
    ```
 
    One policy per key. A key without a matching policy is still listed by

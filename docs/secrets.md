@@ -120,8 +120,7 @@ tk --profile approver activity reject --id ACTIVITY_ID
 
 ## Skills
 
-- [managing-secrets](../skills/managing-secrets/SKILL.md): import, startup environment, pending exports, and rotation as one procedure.
+- [managing-secrets](../skills/managing-secrets/SKILL.md): export policies per approval column, import, startup environment, pending exports, cross-agent isolation, and rotation as one procedure.
 - [monitoring-activities](../skills/monitoring-activities/SKILL.md): approving a pending export or deletion.
 - [sidecar-patterns](../skills/sidecar-patterns/SKILL.md): running `secret env` as the agent's startup step.
-- [provisioning-agent-identity](../skills/provisioning-agent-identity/SKILL.md): export policies per approval column and the cross-agent denial check.
 - [inspecting-agents](../skills/inspecting-agents/SKILL.md): listing secrets and their properties.

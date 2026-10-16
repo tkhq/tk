@@ -238,6 +238,10 @@ Default guidance for coding-agent runs in this repository.
   `<!-- example: <id> -->` line directly above it; `## Verified by` maps those
   ids to `module::test` names in the e2e suite. A block that must stay
   identical across files carries `<!-- shared: <id> -->`.
+- A placeholder inside a policy expression, in `skills/` or `docs/`, is a
+  shell variable, `'${AGENT_TAG}'`, inside a double-quoted argument or an
+  unquoted heredoc, so a copied command interpolates it rather than creating a
+  policy that matches nothing.
 
 ## Docs
 

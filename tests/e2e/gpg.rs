@@ -564,8 +564,8 @@ fn signing_git_commits_gpg_with_scoped_policy() {
             .arg(&payload),
     );
 
-    let openpgp = |home: &Path, program: &Path, cmd: &mut process::Command| {
-        run.inherit_environment(run.as_user(&agent), cmd);
+    let openpgp = |bundle: Command, home: &Path, program: &Path, cmd: &mut process::Command| {
+        run.inherit_environment(bundle, cmd);
         cmd.env("HOME", home).env("GNUPGHOME", &gnupghome);
         openpgp_config(program, Some(&fingerprint), cmd);
     };
@@ -574,7 +574,8 @@ fn signing_git_commits_gpg_with_scoped_policy() {
 
     let repo = run.home.path().join("repo");
     fs::create_dir(&repo).unwrap();
-    let own_home = |cmd: &mut process::Command| openpgp(run.home.path(), tk, cmd);
+    let own_home =
+        |cmd: &mut process::Command| openpgp(run.as_user(&agent), run.home.path(), tk, cmd);
     run.git_ok(&git, &repo, own_home, &["init", "--quiet"]);
     run.git_ok(&git, &repo, own_home, &commit);
     run.git_ok(&git, &repo, own_home, &["verify-commit", "HEAD"]);
@@ -583,19 +584,23 @@ fn signing_git_commits_gpg_with_scoped_policy() {
     fs::create_dir(&other_home).unwrap();
     let other_repo = other_home.join("repo");
     fs::create_dir(&other_repo).unwrap();
-    let no_registry = |cmd: &mut process::Command| openpgp(&other_home, tk, cmd);
+    let no_registry =
+        |cmd: &mut process::Command| openpgp(run.as_user(&agent), &other_home, tk, cmd);
     run.git_ok(&git, &other_repo, no_registry, &["init", "--quiet"]);
     let unregistered = Run::git(&git, &other_repo, no_registry, &commit);
     assert!(
         !unregistered.status.success(),
         "git signed from a HOME with no registry"
     );
-    let wrapper = run.home.path().join("tk-wrapper.sh");
+    let profile = run.name("agent");
+    run.login_as(&profile, &agent);
+    let wrapper = run.home.path().join("tk-sign");
     fs::write(
         &wrapper,
         format!(
             r#"#!/bin/sh
 export HOME='{}'
+export TK_PROFILE='{profile}'
 exec '{}' "$@"
 "#,
             run.home.path().display(),
@@ -604,7 +609,49 @@ exec '{}' "$@"
     )
     .unwrap();
     fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
-    let wrapped = |cmd: &mut process::Command| openpgp(&other_home, &wrapper, cmd);
+    let wrapped = |cmd: &mut process::Command| openpgp(run.cli(), &other_home, &wrapper, cmd);
     run.git_ok(&git, &other_repo, wrapped, &commit);
     run.git_ok(&git, &other_repo, wrapped, &["verify-commit", "HEAD"]);
+
+    let human_config = run.home.path().join(".gitconfig");
+    let human_settings = r#"[gpg]
+	program = /nonexistent/human-gpg
+"#;
+    fs::write(&human_config, human_settings).unwrap();
+    let shared_repo = run.home.path().join("shared-repo");
+    fs::create_dir(&shared_repo).unwrap();
+    let agent_environment = |cmd: &mut process::Command| {
+        run.inherit_environment(run.cli(), cmd);
+        cmd.env("HOME", run.home.path())
+            .env("GNUPGHOME", &gnupghome)
+            .env("GIT_CONFIG_COUNT", "4")
+            .env("GIT_CONFIG_KEY_0", "gpg.format")
+            .env("GIT_CONFIG_VALUE_0", "openpgp")
+            .env("GIT_CONFIG_KEY_1", "gpg.program")
+            .env("GIT_CONFIG_VALUE_1", &wrapper)
+            .env("GIT_CONFIG_KEY_2", "user.signingkey")
+            .env("GIT_CONFIG_VALUE_2", &fingerprint)
+            .env("GIT_CONFIG_KEY_3", "commit.gpgsign")
+            .env("GIT_CONFIG_VALUE_3", "true");
+    };
+    run.git_ok(&git, &shared_repo, agent_environment, &["init", "--quiet"]);
+    run.git_ok(
+        &git,
+        &shared_repo,
+        agent_environment,
+        &[
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "signed from the agent environment",
+        ],
+    );
+    run.git_ok(
+        &git,
+        &shared_repo,
+        agent_environment,
+        &["verify-commit", "HEAD"],
+    );
+    assert_eq!(fs::read_to_string(&human_config).unwrap(), human_settings);
 }

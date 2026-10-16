@@ -47,8 +47,8 @@ re-import under the same name; see the secrets workflow.
 
 | Pattern | `consensus` |
 |---|---|
-| allow-always | `approvers.any(user, user.tags.contains('AGENT_TAG'))`; a [signing-key policy](#signing-key-policies) names `user.id` instead |
-| allow-once | `approvers.any(user, user.tags.contains('AGENT_TAG')) && approvers.any(user, user.tags.contains('HUMAN_APPROVER_TAG'))` |
+| allow-always | `approvers.any(user, user.tags.contains('${AGENT_TAG}'))`; a [signing-key policy](#signing-key-policies) names `user.id` instead |
+| allow-once | `approvers.any(user, user.tags.contains('${AGENT_TAG}')) && approvers.any(user, user.tags.contains('${HUMAN_APPROVER_TAG}'))` |
 
 Approval is per activity. The agent's submission counts as its own vote; the
 human approves once, from the console, the mobile app, or
@@ -59,14 +59,14 @@ human approves once, from the console, the mobile app, or
 <!-- example: policy-patterns.agents-export-unilateral -->
 ```sh
 tk --profile admin --message-format json policy create --name agents-export-unilateral --effect allow \
-  --consensus "approvers.any(user, user.tags.contains('AGENT_TAG'))" \
+  --consensus "approvers.any(user, user.tags.contains('${AGENT_TAG}'))" \
   --condition "activity.type == 'ACTIVITY_TYPE_EXPORT_SECRETS' && secret.static_properties['consensus'] == 'unilateral'"
 ```
 
 <!-- example: policy-patterns.agents-export-with-approval -->
 ```sh
 tk --profile admin --message-format json policy create --name agents-export-with-approval --effect allow \
-  --consensus "approvers.any(user, user.tags.contains('AGENT_TAG')) && approvers.any(user, user.tags.contains('HUMAN_APPROVER_TAG'))" \
+  --consensus "approvers.any(user, user.tags.contains('${AGENT_TAG}')) && approvers.any(user, user.tags.contains('${HUMAN_APPROVER_TAG}'))" \
   --condition "activity.type == 'ACTIVITY_TYPE_EXPORT_SECRETS' && secret.static_properties['consensus'] == 'approval'"
 ```
 
@@ -79,7 +79,7 @@ permanent one, because self-targeted credential changes default-allow.
 <!-- example: policy-patterns.agents-no-credentials -->
 ```sh
 tk --profile admin --message-format json policy create --name agents-no-credentials --effect deny \
-  --consensus "approvers.any(user, user.tags.contains('AGENT_TAG'))" \
+  --consensus "approvers.any(user, user.tags.contains('${AGENT_TAG}'))" \
   --condition "activity.resource == 'CREDENTIAL'"
 ```
 
@@ -94,8 +94,8 @@ Set the cap in seconds to the longest key you renew; 604800 is seven days.
 <!-- example: policy-patterns.provisioners-mint-agent-keys -->
 ```sh
 tk --profile admin --message-format json policy create --name provisioners-mint-agent-keys --effect allow \
-  --consensus "approvers.any(user, user.tags.contains('PROVISIONER_TAG')) && approvers.any(user, user.tags.contains('HUMAN_APPROVER_TAG'))" \
-  --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['AGENT_USER_ID'] && activity.params.api_keys.all(k, k.expiration_seconds <= 604800)"
+  --consensus "approvers.any(user, user.tags.contains('${PROVISIONER_TAG}')) && approvers.any(user, user.tags.contains('${HUMAN_APPROVER_TAG}'))" \
+  --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id in ['${AGENT_USER_ID}'] && activity.params.api_keys.all(k, k.expiration_seconds <= 604800)"
 ```
 
 Drop the `HUMAN_APPROVER_TAG` clause for the unilateral minting row of the
@@ -105,7 +105,7 @@ cap, or one that never expires, matches no ALLOW and is denied.
 <!-- example: policy-patterns.provisioners-nothing-else -->
 ```sh
 tk --profile admin --message-format json policy create --name provisioners-nothing-else --effect deny \
-  --consensus "approvers.any(user, user.tags.contains('PROVISIONER_TAG'))" \
+  --consensus "approvers.any(user, user.tags.contains('${PROVISIONER_TAG}'))" \
   --condition "activity.type != 'ACTIVITY_TYPE_CREATE_API_KEYS_V2'"
 ```
 
@@ -113,15 +113,15 @@ tk --profile admin --message-format json policy create --name provisioners-nothi
 <!-- example: policy-patterns.provisioners-no-self-keys -->
 ```sh
 tk --profile admin --message-format json policy create --name provisioners-no-self-keys --effect deny \
-  --consensus "approvers.any(user, user.tags.contains('PROVISIONER_TAG'))" \
-  --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id == 'PROVISIONER_USER_ID'"
+  --consensus "approvers.any(user, user.tags.contains('${PROVISIONER_TAG}'))" \
+  --condition "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id == '${PROVISIONER_USER_ID}'"
 ```
 
 Containment is the pair: the pinned ALLOW leaves a key proposed on another
 provisioner or a root user with no matching policy, and the self DENY closes
 the one target the default-allow fallback would otherwise rescue. Create one
 self DENY per provisioner user. A single DENY on
-`!(activity.params.user_id in ['AGENT_USER_ID'])` also expresses "outside the
+`!(activity.params.user_id in ['${AGENT_USER_ID}'])` also expresses "outside the
 set", but its list must then match the ALLOW's list exactly.
 
 ## Signing-key policies
@@ -140,16 +140,16 @@ synchronously, so an approval-gated variant needs a different design.
 <!-- example: policy-patterns.agents-sign-ssh -->
 ```sh
 tk --profile admin --message-format json policy create --name agents-sign-ssh --effect allow \
-  --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
-  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == 'PRIVATE_KEY_ID'"
+  --consensus "approvers.any(user, user.id == '${AGENT_USER_ID}')" \
+  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == '${PRIVATE_KEY_ID}'"
 ```
 
 <!-- shared: agents-sign-gpg -->
 <!-- example: policy-patterns.agents-sign-gpg -->
 ```sh
 tk --profile admin --message-format json policy create --name agents-sign-gpg --effect allow \
-  --consensus "approvers.any(user, user.id == 'AGENT_USER_ID')" \
-  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
+  --consensus "approvers.any(user, user.id == '${AGENT_USER_ID}')" \
+  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == '${WALLET_ID}'"
 ```
 
 A signing broker that serves the key over a socket to a credential-free
@@ -161,8 +161,8 @@ ALLOW on its wallet.
 <!-- example: policy-patterns.brokers-sign-gpg -->
 ```sh
 tk --profile admin --message-format json policy create --name brokers-sign-gpg --effect allow \
-  --consensus "approvers.any(user, user.id == 'BROKER_USER_ID')" \
-  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == 'WALLET_ID'"
+  --consensus "approvers.any(user, user.id == '${BROKER_USER_ID}')" \
+  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && wallet.id == '${WALLET_ID}'"
 ```
 
 ### Brokers that share one key
@@ -177,8 +177,8 @@ broker gets its own policy and joins the provisioner's mint target set.
 <!-- example: policy-patterns.brokers-sign-ssh -->
 ```sh
 tk --profile admin --message-format json policy create --name broker-1-sign-ssh --effect allow \
-  --consensus "approvers.any(user, user.id == 'BROKER_USER_ID')" \
-  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == 'PRIVATE_KEY_ID'"
+  --consensus "approvers.any(user, user.id == '${BROKER_USER_ID}')" \
+  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == '${PRIVATE_KEY_ID}'"
 ```
 
 Never select signers with the shared `broker` tag: every broker could then
@@ -189,7 +189,7 @@ sign with every person's key.
 An approval level alone grants every `agent` the same access. When two agents
 must not read each other's secrets, give each its own tag and its own scope
 property, and write the export policies per pair:
-`user.tags.contains('BILLING_AGENT_TAG')` with
+`user.tags.contains('${BILLING_AGENT_TAG}')` with
 `secret.static_properties['scope'] == 'billing'`. The `--name-prefix` of
 `tk secret env` is selection, not authorization. Add a
 cross-agent denial to the acceptance test of any multi-agent organization.
@@ -201,7 +201,7 @@ cross-agent denial to the acceptance test of any multi-agent organization.
 {
   "policyName": "agents-sign-anything",
   "effect": "EFFECT_ALLOW",
-  "consensus": "approvers.any(user, user.id == 'AGENT_USER_ID')",
+  "consensus": "approvers.any(user, user.id == '${AGENT_USER_ID}')",
   "condition": "activity.action == 'SIGN'"
 }
 ```
@@ -213,7 +213,7 @@ No resource scope: the agent may sign with every key in the organization.
 {
   "policyName": "agents-anything",
   "effect": "EFFECT_ALLOW",
-  "consensus": "approvers.any(user, user.tags.contains('AGENT_TAG'))"
+  "consensus": "approvers.any(user, user.tags.contains('${AGENT_TAG}'))"
 }
 ```
 
@@ -225,7 +225,7 @@ wallets.
 {
   "policyName": "provisioners-mint-any-key",
   "effect": "EFFECT_ALLOW",
-  "consensus": "approvers.any(user, user.tags.contains('PROVISIONER_TAG')) && approvers.any(user, user.tags.contains('HUMAN_APPROVER_TAG'))",
+  "consensus": "approvers.any(user, user.tags.contains('${PROVISIONER_TAG}')) && approvers.any(user, user.tags.contains('${HUMAN_APPROVER_TAG}'))",
   "condition": "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2'"
 }
 ```
@@ -235,8 +235,8 @@ wallets.
 {
   "policyName": "provisioners-no-self-keys",
   "effect": "EFFECT_DENY",
-  "consensus": "approvers.any(user, user.tags.contains('PROVISIONER_TAG'))",
-  "condition": "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id == 'PROVISIONER_USER_ID'"
+  "consensus": "approvers.any(user, user.tags.contains('${PROVISIONER_TAG}'))",
+  "condition": "activity.type == 'ACTIVITY_TYPE_CREATE_API_KEYS_V2' && activity.params.user_id == '${PROVISIONER_USER_ID}'"
 }
 ```
 

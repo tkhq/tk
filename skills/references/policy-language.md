@@ -40,7 +40,7 @@ rather than left pending.
 | membership | `in` | `activity.resource in ['USER', 'POLICY']` |
 | negation | `!` | `!(activity.kind in ['SIGN_RAW_PAYLOAD'])` |
 | field access | `x.field`, `x['key']` | `secret.static_properties['consensus']` |
-| list functions | `any(item, pred)`, `all(item, pred)`, `contains(v)`, `filter(item, pred)`, `count()` | `approvers.filter(user, user.tags.contains('TAG_ID')).count() >= 2` |
+| list functions | `any(item, pred)`, `all(item, pred)`, `contains(v)`, `filter(item, pred)`, `count()` | `approvers.filter(user, user.tags.contains('${TAG_ID}')).count() >= 2` |
 
 `!` binds tighter than `&&` and `||`, so wrap what it negates in
 parentheses: `!(x in [...])`, not `!x in [...]`. Strings use single quotes. Ids compare as strings. Property values are
