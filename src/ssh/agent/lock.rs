@@ -1,75 +1,40 @@
-use std::{
-    fs::{File, OpenOptions},
-    io,
-    os::fd::AsRawFd,
-    path::{Path, PathBuf},
-};
+use std::{fs::File, io, os::fd::AsRawFd, path::PathBuf};
 
 use anyhow::{Context, Result};
 use tokio::task::spawn_blocking;
+
+use crate::socket::{open_agent_lock, try_lock_agent};
 
 pub(super) struct AgentLock {
     _file: File,
 }
 
 impl AgentLock {
-    pub(super) async fn acquire(path: PathBuf) -> Result<Option<Self>> {
+    pub(super) async fn acquire(pid_file: PathBuf) -> Result<Option<Self>> {
         spawn_blocking(move || {
-            let file = open_lock_file(&path)?;
-            if try_lock_exclusive(&file)? {
-                Ok(Some(Self { _file: file }))
-            } else {
-                Ok(None)
-            }
+            let file = open_agent_lock(&pid_file)?;
+            Ok(try_lock_agent(file)
+                .context("failed to acquire ssh-agent lock")?
+                .map(|file| Self { _file: file }))
         })
         .await
         .context("failed to join lock acquisition task")?
     }
 }
 
-pub(super) fn resolve_lock_file(pid_file: &Path) -> PathBuf {
-    PathBuf::from(format!("{}.lock", pid_file.display()))
-}
-
-pub(super) async fn is_lock_held_by_other(path: PathBuf) -> Result<bool> {
+pub(super) async fn is_lock_held_by_other(pid_file: PathBuf) -> Result<bool> {
     spawn_blocking(move || {
-        let file = open_lock_file(&path)?;
-        match try_lock_exclusive(&file) {
-            Ok(true) => {
+        let file = open_agent_lock(&pid_file)?;
+        match try_lock_agent(file).context("failed to acquire ssh-agent lock")? {
+            Some(file) => {
                 unlock_file(&file)?;
                 Ok(false)
             }
-            Ok(false) => Ok(true),
-            Err(error) => Err(error),
+            None => Ok(true),
         }
     })
     .await
     .context("failed to join lock inspection task")?
-}
-
-fn open_lock_file(path: &Path) -> Result<File> {
-    OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .truncate(false)
-        .open(path)
-        .with_context(|| format!("failed to open lock file {}", path.display()))
-}
-
-fn try_lock_exclusive(file: &File) -> Result<bool> {
-    // SAFETY: `flock` only inspects the raw file descriptor borrowed from
-    // `file`.
-    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-    if rc == 0 {
-        Ok(true)
-    } else {
-        let error = io::Error::last_os_error();
-        match error.raw_os_error() {
-            Some(libc::EWOULDBLOCK) => Ok(false),
-            _ => Err(error).context("failed to acquire ssh-agent lock"),
-        }
-    }
 }
 
 fn unlock_file(file: &File) -> Result<()> {
