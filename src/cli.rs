@@ -6,7 +6,7 @@ use std::{
     process::ExitCode,
 };
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use clap::{
     ArgAction, Args, CommandFactory, Parser, Subcommand, builder::FalseyValueParser,
     error::ErrorKind,
@@ -16,9 +16,10 @@ use tracing::debug;
 
 use crate::{
     auth::{
-        self, AuthCommand, AuthOptions, LoginArgs, ProfileCommand, ResolvedAuth,
+        self, AuthCommand, AuthOptions, CredentialSource, LoginArgs, ProfileCommand, ResolvedAuth,
         SavedProfileCommand,
     },
+    errors::{CredentialRejected, NextStep, NoSelectedIdentity, ProfileNotFound},
     gpg::{self, GpgCommand},
     keygen::GenerateArgs,
     operations::{ActivityCommand, RequestArgs, run_activity},
@@ -40,6 +41,8 @@ TK_NON_INTERACTIVE=true to fail fast instead.
 --message-format json prints one JSON record per line, each with a `reason`
 field; error records also carry a `code`. JSON output never prompts.
 
+Before a multi-step task, read its workflow: `tk skills list`, then
+`tk skills show --name NAME`.
 Record shapes and error codes: `tk skills show --name references/cli-convention`.
 Exit codes: 0 success, 1 runtime error, 2 usage error."#;
 
@@ -229,6 +232,40 @@ async fn run_operation(
     emit(&mut ctx, result)
 }
 
+fn with_next_step(error: Error) -> Error {
+    let step = if let Some(ProfileNotFound { name, saved }) = error.downcast_ref() {
+        let create =
+            format!("run tk profile create --profile-name {name} --organization-id ORG_UUID");
+        if saved.0.is_empty() {
+            create
+        } else {
+            format!("unless {name} is a typo for a saved profile, {create}")
+        }
+    } else if let Some(NoSelectedIdentity { saved }) = error.downcast_ref() {
+        match saved.0.as_slice() {
+            [] => "run tk profile create --profile-name NAME --organization-id ORG_UUID".to_owned(),
+            [only] => format!("run tk login --profile-name {only}"),
+            _ => "run tk login --profile-name NAME with one of the saved profiles".to_owned(),
+        }
+    } else if let Some(CredentialRejected {
+        organization_id,
+        public_key,
+        credential,
+    }) = error.downcast_ref()
+    {
+        let then = match credential {
+            CredentialSource::Profile(name) => format!("run tk login --profile-name {name}"),
+            CredentialSource::Environment => "run the command again".to_owned(),
+        };
+        format!(
+            "if organization {organization_id} is correct, register public key {public_key} (API_KEY_CURVE_P256) on a user there, then {then}"
+        )
+    } else {
+        return error;
+    };
+    error.context(NextStep(step))
+}
+
 async fn run_prepared<P, M>(
     prepared: Result<P>,
     options: &AuthOptions,
@@ -250,6 +287,7 @@ fn emit<M: Serialize + Display>(ctx: &mut StdCtx, result: Result<M>) -> ExitCode
             }
         },
         Err(error) => {
+            let error = with_next_step(error);
             debug!(?error, "command failed");
 
             let shell = ctx.shell();

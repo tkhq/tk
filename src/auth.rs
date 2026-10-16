@@ -24,9 +24,13 @@ use turnkey_client::{
     generated::{GetWhoamiRequest, GetWhoamiResponse},
 };
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::{
-    errors::{InvalidInput, Malformed, OrganizationMismatch},
+    errors::{
+        CredentialRejected, InvalidInput, Malformed, MissingCredentialFile, NoSelectedIdentity,
+        OrganizationMismatch, ProfileNotFound, SavedProfiles, is_unauthorized,
+    },
     gpg::registry::{GpgKeyEntry, GpgKeyTable, KeyName, SelectError, SigningKeyName, StoredGpgKey},
     keygen::{GeneratedApiKey, generate},
     operations::OperationOutput,
@@ -597,16 +601,30 @@ fn parse_key(private: &str, public: &str) -> Result<TurnkeyP256ApiKey> {
 }
 
 pub(crate) async fn read_key(path: &Path) -> Result<TurnkeyP256ApiKey> {
-    let text = fs::read_to_string(path)
-        .await
-        .with_context(|| format!("read credential {}", path.display()))?;
-    let key: StoredApiKey = serde_json::from_str(&text).map_err(|error| {
+    let text = match fs::read_to_string(path).await {
+        Ok(text) => Zeroizing::new(text),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(MissingCredentialFile {
+                path: path.to_owned(),
+            }
+            .into());
+        }
+        Err(error) => {
+            return Err(error).with_context(|| format!("read credential {}", path.display()));
+        }
+    };
+    let StoredApiKey {
+        public_key,
+        private_key,
+        curve: _,
+    } = serde_json::from_str(&text).map_err(|error| {
         Malformed::new(
             format!("invalid credential JSON in {}", path.display()),
             error,
         )
     })?;
-    parse_key(&key.private_key, &key.public_key)
+    let private_key = Zeroizing::new(private_key);
+    parse_key(&private_key, &public_key)
 }
 
 pub(crate) fn endpoint_override(options: &AuthOptions) -> Result<Option<ApiBaseUrl>> {
@@ -628,8 +646,18 @@ pub async fn resolve(options: &AuthOptions) -> Result<ResolvedAuth> {
     if let Some(auth) = resolve_environment(options)? {
         return Ok(auth);
     }
-    let registry = LoadedRegistry::load().await?;
-    resolve_in_registry(options, &registry.path, &registry.registry).await
+    let LoadedRegistry { mut registry, .. } = LoadedRegistry::load().await?;
+    let Some(name) = options
+        .profile
+        .clone()
+        .or_else(|| registry.active_profile.take())
+    else {
+        return Err(NoSelectedIdentity {
+            saved: SavedProfiles(registry.profiles.into_keys().collect()),
+        }
+        .into());
+    };
+    resolve_in_registry(options, name, &registry).await
 }
 
 pub struct LoadedRegistry {
@@ -658,11 +686,13 @@ impl LoadedRegistry {
             return Ok(Some((organization_id, "--organization-id".into())));
         }
         if let Some(name) = &options.profile {
-            let profile = self
-                .registry
-                .profiles
-                .get(name)
-                .ok_or_else(|| profile_missing(name))?;
+            let Some(profile) = self.registry.profiles.get(name) else {
+                return Err(ProfileNotFound {
+                    name: name.clone(),
+                    saved: SavedProfiles(self.registry.profiles.keys().cloned().collect()),
+                }
+                .into());
+            };
             return Ok(Some((profile.organization_id, format!("profile {name}"))));
         }
         if ENV_BUNDLE
@@ -700,8 +730,8 @@ impl LoadedRegistry {
             }
             Ok(auth)
         };
-        if options.profile.is_some() {
-            return checked(resolve_in_registry(options, &self.path, &self.registry).await?);
+        if let Some(name) = &options.profile {
+            return checked(resolve_in_registry(options, name.clone(), &self.registry).await?);
         }
         if let Some(auth) = resolve_environment(options)? {
             return checked(auth);
@@ -739,20 +769,16 @@ impl LoadedRegistry {
 
 async fn resolve_in_registry(
     options: &AuthOptions,
-    path: &Path,
+    name: String,
     registry: &Registry,
 ) -> Result<ResolvedAuth> {
-    let name = options
-        .profile
-        .clone()
-        .or_else(|| registry.active_profile.clone())
-        .ok_or_else(|| InvalidInput("no selected identity; use --profile or tk login".into()))?;
-    let profile = registry.profiles.get(&name).ok_or_else(|| {
-        InvalidInput(format!(
-            "profile {name} does not exist in {}",
-            path.display()
-        ))
-    })?;
+    let Some(profile) = registry.profiles.get(&name) else {
+        return Err(ProfileNotFound {
+            name,
+            saved: SavedProfiles(registry.profiles.keys().cloned().collect()),
+        }
+        .into());
+    };
     resolve_profile(options, name, profile).await
 }
 
@@ -764,11 +790,16 @@ fn resolve_environment(options: &AuthOptions) -> Result<Option<ResolvedAuth>> {
     if bundle.iter().all(Option::is_none) {
         return Ok(None);
     }
-    let [org, public, private] = bundle;
-    let (Some(org), Some(public), Some(private)) = (org, public, private) else {
-        return Err(InvalidInput(
-            "partial credential environment: organization ID, public key, and private key are all required".into(),
-        )
+    let [Some(org), Some(public), Some(private)] = bundle else {
+        let missing: Vec<&str> = ENV_BUNDLE
+            .into_iter()
+            .zip(&bundle)
+            .filter_map(|(name, value)| value.is_none().then_some(name))
+            .collect();
+        return Err(InvalidInput(format!(
+            "partial credential environment: set {} too, or unset the rest",
+            missing.join(" and ")
+        ))
         .into());
     };
     let [org, public, private] = [org, public, private].map(|value| {
@@ -779,6 +810,7 @@ fn resolve_environment(options: &AuthOptions) -> Result<Option<ResolvedAuth>> {
             .map_err(|_| InvalidInput("credential environment value is not valid Unicode".into()))
     });
     let (org, public, private) = (org?, public?, private?);
+    let private = Zeroizing::new(private);
     if org.is_empty() || public.is_empty() || private.is_empty() {
         return Err(InvalidInput("credential environment fields must not be empty".into()).into());
     }
@@ -817,12 +849,11 @@ async fn resolve_profile(
 
 pub(crate) async fn saved_profile(name: &str) -> Result<Profile> {
     let path = registry_path()?;
-    load(&path)
-        .await?
-        .profiles
-        .remove(name)
-        .ok_or_else(|| profile_missing(name))
-        .map_err(Into::into)
+    let mut registry = load(&path).await?;
+    match registry.profiles.remove(name) {
+        Some(profile) => Ok(profile),
+        None => Err(registry.missing(name.to_owned()).into()),
+    }
 }
 
 pub(crate) async fn remove_generated_key(path: &Path) -> bool {
@@ -854,8 +885,30 @@ pub(crate) async fn remove_generated_key(path: &Path) -> bool {
     })
 }
 
-fn profile_missing(name: &str) -> InvalidInput {
-    InvalidInput(format!("profile {name} does not exist"))
+impl Registry {
+    fn missing(self, name: String) -> ProfileNotFound {
+        ProfileNotFound {
+            name,
+            saved: SavedProfiles(self.profiles.into_keys().collect()),
+        }
+    }
+}
+
+fn rejected(
+    error: Error,
+    organization_id: Uuid,
+    public_key: CompressedPublicKey,
+    credential: CredentialSource,
+) -> Error {
+    let error = error.context("Turnkey API request failed");
+    if !is_unauthorized(&error) {
+        return error;
+    }
+    error.context(CredentialRejected {
+        organization_id,
+        public_key,
+        credential,
+    })
 }
 
 pub async fn load_gpg_keys() -> Result<GpgKeyTable> {
@@ -980,11 +1033,18 @@ pub async fn run_auth(command: AuthCommand, options: &AuthOptions) -> Result<Ope
             ))
         }
         AuthCommand::Whoami => {
-            let auth = resolve(options).await?;
-            let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
-            let identity = whoami(&client, auth.org_id)
+            let ResolvedAuth {
+                org_id,
+                api_base_url,
+                stamper,
+                source,
+                http: _,
+            } = resolve(options).await?;
+            let public_key = CompressedPublicKey::from(&stamper);
+            let client = build_turnkey_client(stamper, &api_base_url)?;
+            let identity = whoami(&client, org_id)
                 .await
-                .context("Turnkey API request failed")?;
+                .map_err(|error| rejected(error, org_id, public_key, source))?;
             Ok(OperationOutput::result(
                 "auth.whoami",
                 serde_json::to_value(identity)?,
@@ -1018,11 +1078,9 @@ async fn login(args: LoginArgs, options: &AuthOptions) -> Result<OperationOutput
         .into());
     }
     let path = registry_path()?;
-    let Some(profile) = load(&path).await?.profiles.remove(&name) else {
-        return Err(InvalidInput(format!(
-            "profile {name} does not exist; run tk profile create --profile-name {name} --organization-id <org>"
-        ))
-        .into());
+    let mut saved = load(&path).await?;
+    let Some(profile) = saved.profiles.remove(&name) else {
+        return Err(saved.missing(name).into());
     };
     let Profile {
         organization_id,
@@ -1045,16 +1103,22 @@ async fn login(args: LoginArgs, options: &AuthOptions) -> Result<OperationOutput
         ))
         .into());
     }
-    let client = build_turnkey_client(read_key(api_key_file).await?, api_base_url)?;
-    let identity = whoami(&client, *organization_id)
-        .await
-        .context("Turnkey API request failed")?;
+    let stamper = read_key(api_key_file).await?;
+    let public_key = CompressedPublicKey::from(&stamper);
+    let client = build_turnkey_client(stamper, api_base_url)?;
+    let identity = whoami(&client, *organization_id).await.map_err(|error| {
+        rejected(
+            error,
+            *organization_id,
+            public_key,
+            CredentialSource::Profile(name.clone()),
+        )
+    })?;
     let _lock = registry_lock(&path).await?;
     let mut registry = load(&path).await?;
-    let current = registry
-        .profiles
-        .get(&name)
-        .ok_or_else(|| profile_missing(&name))?;
+    let Some(current) = registry.profiles.get(&name) else {
+        return Err(registry.missing(name).into());
+    };
     if *current != profile {
         return Err(InvalidInput(format!(
             "profile {name} changed during login; run tk login --profile-name {name} again"
@@ -1125,10 +1189,9 @@ pub(crate) async fn set_profile_key(name: &str, api_key_file: PathBuf) -> Result
     let path = registry_path()?;
     let _lock = registry_lock(&path).await?;
     let mut registry = load(&path).await?;
-    let profile = registry
-        .profiles
-        .get_mut(name)
-        .ok_or_else(|| profile_missing(name))?;
+    let Some(profile) = registry.profiles.get_mut(name) else {
+        return Err(registry.missing(name.to_owned()).into());
+    };
     let previous = mem::replace(&mut profile.api_key_file, api_key_file);
     save(&path, &registry).await?;
     Ok(previous)
@@ -1154,20 +1217,18 @@ pub async fn run_profile(
             json!({"activeProfile": registry.active_profile, "profiles": registry.profiles}),
         )),
         SavedProfileCommand::Show { name } => {
-            let profile = registry
-                .profiles
-                .get(&name)
-                .ok_or_else(|| profile_missing(&name))?;
+            let Some(profile) = registry.profiles.get(&name) else {
+                return Err(registry.missing(name).into());
+            };
             Ok(OperationOutput::result(
                 "profile.show",
                 json!({"name": name, "profile": profile}),
             ))
         }
         SavedProfileCommand::Use { name } => {
-            let profile = registry
-                .profiles
-                .get(&name)
-                .ok_or_else(|| profile_missing(&name))?;
+            let Some(profile) = registry.profiles.get(&name) else {
+                return Err(registry.missing(name).into());
+            };
             read_key(&profile.api_key_file).await?;
             registry.active_profile = Some(name.clone());
             save(&path, &registry).await?;
@@ -1177,10 +1238,9 @@ pub async fn run_profile(
             ))
         }
         SavedProfileCommand::Delete { name } => {
-            registry
-                .profiles
-                .remove(&name)
-                .ok_or_else(|| profile_missing(&name))?;
+            if registry.profiles.remove(&name).is_none() {
+                return Err(registry.missing(name).into());
+            }
             if registry.active_profile.as_ref() == Some(&name) {
                 registry.active_profile = None;
             }
@@ -1191,10 +1251,9 @@ pub async fn run_profile(
             ))
         }
         SavedProfileCommand::Set { name, api_key_file } => {
-            let profile = registry
-                .profiles
-                .get_mut(&name)
-                .ok_or_else(|| profile_missing(&name))?;
+            let Some(profile) = registry.profiles.get_mut(&name) else {
+                return Err(registry.missing(name).into());
+            };
             if let Some(organization_id) = options.organization_id {
                 profile.organization_id = organization_id;
             }
@@ -1206,11 +1265,7 @@ pub async fn run_profile(
                 let current = match fs::canonicalize(&api_key_file).await {
                     Ok(current) => current,
                     Err(error) if error.kind() == ErrorKind::NotFound => {
-                        return Err(InvalidInput(format!(
-                            "credential file {} does not exist",
-                            api_key_file.display()
-                        ))
-                        .into());
+                        return Err(MissingCredentialFile { path: api_key_file }.into());
                     }
                     Err(error) => return Err(error).context("resolve credential path"),
                 };

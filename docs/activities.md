@@ -16,6 +16,9 @@ tk activity list --since 24h --limit 100
 tk activity get --id ACTIVITY_ID
 ```
 
+Activity records list votes under `data.activity.votes` with each voter's
+`userId` and `selection`.
+
 Consensus:
 
 ```bash

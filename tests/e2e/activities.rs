@@ -24,6 +24,11 @@ fn activity_list_paginates_and_get_and_wait_inspect_a_completed_activity() {
         json!({"id": activity_id, "status": "ACTIVITY_STATUS_COMPLETED"})
     );
     assert_eq!(got["data"]["activity"]["id"], activity_id);
+    assert_eq!(
+        votes(&got),
+        [(run.root_user_id(), "VOTE_SELECTION_APPROVED")],
+        "{got}"
+    );
 
     let waited = run.ok(run.admin().args(["activity", "wait", "--id", &activity_id]));
     assert_eq!(waited["command"], "activity.wait");
@@ -234,6 +239,9 @@ fn activity_list_filters_by_status_type_and_since() {
     for item in by_completed["data"]["items"].as_array().unwrap() {
         assert_eq!(item["status"], "ACTIVITY_STATUS_COMPLETED", "{item}");
         assert!(item["votes"].is_array(), "{item}");
+        for vote in item["votes"].as_array().unwrap() {
+            assert_eq!(vote.get("user"), None, "{item}");
+        }
     }
 
     let by_type = run.ok(run.admin().args([
@@ -297,6 +305,28 @@ fn votes(record: &Value) -> Vec<(&str, &str)> {
         .unwrap()
         .iter()
         .map(|vote| {
+            let mut keys: Vec<&str> = vote
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            keys.sort_unstable();
+            assert_eq!(
+                keys,
+                [
+                    "activityId",
+                    "createdAt",
+                    "id",
+                    "message",
+                    "publicKey",
+                    "scheme",
+                    "selection",
+                    "signature",
+                    "userId",
+                ],
+                "{vote}"
+            );
             (
                 vote["userId"].as_str().unwrap(),
                 vote["selection"].as_str().unwrap(),

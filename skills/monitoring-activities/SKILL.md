@@ -41,8 +41,7 @@ Inputs: the activity id from the pending record, and the approver's profile
 
    `status` is the record status; `data.activity.status` the raw value
    (`ACTIVITY_STATUS_CONSENSUS_NEEDED` while approvals are outstanding).
-   `data.activity.type` and `data.activity.intent` describe the request;
-   `data.activity.votes[]` lists votes with `userId` and `selection`.
+   `data.activity.type` and `data.activity.intent` describe the request.
 
    Without an id, page through recent activities:
 

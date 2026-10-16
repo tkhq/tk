@@ -216,6 +216,23 @@ impl Status {
     }
 }
 
+fn drop_voter_users(activity: &mut Value) {
+    if let Some(Value::Array(votes)) = activity.get_mut("votes") {
+        for vote in votes.iter_mut().filter_map(Value::as_object_mut) {
+            vote.remove("user");
+        }
+    }
+}
+
+impl OperationOutput {
+    fn without_voter_users(mut self) -> Self {
+        if let Some(activity) = self.data.get_mut("activity") {
+            drop_voter_users(activity);
+        }
+        self
+    }
+}
+
 impl Serialize for OperationOutput {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut record = serializer
@@ -533,7 +550,7 @@ pub async fn run_activity(args: ActivityCommand, auth: &ResolvedAuth) -> Result<
         ActivityCommand::List(args) => list(auth, args).await,
         ActivityCommand::Get { id } => {
             let value = query_activity(auth, &id.to_string()).await?;
-            Ok(OperationOutput::result("activity.get", value))
+            Ok(OperationOutput::result("activity.get", value).without_voter_users())
         }
         ActivityCommand::Wait { id, timeout } => wait(auth, id, timeout).await,
         ActivityCommand::Approve { id } => vote(auth, id, true).await,
@@ -615,6 +632,9 @@ async fn list(auth: &ResolvedAuth, args: ListArgs) -> Result<OperationOutput> {
             pagination.after = activity_id(last)?.to_owned();
         }
     }
+    for item in &mut items {
+        drop_voter_users(item);
+    }
     let next = if capped {
         items.last().map(activity_id).transpose()?.map(Value::from)
     } else {
@@ -658,7 +678,7 @@ async fn wait(auth: &ResolvedAuth, id: Uuid, seconds: u64) -> Result<OperationOu
                 Ok(value) => {
                     let output = OperationOutput::result(command, value);
                     if !output.is_pending() {
-                        return terminal(output, false);
+                        return Ok(terminal(output, false)?.without_voter_users());
                     }
                     last = output.activity;
                 }
@@ -750,11 +770,12 @@ async fn vote(auth: &ResolvedAuth, id: Uuid, approve: bool) -> Result<OperationO
             query_activity(auth, &wire_id).await?
         };
         let output = OperationOutput::result(command, data);
-        if !approve && matches!(output.status(), Status::Rejected) {
-            Ok(output)
+        let output = if !approve && matches!(output.status(), Status::Rejected) {
+            output
         } else {
-            terminal(output, true)
-        }
+            terminal(output, true)?
+        };
+        Ok(output.without_voter_users())
     }
     .await;
     submitted.map_err(|error| with_target(error, target))
@@ -773,7 +794,7 @@ pub async fn submit_activity<T: Serialize>(
         &format!("/public/v1/submit/{endpoint}"),
     )?;
     let value = post::<Value>(auth, endpoint, body, true).await?;
-    submission_result(command, value)
+    Ok(submission_result(command, value)?.without_voter_users())
 }
 
 pub(crate) async fn query<T: Serialize, R: DeserializeOwned>(

@@ -1,13 +1,20 @@
 // This module defines ErrorCode and owns its classification.
 #![allow(clippy::disallowed_types)]
-use std::error::Error;
+use std::{
+    error::Error,
+    fmt::{self, Display, Formatter},
+    path::PathBuf,
+};
 
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use turnkey_client::TurnkeyClientError;
 use uuid::Uuid;
 
-use crate::{auth::SelectedIdentity, sessions::public_key::CompressedPublicKey};
+use crate::{
+    auth::{CredentialSource, SelectedIdentity},
+    sessions::public_key::CompressedPublicKey,
+};
 
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
@@ -45,6 +52,51 @@ impl Malformed {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct SavedProfiles(pub Vec<String>);
+
+impl Display for SavedProfiles {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.0.as_slice() {
+            [] => f.write_str("no profiles are saved"),
+            names => write!(f, "saved profiles: {}", names.join(", ")),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("profile {name} does not exist; {saved}")]
+pub struct ProfileNotFound {
+    pub name: String,
+    pub saved: SavedProfiles,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("no profile is selected and no credential environment is set; {saved}")]
+pub struct NoSelectedIdentity {
+    pub saved: SavedProfiles,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("credential file {} does not exist", .path.display())]
+pub struct MissingCredentialFile {
+    pub path: PathBuf,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "organization {organization_id} rejected public key {public_key}: the key is not registered on a user there, or it expired or was deleted"
+)]
+pub struct CredentialRejected {
+    pub organization_id: Uuid,
+    pub public_key: CompressedPublicKey,
+    pub credential: CredentialSource,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("try: {0}")]
+pub struct NextStep(pub String);
 
 #[derive(Debug, thiserror::Error)]
 #[error("the selected identity ({identity}) belongs to organization {actual}, not {expected}")]
@@ -157,10 +209,42 @@ pub fn error_details(error: &anyhow::Error) -> Option<Value> {
             "warnBeforeSeconds": expiring.warn_before_seconds,
         }));
     }
-    error
+    if let Some(activity) = error
         .downcast_ref::<ActivityError>()
         .and_then(ActivityError::activity)
-        .map(|activity| json!({"activity": activity}))
+    {
+        return Some(json!({"activity": activity}));
+    }
+    let mut details = Map::new();
+    if let Some(NextStep(step)) = error.downcast_ref() {
+        details.insert("nextStep".into(), step.as_str().into());
+    }
+    if let Some(ProfileNotFound { name, saved }) = error.downcast_ref() {
+        details.insert("profile".into(), name.as_str().into());
+        details.insert("profiles".into(), saved.0.clone().into());
+    }
+    if let Some(NoSelectedIdentity { saved }) = error.downcast_ref() {
+        details.insert("profiles".into(), saved.0.clone().into());
+    }
+    if let Some(MissingCredentialFile { path }) = error.downcast_ref() {
+        details.insert("path".into(), path.display().to_string().into());
+    }
+    if let Some(CredentialRejected {
+        organization_id,
+        public_key,
+        credential,
+    }) = error.downcast_ref()
+    {
+        details.insert("organizationId".into(), organization_id.to_string().into());
+        details.insert("publicKey".into(), public_key.to_string().into());
+        match credential {
+            CredentialSource::Profile(name) => {
+                details.insert("profile".into(), name.as_str().into());
+            }
+            CredentialSource::Environment => {}
+        }
+    }
+    (!details.is_empty()).then_some(Value::Object(details))
 }
 
 const MAX_ERROR_MESSAGE_BYTES: usize = 8 * 1024;
@@ -214,10 +298,14 @@ pub fn classify(error: &anyhow::Error) -> Classification {
         if cause.downcast_ref::<InvalidInput>().is_some()
             || cause.downcast_ref::<Malformed>().is_some()
             || cause.downcast_ref::<OrganizationMismatch>().is_some()
+            || cause.downcast_ref::<NoSelectedIdentity>().is_some()
         {
             return Classification::new(ErrorCode::InvalidInput, None);
         }
-        if cause.downcast_ref::<MissingResource>().is_some() {
+        if cause.downcast_ref::<MissingResource>().is_some()
+            || cause.downcast_ref::<ProfileNotFound>().is_some()
+            || cause.downcast_ref::<MissingCredentialFile>().is_some()
+        {
             return Classification::new(ErrorCode::NotFound, None);
         }
         if cause.downcast_ref::<SessionExpiring>().is_some() {

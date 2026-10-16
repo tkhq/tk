@@ -75,7 +75,7 @@ fn session_request_generates_a_pending_credential() {
             run.cli()
                 .args(["session", "request", "--profile-name", "no-such-profile"]),
         );
-    assert_eq!(unknown["code"], "invalid_input", "{unknown}");
+    assert_eq!(unknown["code"], "not_found", "{unknown}");
 }
 
 #[test]

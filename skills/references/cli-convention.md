@@ -47,7 +47,7 @@ this shape:
 | `reason` | `command_result` |
 | `command` | dotted command name, for example `user.create`, `secret.env`, `auth.whoami` |
 | `status` | `completed`, `pending`, `rejected`, `failed`, or `unknown`; a record without an activity is `completed` |
-| `data` | the command's payload; for API-backed commands it preserves the API response shape |
+| `data` | the command's payload; for API-backed commands it preserves the API response shape, except that activity records omit each vote's nested `user`; `request` prints the response unchanged |
 | `activity` | present when the command submitted or observed an activity: `{"id", "status"}` with the raw `ACTIVITY_STATUS_*` value |
 
 Created resource ids live under `data.activity.result`, for example
@@ -75,7 +75,7 @@ Any command can print an error record instead, with exit code `1` or `2`:
 | `reason` | `command_error`, or `missing_required_input` when a value was absent in non-interactive mode |
 | `code` | the stable classification below |
 | `httpStatus` | present for HTTP failures |
-| `details` | recovery data: the last observed `activity` `{id, status}`, `pending` exports, or session expiry fields |
+| `details` | recovery data: the last observed `activity` `{id, status}`, `pending` exports, session expiry fields, or, for profile and credential failures, the `profile`, saved `profiles`, credential `path`, or rejected `publicKey` and `organizationId`, plus `nextStep` suggesting a fix and the condition it assumes when no profile is selected, the named profile does not exist, or Turnkey rejects the key in `login` or `whoami` |
 | `message` | the full error chain, for humans |
 
 Error records carry no `schemaVersion`, `data`, or `activity`.
