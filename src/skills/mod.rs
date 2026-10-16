@@ -1,4 +1,5 @@
 mod bundle;
+mod digest;
 mod install;
 
 #[cfg(test)]
@@ -27,7 +28,7 @@ pub enum SkillsCommand {
         #[arg(long, value_name = "NAME")]
         name: SkillName,
     },
-    /// Install the turnkey-tk package as DIR/turnkey-tk; an existing destination is never replaced, the same package is a no-op, and any other content is refused with `invalid_input`.
+    /// Install the turnkey-tk package as DIR/turnkey-tk; the same package is a no-op, an unmodified older install is replaced, and any other content is refused with `invalid_input`.
     Install {
         /// Directory that receives the `turnkey-tk` package; created when missing.
         #[arg(long, value_name = "DIR", value_parser = PathBufValueParser::new().try_map(InstallDir::try_from))]

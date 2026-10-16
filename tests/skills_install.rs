@@ -13,6 +13,7 @@ use std::{
 
 use assert_cmd::Command;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use tempfile::{TempDir, tempdir};
 
 const SCRUBBED: [&str; 8] = [
@@ -273,6 +274,7 @@ fn install_writes_the_package_with_a_manifest_and_resolvable_links() {
             "digest": listed["digest"],
             "files": written,
             "alreadyInstalled": false,
+            "replacedVersion": null,
         })
     );
     assert!(written.contains(&"SKILL.md".to_owned()));
@@ -349,9 +351,61 @@ fn install_writes_the_package_with_a_manifest_and_resolvable_links() {
             "digest": installed["digest"],
             "files": installed["files"],
             "alreadyInstalled": true,
+            "replacedVersion": null,
         })
     );
     assert_eq!(snapshot(&destination), tree);
+}
+
+fn write_install(destination: &Path, files: &[(&str, &str)]) {
+    let mut hasher = Sha256::new();
+    for (path, content) in files.iter().copied().collect::<BTreeMap<_, _>>() {
+        let target = destination.join(path);
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(target, content).unwrap();
+        hasher.update(path.as_bytes());
+        hasher.update([0]);
+        hasher.update((content.len() as u64).to_le_bytes());
+        hasher.update(content.as_bytes());
+    }
+    let manifest = json!({
+        "binaryVersion": "0.0.1",
+        "digest": hex::encode(hasher.finalize()),
+        "files": files.iter().map(|(path, _)| path).collect::<BTreeSet<_>>(),
+    });
+    fs::write(destination.join("turnkey-tk.json"), manifest.to_string()).unwrap();
+}
+
+#[test]
+fn install_replaces_an_unmodified_older_install() {
+    let ws = workspace();
+    let destination = ws.into.join("turnkey-tk");
+    write_install(
+        &destination,
+        &[("SKILL.md", "old index\n"), ("retired/SKILL.md", "gone\n")],
+    );
+    let installed = ok(&mut install_cmd(&ws.home, &ws.into));
+
+    let fresh = ws.root.join("fresh");
+    let expected = ok(&mut install_cmd(&ws.home, &fresh));
+    assert_eq!(
+        installed,
+        json!({
+            "reason": "skills_installed",
+            "destination": destination.to_str().unwrap(),
+            "version": env!("CARGO_PKG_VERSION"),
+            "digest": expected["digest"],
+            "files": expected["files"],
+            "alreadyInstalled": false,
+            "replacedVersion": "0.0.1",
+        })
+    );
+    assert_eq!(snapshot(&destination), snapshot(&fresh.join("turnkey-tk")));
+    assert_eq!(
+        fs::read_dir(&ws.into).unwrap().count(),
+        1,
+        "install left something beside turnkey-tk"
+    );
 }
 
 #[test]
@@ -369,19 +423,25 @@ fn install_refuses_a_differing_destination_and_leaves_it_untouched() {
         )
     );
 
-    fs::write(
-        destination.join("turnkey-tk.json"),
-        json!({"binaryVersion": "0.0.1", "digest": "0".repeat(64), "files": []}).to_string(),
-    )
-    .unwrap();
-    let message = refused_untouched(&ws);
-    assert_eq!(
-        message,
-        format!(
-            "{} holds a different turnkey-tk package; remove it to install this one",
-            destination.display()
-        )
+    let modified = format!(
+        "{} was modified after turnkey-tk 0.0.1 installed it; remove it to install this one",
+        destination.display()
     );
+    write_install(&destination, &[("SKILL.md", "old index\n")]);
+    fs::write(destination.join("SKILL.md"), "edited index\n").unwrap();
+    assert_eq!(refused_untouched(&ws), modified);
+
+    write_install(&destination, &[("SKILL.md", "old index\n")]);
+    fs::write(destination.join("notes.md"), "mine\n").unwrap();
+    assert_eq!(refused_untouched(&ws), modified);
+
+    fs::remove_file(destination.join("notes.md")).unwrap();
+    write_install(
+        &destination,
+        &[("SKILL.md", "old index\n"), ("docs/a.md", "a\n")],
+    );
+    fs::remove_file(destination.join("docs/a.md")).unwrap();
+    assert_eq!(refused_untouched(&ws), modified);
 
     fs::write(destination.join("turnkey-tk.json"), "{").unwrap();
     let message = refused_untouched(&ws);
@@ -431,6 +491,7 @@ fn a_persisted_manifest_with_the_same_digest_is_reported_as_installed_as_written
             "digest": digest,
             "files": ["SKILL.md"],
             "alreadyInstalled": true,
+            "replacedVersion": null,
         })
     );
     assert_eq!(snapshot(&ws.into), before);
