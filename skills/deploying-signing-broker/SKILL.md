@@ -156,6 +156,7 @@ or a shared uid), and the session lifetime.
 
    Signing needs no `TK_PROFILE` here: `tk` talks only to the socket. Pin
    `TK_GPG_PROGRAM` to the system GnuPG path when `gpg` is not on `PATH`.
+   Also set the [co-author hook](../../docs/git-signing.md#co-author-trailer).
 
 7. **Rotate the broker session.** A host timer runs step 5 of
    [provisioning-session-agent](../provisioning-session-agent/SKILL.md) as a state machine: status,

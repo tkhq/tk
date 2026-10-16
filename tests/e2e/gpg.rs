@@ -620,11 +620,12 @@ exec '{}' "$@"
     fs::write(&human_config, human_settings).unwrap();
     let shared_repo = run.home.path().join("shared-repo");
     fs::create_dir(&shared_repo).unwrap();
+    let co_author_hook = format!("{} git co-author", tk.display());
     let agent_environment = |cmd: &mut process::Command| {
         run.inherit_environment(run.cli(), cmd);
         cmd.env("HOME", run.home.path())
             .env("GNUPGHOME", &gnupghome)
-            .env("GIT_CONFIG_COUNT", "4")
+            .env("GIT_CONFIG_COUNT", "6")
             .env("GIT_CONFIG_KEY_0", "gpg.format")
             .env("GIT_CONFIG_VALUE_0", "openpgp")
             .env("GIT_CONFIG_KEY_1", "gpg.program")
@@ -632,7 +633,11 @@ exec '{}' "$@"
             .env("GIT_CONFIG_KEY_2", "user.signingkey")
             .env("GIT_CONFIG_VALUE_2", &fingerprint)
             .env("GIT_CONFIG_KEY_3", "commit.gpgsign")
-            .env("GIT_CONFIG_VALUE_3", "true");
+            .env("GIT_CONFIG_VALUE_3", "true")
+            .env("GIT_CONFIG_KEY_4", "hook.turnkey-co-author.event")
+            .env("GIT_CONFIG_VALUE_4", "commit-msg")
+            .env("GIT_CONFIG_KEY_5", "hook.turnkey-co-author.command")
+            .env("GIT_CONFIG_VALUE_5", &co_author_hook);
     };
     run.git_ok(&git, &shared_repo, agent_environment, &["init", "--quiet"]);
     run.git_ok(
@@ -653,5 +658,39 @@ exec '{}' "$@"
         agent_environment,
         &["verify-commit", "HEAD"],
     );
+    let message = run.git_ok(
+        &git,
+        &shared_repo,
+        agent_environment,
+        &["log", "-1", "--format=%B"],
+    );
+    assert_eq!(
+        String::from_utf8(message.stdout).unwrap(),
+        r#"signed from the agent environment
+
+Co-authored-by: Turnkey <noreply@turnkey.com>
+
+"#
+    );
+    let abandoned = Run::git(
+        &git,
+        &shared_repo,
+        |cmd| {
+            agent_environment(cmd);
+            cmd.env("GIT_EDITOR", "true");
+        },
+        &["commit", "--allow-empty"],
+    );
+    assert!(
+        !abandoned.status.success(),
+        "an untouched commit template must still abort the commit"
+    );
+    let count = run.git_ok(
+        &git,
+        &shared_repo,
+        agent_environment,
+        &["rev-list", "--count", "HEAD"],
+    );
+    assert_eq!(String::from_utf8(count.stdout).unwrap(), "1\n");
     assert_eq!(fs::read_to_string(&human_config).unwrap(), human_settings);
 }
