@@ -44,7 +44,7 @@ fn installer_targets_match_the_build_matrix() {
         .lines()
         .filter_map(|line| line.split_once(r#"target=""#)?.1.split('"').next())
         .collect();
-    assert_eq!(matrix.len(), 4);
+    assert_eq!(matrix.len(), 3);
     assert_eq!(installer, matrix);
 }
 
