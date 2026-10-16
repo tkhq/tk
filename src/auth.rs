@@ -860,9 +860,9 @@ pub(crate) async fn remove_generated_key(path: &Path) -> bool {
     let removed: Result<bool> = async {
         let api_keys = state_dir()?.join("api-keys");
         let api_keys = fs::canonicalize(&api_keys).await.unwrap_or(api_keys);
-        if !path.starts_with(&api_keys) {
+        let Some(path) = generated_key_path(&api_keys, path) else {
             return Ok(false);
-        }
+        };
         let registry_path = registry_path()?;
         let _lock = registry_lock(&registry_path).await?;
         let registry = load(&registry_path).await?;
@@ -873,7 +873,7 @@ pub(crate) async fn remove_generated_key(path: &Path) -> bool {
         {
             return Ok(false);
         }
-        fs::remove_file(path)
+        fs::remove_file(&path)
             .await
             .with_context(|| format!("remove {}", path.display()))?;
         Ok(true)
@@ -883,6 +883,12 @@ pub(crate) async fn remove_generated_key(path: &Path) -> bool {
         debug!(%error, "generated key file was not removed");
         false
     })
+}
+
+fn generated_key_path(api_keys: &Path, path: &Path) -> Option<PathBuf> {
+    path.file_name()
+        .filter(|_| path.parent() == Some(api_keys))
+        .map(|name| api_keys.join(name))
 }
 
 impl Registry {
@@ -1291,6 +1297,22 @@ mod tests {
             ApiBaseUrl::default(),
             ApiBaseUrl::try_from(DEFAULT_URL.to_owned()).unwrap()
         );
+    }
+
+    #[test]
+    fn only_direct_children_of_api_keys_are_generated_keys() {
+        let api_keys = Path::new("/state/tk/api-keys");
+        let resolve = |path: &str| generated_key_path(api_keys, Path::new(path));
+        assert_eq!(
+            resolve("/state/tk/api-keys/02ab.json"),
+            Some(api_keys.join("02ab.json"))
+        );
+        assert_eq!(resolve("/state/tk/api-keys/../tk.config.toml"), None);
+        assert_eq!(resolve("/state/tk/api-keys/nested/../../victim.json"), None);
+        assert_eq!(resolve("/state/tk/api-keys/nested/02ab.json"), None);
+        assert_eq!(resolve("/state/tk/api-keys/.."), None);
+        assert_eq!(resolve("/state/tk/api-keys"), None);
+        assert_eq!(resolve("/home/me/key.json"), None);
     }
 
     #[tokio::test]
