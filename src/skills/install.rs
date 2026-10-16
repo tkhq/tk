@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     env,
     fs::{self, Permissions},
     io::{self, ErrorKind},
@@ -12,7 +12,10 @@ use anyhow::{Context, Result};
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::bundle::{DIGEST, FILES, InstallManifest, Installed, MANIFEST_FILE, ROOT, VERSION};
+use super::{
+    bundle::{Change, DIGEST, FILES, InstallManifest, Installed, MANIFEST_FILE, ROOT, VERSION},
+    digest,
+};
 use crate::errors::{InvalidInput, Malformed};
 
 const DIR_MODE: u32 = 0o755;
@@ -59,6 +62,56 @@ impl Drop for Guard {
     }
 }
 
+struct Retired {
+    aside: PathBuf,
+    destination: PathBuf,
+}
+
+impl Retired {
+    fn discard(mut self) {
+        let _ = fs::remove_dir_all(take(&mut self.aside));
+    }
+
+    fn keep(mut self) -> PathBuf {
+        take(&mut self.aside)
+    }
+}
+
+impl Drop for Retired {
+    fn drop(&mut self) {
+        if !self.aside.as_os_str().is_empty() {
+            let _ = fs::rename(&self.aside, &self.destination);
+        }
+    }
+}
+
+fn installed_files(root: &Path) -> io::Result<Option<BTreeMap<String, Vec<u8>>>> {
+    let mut files = BTreeMap::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory)? {
+            let path = entry?.path();
+            let file_type = fs::symlink_metadata(&path)?.file_type();
+            if file_type.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let Some(relative) = path
+                .strip_prefix(root)
+                .ok()
+                .and_then(Path::to_str)
+                .filter(|_| file_type.is_file())
+            else {
+                return Ok(None);
+            };
+            if relative != MANIFEST_FILE {
+                files.insert(relative.to_owned(), fs::read(&path)?);
+            }
+        }
+    }
+    Ok(Some(files))
+}
+
 pub fn install(InstallDir(given): InstallDir) -> Result<Installed> {
     let into = env::current_dir()
         .context("resolve the current directory for --into")?
@@ -97,7 +150,7 @@ pub fn install(InstallDir(given): InstallDir) -> Result<Installed> {
     fs::create_dir_all(&into).with_context(|| format!("create --into {}", into.display()))?;
 
     let destination = into.join(ROOT);
-    match fs::symlink_metadata(&destination) {
+    let replaced_version = match fs::symlink_metadata(&destination) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             return Err(InvalidInput(format!(
                 "{} is a symlink; remove it or choose another --into",
@@ -108,7 +161,7 @@ pub fn install(InstallDir(given): InstallDir) -> Result<Installed> {
         Ok(metadata) if metadata.is_dir() => {
             let persisted = destination.join(MANIFEST_FILE);
             let InstallManifest {
-                binary_version: _,
+                binary_version,
                 digest,
                 files,
             } = match fs::read_to_string(&persisted) {
@@ -141,20 +194,26 @@ pub fn install(InstallDir(given): InstallDir) -> Result<Installed> {
                     .into());
                 }
             };
-            if digest != DIGEST {
+            if digest == DIGEST {
+                return Ok(Installed {
+                    destination,
+                    version: VERSION,
+                    digest: DIGEST,
+                    files,
+                    change: Change::AlreadyInstalled,
+                });
+            }
+            let on_disk = installed_files(&destination)
+                .with_context(|| format!("inspect {}", destination.display()))?;
+            let intact = on_disk.is_some_and(|on_disk| digest::of(&on_disk) == digest);
+            if !intact {
                 return Err(InvalidInput(format!(
-                    "{} holds a different {ROOT} package; remove it to install this one",
+                    "{} was modified after {ROOT} {binary_version} installed it; remove it to install this one",
                     destination.display()
                 ))
                 .into());
             }
-            return Ok(Installed {
-                destination,
-                version: VERSION,
-                digest: DIGEST,
-                files,
-                already_installed: true,
-            });
+            Some(binary_version)
         }
         Ok(_) => {
             return Err(InvalidInput(format!(
@@ -163,11 +222,11 @@ pub fn install(InstallDir(given): InstallDir) -> Result<Installed> {
             ))
             .into());
         }
-        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => None,
         Err(error) => {
             return Err(error).with_context(|| format!("inspect {}", destination.display()));
         }
-    }
+    };
 
     let manifest = InstallManifest::embedded();
     let staging = Guard(into.join(format!(".{ROOT}.{}", Uuid::new_v4())));
@@ -202,11 +261,30 @@ pub fn install(InstallDir(given): InstallDir) -> Result<Installed> {
     })()
     .with_context(|| format!("stage {ROOT} under {}", into.display()))?;
 
+    let retired = match replaced_version {
+        Some(_) => {
+            let aside = into.join(format!(".{ROOT}.{}", Uuid::new_v4()));
+            fs::rename(&destination, &aside)
+                .with_context(|| format!("move {} aside", destination.display()))?;
+            Some(Retired {
+                aside,
+                destination: destination.clone(),
+            })
+        }
+        None => None,
+    };
     let claimed = match fs::create_dir(&destination) {
         Ok(()) => Guard(destination),
         Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+            let outcome = match retired {
+                Some(retired) => format!(
+                    "the previous install was moved to {}",
+                    retired.keep().display()
+                ),
+                None => "nothing was replaced".to_owned(),
+            };
             return Err(InvalidInput(format!(
-                "{} appeared while installing; nothing was replaced",
+                "{} appeared while installing; {outcome}",
                 destination.display()
             ))
             .into());
@@ -229,11 +307,15 @@ pub fn install(InstallDir(given): InstallDir) -> Result<Installed> {
     })()
     .with_context(|| format!("publish {ROOT} to {}", claimed.0.display()))?;
 
+    let destination = claimed.publish();
+    if let Some(retired) = retired {
+        retired.discard();
+    }
     Ok(Installed {
-        destination: claimed.publish(),
+        destination,
         version: VERSION,
         digest: DIGEST,
         files: manifest.files,
-        already_installed: false,
+        change: replaced_version.map_or(Change::Installed, |version| Change::Replaced { version }),
     })
 }

@@ -28,24 +28,25 @@ To sign commits with this key, see [Git signing](./git-signing.md#gpg-signing).
 ## GitHub
 
 ```bash
-# Let the GitHub CLI add GPG keys and read your account's emails.
+# Print the public key to paste at GitHub Settings, SSH and GPG keys, New GPG key.
+tk gpg keys export --key FINGERPRINT
+
+# Or let the GitHub CLI upload it; granting the scopes opens a browser device flow.
 gh auth refresh -s write:gpg_key,user:email
-
-# Show each key's user ID.
-tk gpg keys list
-# List the emails GitHub has verified on your account.
-gh api user/emails --jq '.[] | select(.verified) | .email'
-
-# Upload the public key.
 tk gpg keys export --key FINGERPRINT > ./signing-key.asc
 gh gpg-key add ./signing-key.asc --title tk-signing
+
+# Compare each key's user ID with the emails GitHub has verified on your account.
+tk gpg keys list
+gh api user/emails --jq '.[] | select(.verified) | .email'
 ```
 
 GitHub marks a commit Verified only when its committer email appears in the
-key's user ID and is a verified email on the GitHub account. Add a missing
-email under GitHub Settings, Emails, and open the confirmation link GitHub
-sends; a key whose user ID lacks the email needs a new key created with that
-email in its `--user-id`.
+key's user ID and is a verified email on the GitHub account; commits pushed
+earlier turn Verified once both hold. Add a missing email under GitHub
+Settings, Emails, and open the confirmation link GitHub sends; a key whose
+user ID lacks the email needs a new key created with that email in its
+`--user-id`.
 
 ## Key management
 

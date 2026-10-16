@@ -681,7 +681,7 @@ impl Run {
             &hex::encode(key.compressed_public_key()),
             &hex::encode(key.private_key()),
         );
-        self.ok(self
+        let created = self.ok(self
             .cli()
             .args([
                 "profile",
@@ -694,7 +694,7 @@ impl Run {
             ])
             .arg(&key_file));
         self.ok(self.cli().args(["login", "--profile-name", name]));
-        key_file
+        PathBuf::from(created["data"]["profile"]["api_key_file"].as_str().unwrap())
     }
 
     pub(crate) fn create_policy_from_flags(
@@ -935,7 +935,7 @@ impl Run {
             &self.config.public_key,
             &self.config.private_key.0,
         );
-        self.ok(self
+        let created = self.ok(self
             .cli()
             .args([
                 "profile",
@@ -950,7 +950,7 @@ impl Run {
         let record = self.ok(self.cli().args(["login", "--profile-name", &name]));
         AdminLogin {
             name,
-            key_file,
+            key_file: PathBuf::from(created["data"]["profile"]["api_key_file"].as_str().unwrap()),
             record,
         }
     }

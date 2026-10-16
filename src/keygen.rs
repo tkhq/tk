@@ -8,7 +8,7 @@ use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    auth::{KeyCurve, StoredApiKey, secure_create, state_dir},
+    auth::{KeyCurve, SecureCreateError, StoredApiKey, read_key, secure_create, state_dir},
     operations::OperationOutput,
     sessions::public_key::CompressedPublicKey,
 };
@@ -41,31 +41,63 @@ pub(crate) struct GeneratedApiKey {
 pub(crate) async fn generate(output: Option<PathBuf>) -> Result<GeneratedApiKey> {
     let key = TurnkeyP256ApiKey::generate();
     let public_key = CompressedPublicKey::from(&key);
+    let path = match output {
+        Some(path) => path,
+        None => managed_path(&public_key).await?,
+    };
+    secure_create(&path, &encode(&key, &public_key)?)
+        .await
+        .with_context(|| format!("create {}", path.display()))?;
+    Ok(GeneratedApiKey { public_key, path })
+}
+
+pub(crate) struct ImportedApiKey {
+    pub(crate) public_key: CompressedPublicKey,
+    pub(crate) path: PathBuf,
+    pub(crate) created: bool,
+}
+
+pub(crate) async fn import(key: &TurnkeyP256ApiKey) -> Result<ImportedApiKey> {
+    let public_key = CompressedPublicKey::from(key);
+    let path = managed_path(&public_key).await?;
+    let created = match secure_create(&path, &encode(key, &public_key)?).await {
+        Ok(()) => true,
+        Err(SecureCreateError::Exists)
+            if CompressedPublicKey::from(&read_key(&path).await?) == public_key =>
+        {
+            false
+        }
+        Err(error) => {
+            return Err(error).with_context(|| format!("create {}", path.display()));
+        }
+    };
+    Ok(ImportedApiKey {
+        public_key,
+        path,
+        created,
+    })
+}
+
+async fn managed_path(public_key: &CompressedPublicKey) -> Result<PathBuf> {
+    let dir = state_dir()?.join("api-keys");
+    fs::create_dir_all(&dir)
+        .await
+        .with_context(|| format!("create {}", dir.display()))?;
+    let dir = fs::canonicalize(&dir)
+        .await
+        .with_context(|| format!("resolve {}", dir.display()))?;
+    Ok(dir.join(format!("{public_key}.json")))
+}
+
+fn encode(key: &TurnkeyP256ApiKey, public_key: &CompressedPublicKey) -> Result<Zeroizing<Vec<u8>>> {
     let mut stored = StoredApiKey {
         public_key: public_key.to_string(),
-        private_key: hex::encode(key.private_key()),
+        private_key: hex::encode(Zeroizing::new(key.private_key())),
         curve: KeyCurve::P256,
     };
     let encoded = serde_json::to_vec(&stored);
     stored.private_key.zeroize();
-    let encoded = Zeroizing::new(encoded?);
-    let path = match output {
-        Some(path) => path,
-        None => {
-            let dir = state_dir()?.join("api-keys");
-            fs::create_dir_all(&dir)
-                .await
-                .with_context(|| format!("create {}", dir.display()))?;
-            let dir = fs::canonicalize(&dir)
-                .await
-                .with_context(|| format!("resolve {}", dir.display()))?;
-            dir.join(format!("{}.json", stored.public_key))
-        }
-    };
-    secure_create(&path, &encoded)
-        .await
-        .with_context(|| format!("create {}", path.display()))?;
-    Ok(GeneratedApiKey { public_key, path })
+    Ok(Zeroizing::new(encoded?))
 }
 
 #[cfg(test)]
@@ -75,7 +107,6 @@ mod tests {
     use std::os::unix::fs::symlink;
 
     use super::*;
-    use crate::auth::SecureCreateError;
 
     #[tokio::test]
     async fn generated_credentials_are_valid_private_and_not_in_output() {

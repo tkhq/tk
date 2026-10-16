@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, fs};
+use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
@@ -93,8 +93,10 @@ fn managing_identities_rotate_and_revoke() {
     assert_eq!(switched["data"]["publicKey"], next_public);
     assert_eq!(
         switched["data"]["previousApiKeyFile"],
-        fs::canonicalize(&first_file).unwrap().to_str().unwrap()
+        first_file.to_str().unwrap()
     );
+    assert_eq!(switched["data"]["previousApiKeyFileRemoved"], true);
+    assert!(!first_file.exists());
     let whoami = run.ok(run.cli().args(["--profile", &profile, "whoami"]));
     assert_eq!(whoami["data"]["userId"], user_id);
 

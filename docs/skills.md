@@ -17,4 +17,7 @@ tk skills install --into DIR
 
 The embedded package matches the installed binary's commands; a repository
 checkout may describe another version, so read skills with `show` rather than
-from a checkout.
+from a checkout. `install` replaces an earlier package only while its files
+still match the `turnkey-tk.json` manifest it wrote, and the record names the
+replaced version in `replacedVersion`; an install edited by hand is refused
+with `invalid_input` and left untouched.

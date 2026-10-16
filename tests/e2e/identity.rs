@@ -1,9 +1,22 @@
-use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+};
 
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::run::{AGENT_TAG, AdminLogin, HUMAN_TAG, Run, assert_unauthenticated, result};
+
+pub(crate) fn managed_key_file(run: &Run, public_key: &str) -> PathBuf {
+    fs::canonicalize(
+        run.home()
+            .join(".config/turnkey/tk/api-keys")
+            .join(format!("{public_key}.json")),
+    )
+    .unwrap()
+}
 
 fn stored_key(path: &Path, record: &Value) -> Value {
     let stored: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
@@ -208,9 +221,9 @@ fn login_creates_registry_and_profile_commands_behave() {
     assert_eq!(deleted["command"], "profile.delete");
     assert_eq!(
         deleted["data"],
-        json!({"name": name, "credentialFilesDeleted": false})
+        json!({"name": name, "credentialFilesDeleted": true})
     );
-    assert!(key_file.exists());
+    assert!(!key_file.exists());
     assert_eq!(
         run.ok(run.cli().args(["profile", "list"]))["data"],
         json!({"activeProfile": null, "profiles": {}})
@@ -277,19 +290,20 @@ fn partial_bundle_is_invalid_input_without_registry_fallback() {
 fn login_with_unregistered_credential_fails_and_selects_nothing() {
     let run = Run::new();
     let key = run.key();
+    let public_key = hex::encode(key.compressed_public_key());
     let key_file = run.home.path().join("unregistered.json");
     fs::write(
         &key_file,
         json!({
-            "public_key": hex::encode(key.compressed_public_key()),
+            "public_key": public_key,
             "private_key": hex::encode(key.private_key()),
-            "curve": "p256",
+            "curve": "API_KEY_CURVE_P256",
         })
         .to_string(),
     )
     .unwrap();
     let name = run.name("nope");
-    run.ok(run
+    let created = run.ok(run
         .cli()
         .args([
             "profile",
@@ -301,10 +315,23 @@ fn login_with_unregistered_credential_fails_and_selects_nothing() {
             "--api-key-file",
         ])
         .arg(&key_file));
+    assert_eq!(
+        created["data"],
+        json!({
+            "name": name,
+            "profile": {
+                "organization_id": run.org(),
+                "api_base_url": run.config.api_base_url,
+                "api_key_file": managed_key_file(&run, &public_key),
+            },
+            "publicKey": public_key,
+            "nextStep": format!("run tk login --profile-name {name}"),
+        })
+    );
+    fs::remove_file(&key_file).unwrap();
     let error = run.err(run.cli().args(["login", "--profile-name", &name]));
     assert_eq!(error["reason"], "command_error");
     assert_unauthenticated(&error);
-    let public_key = hex::encode(key.compressed_public_key());
     assert_eq!(
         error["details"],
         json!({
@@ -336,12 +363,7 @@ fn profile_create_generates_a_credential_that_logs_in_once_registered() {
     ]));
     assert_eq!(created["command"], "profile.create");
     let public_key = created["data"]["publicKey"].as_str().unwrap().to_string();
-    let key_file = fs::canonicalize(
-        run.home()
-            .join(".config/turnkey/tk/api-keys")
-            .join(format!("{public_key}.json")),
-    )
-    .unwrap();
+    let key_file = managed_key_file(&run, &public_key);
     let profile = json!({
         "organization_id": org,
         "api_base_url": run.config.api_base_url,
@@ -353,7 +375,7 @@ fn profile_create_generates_a_credential_that_logs_in_once_registered() {
             "name": name,
             "profile": profile,
             "publicKey": public_key,
-            "nextStep": format!("register public key {public_key} (API_KEY_CURVE_P256) on a user in organization {org}, then run tk login --profile-name {name}"),
+            "nextStep": format!("register public key {public_key} (API_KEY_CURVE_P256) on a user in organization {org}, under Advanced settings when adding the API key in the dashboard, then run tk login --profile-name {name}"),
         })
     );
     let stored = stored_key(&key_file, &created);
@@ -430,6 +452,42 @@ fn profile_create_generates_a_credential_that_logs_in_once_registered() {
             "credentialSource": "profile",
         })
     );
+
+    let human_name = run.name("human");
+    let human = run.human_stdout(run.cli().args([
+        "profile",
+        "create",
+        "--profile-name",
+        &human_name,
+        "--organization-id",
+        org,
+        "--message-format",
+        "human",
+    ]));
+    let human_public_key = run.ok(run.cli().args([
+        "profile",
+        "show",
+        "--profile-name",
+        &human_name,
+    ]))["data"]["profile"]["api_key_file"]
+        .as_str()
+        .map(|path| {
+            Path::new(path)
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_owned()
+        })
+        .unwrap();
+    assert_eq!(
+        human,
+        format!(
+            r#"saved profile {human_name} with credential {}; register public key {human_public_key} (API_KEY_CURVE_P256) on a user in organization {org}, under Advanced settings when adding the API key in the dashboard, then run tk login --profile-name {human_name}
+"#,
+            managed_key_file(&run, &human_public_key).display()
+        )
+    );
 }
 
 #[test]
@@ -453,13 +511,17 @@ fn profile_set_switches_the_credential_file() {
     assert_eq!(set["command"], "profile.set");
     assert_eq!(
         set["data"]["profile"]["api_key_file"],
-        fs::canonicalize(&next_key_file).unwrap().to_str().unwrap()
+        managed_key_file(&run, next_public.as_str().unwrap())
+            .to_str()
+            .unwrap()
     );
     assert_eq!(set["data"]["publicKey"], next_public);
     assert_eq!(
         set["data"]["previousApiKeyFile"],
-        fs::canonicalize(&admin.key_file).unwrap().to_str().unwrap()
+        admin.key_file.to_str().unwrap()
     );
+    assert_eq!(set["data"]["previousApiKeyFileRemoved"], true);
+    assert!(!admin.key_file.exists());
 
     // The new key is not registered, so the profile no longer authenticates.
     let denied = run.err(run.cli().args(["--profile", &admin.name, "whoami"]));
@@ -474,7 +536,7 @@ fn profile_set_switches_the_credential_file() {
             &admin.name,
             "--api-key-file",
         ])
-        .arg(&admin.key_file));
+        .arg(run.home().join("admin-key.json")));
     assert_eq!(
         restored["data"]["profile"]["api_key_file"],
         fs::canonicalize(&admin.key_file).unwrap().to_str().unwrap()

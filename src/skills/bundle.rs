@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
 pub const ROOT: &str = "turnkey-tk";
@@ -161,25 +161,64 @@ pub struct Installed {
     pub(super) version: &'static str,
     pub(super) digest: &'static str,
     pub(super) files: Vec<String>,
-    pub(super) already_installed: bool,
+    #[serde(flatten)]
+    pub(super) change: Change,
+}
+
+#[cfg_attr(test, derive(Default))]
+pub(super) enum Change {
+    #[cfg_attr(test, default)]
+    Installed,
+    AlreadyInstalled,
+    Replaced {
+        version: String,
+    },
+}
+
+impl Serialize for Change {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Record<'a> {
+            already_installed: bool,
+            replaced_version: Option<&'a str>,
+        }
+        let (already_installed, replaced_version) = match self {
+            Self::Installed => (false, None),
+            Self::AlreadyInstalled => (true, None),
+            Self::Replaced { version } => (false, Some(version.as_str())),
+        };
+        Record {
+            already_installed,
+            replaced_version,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl Display for Installed {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let destination = self.destination.display();
-        if self.already_installed {
-            write!(
+        let Self {
+            destination,
+            version,
+            digest: _,
+            files,
+            change,
+        } = self;
+        let destination = destination.display();
+        let count = files.len();
+        match change {
+            Change::AlreadyInstalled => {
+                write!(f, "{ROOT} {version} is already installed at {destination}")
+            }
+            Change::Replaced { version: replaced } => write!(
                 f,
-                "{ROOT} {} is already installed at {destination}",
-                self.version
-            )
-        } else {
-            write!(
+                "replaced {ROOT} {replaced} with {version} at {destination} ({count} files); start from its SKILL.md"
+            ),
+            Change::Installed => write!(
                 f,
-                "installed {ROOT} {} to {destination} ({} files); start from its SKILL.md",
-                self.version,
-                self.files.len()
-            )
+                "installed {ROOT} {version} to {destination} ({count} files); start from its SKILL.md"
+            ),
         }
     }
 }

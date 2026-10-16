@@ -143,6 +143,7 @@ pub struct OperationOutput {
     command: &'static str,
     data: Value,
     activity: Option<Value>,
+    human: Option<String>,
 }
 
 /// Record status. A record without an activity is complete; every other
@@ -168,6 +169,14 @@ impl OperationOutput {
             command,
             data,
             activity,
+            human: None,
+        }
+    }
+
+    pub(crate) fn with_human(self, human: String) -> Self {
+        Self {
+            human: Some(human),
+            ..self
         }
     }
 
@@ -251,6 +260,9 @@ impl Serialize for OperationOutput {
 
 impl Display for OperationOutput {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Some(human) = &self.human {
+            return f.write_str(human);
+        }
         // fmt::Error carries no payload.
         #[allow(clippy::map_err_ignore)]
         let rendered = serde_json::to_string_pretty(self).map_err(|_| fmt::Error)?;

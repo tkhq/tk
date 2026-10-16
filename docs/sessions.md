@@ -24,7 +24,7 @@ sequenceDiagram
     Provisioner-->>Agent: done
     Agent->>Turnkey: tk session activate --profile-name agent
     Turnkey-->>Agent: whoami verifies the pending key
-    Note over Agent: profile now uses the new key<br/>old generated key file removed
+    Note over Agent: profile now uses the new key<br/>old stored key file removed
     Agent->>Turnkey: tk session status --profile-name agent
     Turnkey-->>Agent: expiresAt, secondsLeft
     Note over Agent: exit 1 with code session_expiring<br/>when under --warn-before (default 48h)
@@ -66,8 +66,9 @@ tk session activate --profile-name agent
 
 Verifies the pending key with `whoami`, then repoints the profile at it. Until
 the key is registered the command fails with `unauthorized` and the profile is
-unchanged. A previous key file is deleted only if `tk` generated it under
-`~/.config/turnkey/tk/api-keys/`.
+unchanged. A previous key file is deleted only if it lies under
+`~/.config/turnkey/tk/api-keys/` and no other profile uses it; a file passed
+with `--api-key-file` is never deleted, only `tk`'s copy of it.
 
 ## Status
 

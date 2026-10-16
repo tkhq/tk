@@ -147,7 +147,7 @@ bootstrapping, the minting row chosen from
    ```
 
    `activate` verifies the new key with `whoami` before repointing the profile and removes the
-   previous key file only if `tk` generated it (`data.previousKeyFileRemoved`); the old key stays valid until it expires.
+   previous key file only if `tk` stored it (`data.previousKeyFileRemoved`); the old key stays valid until it expires.
 
 6. **Recover.** Pick the branch that matches the observed state.
    - *Expired before renewal*: `whoami` fails `unauthorized`; `session request` still succeeds
