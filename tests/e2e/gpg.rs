@@ -658,6 +658,16 @@ exec '{}' "$@"
         agent_environment,
         &["verify-commit", "HEAD"],
     );
+    let hooks = run.git_ok(
+        &git,
+        &shared_repo,
+        agent_environment,
+        &["hook", "list", "commit-msg"],
+    );
+    assert_eq!(
+        String::from_utf8(hooks.stdout).unwrap(),
+        "turnkey-co-author\n"
+    );
     let message = run.git_ok(
         &git,
         &shared_repo,

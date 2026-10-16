@@ -172,7 +172,7 @@ and the committer identity as `Name <email>`. GnuPG for the GPG path,
    the committer email. Outside CI, set `gpg.ssh.program` to the wrapper
    from step 5.
 
-7. **Add the co-author trailer.** Set the
+7. **Add the co-author trailer.** Set and check the
    [hook](../../docs/git-signing.md#co-author-trailer) beside step 5 or 6's config.
 
 8. **Hand off.** Report the wallet id or private key id, the fingerprint,

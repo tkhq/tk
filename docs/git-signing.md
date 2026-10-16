@@ -93,7 +93,15 @@ Run this after either signing setup:
 # Add `Co-authored-by: Turnkey <noreply@turnkey.com>` to every commit message.
 git config --global hook.turnkey-co-author.event commit-msg
 git config --global hook.turnkey-co-author.command "$(command -v tk) git co-author"
+
+# Prints `turnkey-co-author` when the Git on `PATH` runs the hook.
+git hook list commit-msg
 ```
+
+Git older than 2.54, including the `/usr/bin/git` that ships with macOS,
+ignores the hook without an error, and its `git hook list` fails with
+`unknown subcommand`. Put a newer Git first on the `PATH` of every process
+that commits, including an agent runtime that builds its own `PATH`.
 
 ## Human and agent on one machine
 
