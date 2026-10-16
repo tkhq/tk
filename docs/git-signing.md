@@ -85,6 +85,16 @@ the environment is enough. To sign from a process that holds no Turnkey
 credential, set `TK_GPG_AGENT_SOCK` as in
 [GPG agent](./gpg-signing.md#gpg-agent); Git needs no other change.
 
+## Co-author trailer
+
+Run this after either signing setup:
+
+```bash
+# Add `Co-authored-by: Turnkey <noreply@turnkey.com>` to every commit message.
+git config --global hook.turnkey-co-author.event commit-msg
+git config --global hook.turnkey-co-author.command "$(command -v tk) git co-author"
+```
+
 ## Human and agent on one machine
 
 When a human signs with their own key under the same OS user and `HOME` as an
@@ -94,13 +104,15 @@ under that `HOME`, and give the agent's process the configuration instead:
 
 ```bash
 # Set these in the agent process's environment only.
-export GIT_CONFIG_COUNT=6
+export GIT_CONFIG_COUNT=8
 export GIT_CONFIG_KEY_0=gpg.format       GIT_CONFIG_VALUE_0=openpgp
 export GIT_CONFIG_KEY_1=gpg.program      GIT_CONFIG_VALUE_1="$HOME/.local/bin/tk-sign"
 export GIT_CONFIG_KEY_2=user.signingkey  GIT_CONFIG_VALUE_2="$FINGERPRINT"
 export GIT_CONFIG_KEY_3=commit.gpgsign   GIT_CONFIG_VALUE_3=true
 export GIT_CONFIG_KEY_4=user.name        GIT_CONFIG_VALUE_4=Agent
 export GIT_CONFIG_KEY_5=user.email       GIT_CONFIG_VALUE_5=agent@example.com
+export GIT_CONFIG_KEY_6=hook.turnkey-co-author.event   GIT_CONFIG_VALUE_6=commit-msg
+export GIT_CONFIG_KEY_7=hook.turnkey-co-author.command GIT_CONFIG_VALUE_7="$(command -v tk) git co-author"
 # Verify against a GnuPG home of the agent's own, not the human's keyring.
 export GNUPGHOME="$HOME/.config/turnkey/tk/gnupg"
 mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
@@ -113,11 +125,12 @@ config file and only in processes that inherit them, so the human's
 them where the agent runtime defines its environment: for example, the `env`
 map in Claude Code's `~/.claude/settings.json`, Codex's `shell_environment_policy`
 `set` table in `~/.codex/config.toml`, the equivalent setting in another
-agent runtime, or a CI job's `env`. Such a map does not expand `$HOME` or
-`$FINGERPRINT`, so write literal values there. A sandbox can block signing,
-which calls Turnkey: for example, Codex's `workspace-write` sandbox has no
-network access by default, so set `network_access = true` under
-`[sandbox_workspace_write]` or approve the escalation.
+agent runtime, or a CI job's `env`. Such a map does not expand `$HOME`,
+`$FINGERPRINT`, or `$(command -v tk)`, so write literal values there. A
+sandbox can block signing, which calls Turnkey: for example, Codex's
+`workspace-write` sandbox has no network access by default, so set
+`network_access = true` under `[sandbox_workspace_write]` or approve the
+escalation.
 
 ## Skills
 
