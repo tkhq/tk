@@ -1,7 +1,6 @@
 //! Signs `OpenPGP` digests through Turnkey sign raw payload.
 
 use anyhow::{Context, Result};
-use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::{
     ActivityResult, TurnkeyClient,
     generated::{
@@ -13,6 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::{ActivityError, ActivityErrorKind},
+    stamper::Stamper,
     wire::openpgp::{
         entity::{EcdsaSignature, SignDigest, SignDigestFuture},
         key::UncompressedPoint,
@@ -22,12 +22,12 @@ use crate::{
 /// The digest is already the value `OpenPGP` signs, so the hash function is
 /// [`HashFunction::NoOp`].
 pub struct TurnkeySigner<'c> {
-    client: &'c TurnkeyClient<TurnkeyP256ApiKey>,
+    client: &'c TurnkeyClient<Stamper>,
     org_id: Uuid,
 }
 
 impl<'c> TurnkeySigner<'c> {
-    pub fn new(client: &'c TurnkeyClient<TurnkeyP256ApiKey>, org_id: Uuid) -> Self {
+    pub fn new(client: &'c TurnkeyClient<Stamper>, org_id: Uuid) -> Self {
         Self { client, org_id }
     }
 }

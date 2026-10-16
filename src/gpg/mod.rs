@@ -16,7 +16,6 @@ use registry::{GpgKeyEntry, KeyName, Scope, SelectError, SigningKeyName};
 use serde::Serialize;
 use signer::TurnkeySigner;
 use tokio::fs;
-use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::TurnkeyClient;
 use uuid::Uuid;
 
@@ -24,6 +23,7 @@ use crate::{
     auth::{self, AuthOptions, build_turnkey_client},
     errors::{InvalidInput, Malformed, MissingResource},
     outcome::Outcome,
+    stamper::Stamper,
     wire::openpgp::entity::{UserId, armored_detached_signature, export_public_key},
 };
 
@@ -307,7 +307,7 @@ fn selection_error(error: SelectError, unnamed_remedy: &str) -> anyhow::Error {
 async fn open_wallet(
     options: &AuthOptions,
     wallet_id: Uuid,
-) -> Result<(Uuid, TurnkeyClient<TurnkeyP256ApiKey>, keys::WalletKeys)> {
+) -> Result<(Uuid, TurnkeyClient<Stamper>, keys::WalletKeys)> {
     let auth = auth::resolve(options).await?;
     let client = build_turnkey_client(auth.stamper, &auth.api_base_url)?;
     let wallet = keys::read_wallet(&client, auth.org_id, wallet_id).await?;
@@ -449,7 +449,7 @@ async fn run_keys(command: KeysCommand, options: &AuthOptions) -> Result<Outcome
 async fn select_registered(
     options: &AuthOptions,
     key: Option<SigningKeyName>,
-) -> Result<(GpgKeyEntry, TurnkeyClient<TurnkeyP256ApiKey>)> {
+) -> Result<(GpgKeyEntry, TurnkeyClient<Stamper>)> {
     auth::open_gpg_key(options, key.map(KeyName::from))
         .await?
         .map_err(|error| selection_error(error, "name one with --key"))

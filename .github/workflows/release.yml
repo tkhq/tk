@@ -49,6 +49,8 @@ jobs:
             target: aarch64-unknown-linux-musl
           - os: macos-latest
             target: aarch64-apple-darwin
+            # PC/SC is a system framework on macOS; the static musl builds cannot link it.
+            features: yubikey
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,9 +64,10 @@ jobs:
       - name: Build release binary
         env:
           TARGET: ${{ matrix.target }}
+          FEATURES: ${{ matrix.features }}
         run: |
           rustup target add "$TARGET"
-          cargo build --locked --release --bin tk --target "$TARGET"
+          cargo build --locked --release --bin tk --target "$TARGET" --features "$FEATURES"
       - name: Package archive and checksum
         shell: bash
         env:

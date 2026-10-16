@@ -11,8 +11,7 @@ use turnkey_client::generated::external::data::v1::ApiKey;
 
 use crate::errors::InvalidInput;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(test, derive(PartialEq))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "String")]
 pub(crate) struct CompressedPublicKey(String);
 

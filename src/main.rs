@@ -17,9 +17,11 @@ mod sessions;
 mod skills;
 mod socket;
 mod ssh;
+mod stamper;
 mod update;
 mod wallets;
 mod wire;
+mod yubikey;
 
 use std::{
     env,
