@@ -103,6 +103,15 @@ ignores the hook without an error, and its `git hook list` fails with
 `unknown subcommand`. Put a newer Git first on the `PATH` of every process
 that commits, including an agent runtime that builds its own `PATH`.
 
+## Committer identity
+
+An agent that commits for a person signs as that person's name with
+`(agent)` and their address plus-tagged with the agent's Turnkey user name,
+such as `Jane Doe (agent) <jane+agent@example.com>`. Its commits group beside
+the person's in `git shortlog`, the suffix marks automation, and GitHub's
+confirmation link for the address reaches the person's inbox, so it can be
+verified on their account; see [GitHub](./gpg-signing.md#github).
+
 ## Human and agent on one machine
 
 When a human signs with their own key under the same OS user and `HOME` as an
@@ -117,8 +126,8 @@ export GIT_CONFIG_KEY_0=gpg.format       GIT_CONFIG_VALUE_0=openpgp
 export GIT_CONFIG_KEY_1=gpg.program      GIT_CONFIG_VALUE_1="$HOME/.local/bin/tk-sign"
 export GIT_CONFIG_KEY_2=user.signingkey  GIT_CONFIG_VALUE_2="$FINGERPRINT"
 export GIT_CONFIG_KEY_3=commit.gpgsign   GIT_CONFIG_VALUE_3=true
-export GIT_CONFIG_KEY_4=user.name        GIT_CONFIG_VALUE_4=Agent
-export GIT_CONFIG_KEY_5=user.email       GIT_CONFIG_VALUE_5=agent@example.com
+export GIT_CONFIG_KEY_4=user.name        GIT_CONFIG_VALUE_4='Jane Doe (agent)'
+export GIT_CONFIG_KEY_5=user.email       GIT_CONFIG_VALUE_5=jane+agent@example.com
 export GIT_CONFIG_KEY_6=hook.turnkey-co-author.event   GIT_CONFIG_VALUE_6=commit-msg
 export GIT_CONFIG_KEY_7=hook.turnkey-co-author.command GIT_CONFIG_VALUE_7="$(command -v tk) git co-author"
 # Verify against a GnuPG home of the agent's own, not the human's keyring.

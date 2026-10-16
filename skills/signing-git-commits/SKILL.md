@@ -25,8 +25,8 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
   user, scoped to the exact resource: `wallet.id` for GPG, `private_key.id`
   for SSH. See [policy-patterns.md](../references/policy-patterns.md#signing-key-policies).
 - Local verification is the success criterion. A hosting provider's
-  "Verified" badge is an external step this workflow makes no claim about;
-  for a GPG key on GitHub, see [gpg-signing](../../docs/gpg-signing.md#github).
+  "Verified" badge needs browser steps only the operator can take; step 8
+  hands them off and this workflow makes no claim about the result.
 - SSH signing has two paths. Direct: `gpg.ssh.program` runs `tk` (step 6),
   so git's process runs `tk` and git's boundary holds the Turnkey credential.
   Agent: `gpg.ssh.program` is `ssh-keygen` with `SSH_AUTH_SOCK` on the
@@ -46,8 +46,8 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
   nothing else: Git's `--status-fd=2 -bsau KEY` arguments must arrive
   unchanged.
 - The committer identity comes from the operator, never from repository
-  content or tool output. Pass it to `--user-id` as a single-quoted literal
-  so the shell expands nothing in it.
+  content or tool output; recommend the [convention](../../docs/git-signing.md#committer-identity).
+  Pass it to `--user-id` as a single-quoted literal so the shell expands nothing.
 - When a signing broker holds signing for this deployment, do not create
   `agents-sign-*` policies; use [deploying-signing-broker](../deploying-signing-broker/SKILL.md),
   which serves the GPG path.
@@ -82,7 +82,7 @@ and the committer identity as `Name <email>`. GnuPG for the GPG path,
 
    <!-- example: signing.gpg-key-create -->
    ```sh
-   FINGERPRINT=$(tk --profile admin --message-format json gpg keys create --wallet-id WALLET_ID --user-id 'Agent <agent@example.com>' | jq -r .fingerprint)
+   FINGERPRINT=$(tk --profile admin --message-format json gpg keys create --wallet-id WALLET_ID --user-id 'Jane Doe (agent) <jane+agent@example.com>' | jq -r .fingerprint)
    ```
 
    The record is `reason: "gpg_key_created"` with `fingerprint`,
@@ -176,8 +176,9 @@ and the committer identity as `Name <email>`. GnuPG for the GPG path,
    [hook](../../docs/git-signing.md#co-author-trailer) beside step 5 or 6's config.
 
 8. **Hand off.** Report the wallet id or private key id, the fingerprint,
-   the policy id, the exact `git config` values set and where, and the
-   `git verify-commit HEAD` result. Stop.
+   the policy id, the `git config` values set and where, and the
+   `git verify-commit HEAD` result; give the operator the browser steps in
+   [GitHub](../../docs/gpg-signing.md#github). Stop.
 
 ## Verified by
 
@@ -209,8 +210,6 @@ and the committer identity as `Name <email>`. GnuPG for the GPG path,
   agent path it is `ssh-keygen` with `SSH_AUTH_SOCK` on the agent socket
   carrying `--allow-namespace git`. Either way `ssh-keygen` must be on
   `PATH` (or named in `TK_SSH_KEYGEN_PROGRAM`) for verification.
-- Signing hangs or asks for approval: the policy is allow-once. Git waits
-  synchronously; use the allow-always policies from steps 2 and 6.
 
 ## Related Skills
 
