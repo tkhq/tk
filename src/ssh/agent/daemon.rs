@@ -26,10 +26,10 @@ use super::{
     AgentNotRunning, AgentPathArgs, AgentRunning, AgentStopped, DestinationConstraints,
     InternalRunArgs, ServingArgs, StartArgs,
     allowed_hosts::{self, AllowedHosts},
-    lock::{AgentLock, is_lock_held_by_other, resolve_lock_file},
+    lock::{AgentLock, is_lock_held_by_other},
 };
 use crate::{
-    auth::{self, AuthOptions, CredentialSource, LoadedRegistry, ReloadingClient},
+    auth::{self, AuthOptions, CredentialSource, LoadedRegistry, ReloadingClient, secure_create},
     errors::InvalidInput,
     outcome::{MachineOnly, Outcome},
     socket::SocketMode,
@@ -118,7 +118,6 @@ struct AgentMetadata {
 struct AgentPaths {
     socket: PathBuf,
     pid_file: PathBuf,
-    lock_file: PathBuf,
 }
 
 impl AgentPaths {
@@ -133,21 +132,12 @@ impl AgentPaths {
                 (socket, pid_file.into())
             }
         };
-        let lock_file = resolve_lock_file(&pid_file);
-        Ok(Self {
-            socket,
-            pid_file,
-            lock_file,
-        })
+        Ok(Self { socket, pid_file })
     }
 }
 
 pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
-    let AgentPaths {
-        socket,
-        pid_file,
-        lock_file,
-    } = AgentPaths::resolve(args.socket, args.pid_file)?;
+    let AgentPaths { socket, pid_file } = AgentPaths::resolve(args.socket, args.pid_file)?;
     let ServingArgs {
         key,
         allowed_hosts_file,
@@ -182,10 +172,11 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
 
     create_parent_dir(&socket).await?;
     create_parent_dir(&pid_file).await?;
-    create_parent_dir(&lock_file).await?;
 
     if path_exists(&socket).await? {
-        if probe_agent_socket(&socket).await.is_ok() || is_lock_held_by_other(lock_file).await? {
+        if probe_agent_socket(&socket).await.is_ok()
+            || is_lock_held_by_other(pid_file.clone()).await?
+        {
             return Err(anyhow!(
                 "ssh-agent is already running on {}",
                 socket.display()
@@ -240,15 +231,11 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
 }
 
 pub async fn stop(args: AgentPathArgs) -> Result<Outcome> {
-    let AgentPaths {
-        socket,
-        pid_file,
-        lock_file,
-    } = AgentPaths::resolve(args.socket, args.pid_file)?;
+    let AgentPaths { socket, pid_file } = AgentPaths::resolve(args.socket, args.pid_file)?;
 
     // Holding the lock across cleanup keeps a racing start from having the pid
     // file and socket it just created removed behind it.
-    if let Some(_guard) = AgentLock::acquire(lock_file).await? {
+    if let Some(_guard) = AgentLock::acquire(pid_file.clone()).await? {
         let _ = fs::remove_file(&pid_file).await;
         let _ = remove_socket_if_present(&socket).await;
         return Ok(Outcome::AgentNotRunning(AgentNotRunning {}));
@@ -264,13 +251,9 @@ pub async fn stop(args: AgentPathArgs) -> Result<Outcome> {
 }
 
 pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
-    let AgentPaths {
-        socket,
-        pid_file,
-        lock_file,
-    } = AgentPaths::resolve(args.socket, args.pid_file)?;
+    let AgentPaths { socket, pid_file } = AgentPaths::resolve(args.socket, args.pid_file)?;
 
-    if !is_lock_held_by_other(lock_file).await? {
+    if !is_lock_held_by_other(pid_file.clone()).await? {
         return Err(anyhow!("ssh-agent is not running"));
     }
 
@@ -351,8 +334,7 @@ pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result
         backoff: BACKOFF,
     });
 
-    let lock_file = resolve_lock_file(&args.pid_file);
-    let _lock = AgentLock::acquire(lock_file)
+    let _lock = AgentLock::acquire(args.pid_file.clone())
         .await?
         .ok_or_else(|| anyhow!("ssh-agent is already running"))?;
     let metadata = AgentMetadata {
@@ -451,9 +433,7 @@ pub async fn is_default_running() -> bool {
     let Ok(pid_file) = default_pid_path() else {
         return false;
     };
-    is_lock_held_by_other(resolve_lock_file(&pid_file))
-        .await
-        .unwrap_or(false)
+    is_lock_held_by_other(pid_file).await.unwrap_or(false)
 }
 
 fn default_agent_dir() -> Result<PathBuf> {
@@ -527,8 +507,22 @@ async fn remove_pid_file_owned_by(path: &Path, pid: u32) {
 async fn write_pid_file(path: &Path, metadata: &AgentMetadata) -> Result<()> {
     // A reader must never observe a partially written document, so the bytes
     // land on a sibling path first and are renamed over the pid file.
-    let temporary = PathBuf::from(format!("{}.{}.tmp", path.display(), metadata.pid));
-    fs::write(&temporary, serde_json::to_vec(metadata)?)
+    match fs::symlink_metadata(path).await {
+        Ok(existing) if !existing.is_file() => {
+            return Err(anyhow!(
+                "refusing to replace non-regular pid file at {}",
+                path.display()
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("failed to inspect pid file at {}", path.display()));
+        }
+    }
+    let temporary = PathBuf::from(format!("{}.{}.tmp", path.display(), Uuid::new_v4()));
+    secure_create(&temporary, &serde_json::to_vec(metadata)?)
         .await
         .with_context(|| format!("failed to write pid file at {}", temporary.display()))?;
     match fs::rename(&temporary, path).await {
@@ -655,6 +649,8 @@ fn send_signal(pid: u32, signal: i32) -> io::Result<()> {
 #[cfg(test)]
 #[allow(clippy::disallowed_types)]
 mod tests {
+    use std::os::unix::fs::symlink;
+
     use serde_json::json;
     use tempfile::TempDir;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
@@ -663,6 +659,7 @@ mod tests {
     use crate::{
         auth::{ResolvedAuth, build_turnkey_client},
         errors::{ErrorCode, classify},
+        socket::agent_lock_path,
         ssh::registry::PrivateKeyId,
     };
 
@@ -858,7 +855,7 @@ mod tests {
         let listener = tokio::net::UnixListener::bind(&socket).unwrap();
         // Stands in for the agent that won the lock; its pid file is not
         // written yet, so an unlocked stop would unlink the socket regardless.
-        let _held = AgentLock::acquire(resolve_lock_file(&pid_file))
+        let _held = AgentLock::acquire(pid_file.clone())
             .await
             .unwrap()
             .expect("the lock should be free before the test takes it");
@@ -895,5 +892,42 @@ mod tests {
         write_pid_file(&pid_file, &metadata(0)).await.unwrap();
         remove_stale_pid_file(&pid_file).await.unwrap();
         assert!(!path_exists(&pid_file).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_symlink_at_the_lock_path_is_refused() {
+        let (directory, pid_file, _socket) = agent_paths();
+        let target = directory.path().join("target");
+        let lock_file = agent_lock_path(&pid_file);
+        symlink(&target, &lock_file).unwrap();
+
+        let Err(error) = AgentLock::acquire(pid_file).await else {
+            panic!("a symlinked lock must not be acquired")
+        };
+
+        assert_eq!(
+            error.to_string(),
+            format!("failed to open agent lock {}", lock_file.display())
+        );
+        assert!(!target.exists());
+    }
+
+    #[tokio::test]
+    async fn a_symlink_at_the_pid_path_is_refused() {
+        let (directory, pid_file, _socket) = agent_paths();
+        let target = directory.path().join("target");
+        symlink(&target, &pid_file).unwrap();
+
+        let error = write_pid_file(&pid_file, &metadata(0)).await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "refusing to replace non-regular pid file at {}",
+                pid_file.display()
+            )
+        );
+        assert!(!target.exists());
+        assert!(fs::symlink_metadata(&pid_file).await.unwrap().is_symlink());
     }
 }

@@ -22,7 +22,7 @@ use tokio::{
 use tracing::{debug, warn};
 
 use super::{Ed25519PublicKey, protocol};
-use crate::socket::SocketMode;
+use crate::socket::{SocketMode, restrict_agent_socket};
 
 /// One identity advertised by the SSH agent.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,9 +74,7 @@ pub async fn run(
             Ok(listener)
         })()
         .with_context(bind_context)?;
-        std::fs::set_permissions(&socket, mode.permissions()).with_context(|| {
-            format!("failed to restrict SSH agent socket at {}", socket.display())
-        })?;
+        restrict_agent_socket(&socket, mode)?;
         let listener = (|| -> io::Result<UnixListener> {
             listener.listen(128)?;
             UnixListener::from_std(StdUnixListener::from(listener))

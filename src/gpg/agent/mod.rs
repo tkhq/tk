@@ -1,17 +1,14 @@
 mod protocol;
 
 use std::{
-    fs::{File, Metadata, OpenOptions, Permissions},
+    fs::{File, Metadata},
     io::{self, ErrorKind},
     mem::zeroed,
     num::NonZeroUsize,
-    os::{
-        fd::AsRawFd,
-        unix::{
-            ffi::OsStrExt,
-            fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-            net::UnixListener as StdUnixListener,
-        },
+    os::unix::{
+        ffi::OsStrExt,
+        fs::{FileTypeExt, MetadataExt},
+        net::UnixListener as StdUnixListener,
     },
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -47,7 +44,7 @@ use super::{
 use crate::{
     auth::{self, AuthOptions, CredentialSource, ReloadingClient, config_dir},
     outcome::{MachineOnly, Outcome},
-    socket::SocketMode,
+    socket::{SocketMode, open_agent_lock, restrict_agent_socket, try_lock_agent},
     wire::openpgp::{
         entity::{ArmoredSignature, SigningKey, armored_detached_signature},
         key::Fingerprint,
@@ -334,21 +331,17 @@ async fn acquire_socket(socket: &SocketPath, mode: SocketMode) -> Result<SocketG
         Ok((staging, listener))
     })()
     .with_context(bind_context)?;
-    let metadata = match fs::symlink_metadata(&staging).await {
+    let metadata = match restrict_agent_socket(&staging, mode) {
         Ok(metadata) => metadata,
         Err(error) => {
             let _ = fs::remove_file(&staging).await;
-            return Err(error)
-                .with_context(|| format!("failed to inspect agent socket {}", path.display()));
+            return Err(error.context(bind_context()));
         }
     };
     let staging_guard = CleanupSocketGuard {
         path: staging,
         identity: SocketIdentity::from_metadata(&metadata),
     };
-    fs::set_permissions(&staging_guard.path, mode.permissions())
-        .await
-        .with_context(|| format!("failed to restrict OpenPGP agent socket {}", path.display()))?;
     let listener = (|| -> io::Result<UnixListener> {
         listener.listen(128)?;
         UnixListener::from_std(StdUnixListener::from(listener))
@@ -404,48 +397,15 @@ fn unix_socket_path_capacity() -> usize {
 }
 
 fn acquire_socket_lock(path: &Path) -> Result<File> {
-    let mut lock_name = path.as_os_str().to_os_string();
-    lock_name.push(".lock");
-    let lock_path = PathBuf::from(lock_name);
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .mode(0o600)
-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
-        .open(&lock_path)
-        .with_context(|| format!("failed to open agent lock {}", lock_path.display()))?;
-    let metadata = file
-        .metadata()
-        .with_context(|| format!("failed to inspect agent lock {}", lock_path.display()))?;
-    if !metadata.file_type().is_file() {
-        return Err(anyhow!(
-            "refusing to use non-regular agent lock {}",
-            lock_path.display()
-        ));
-    }
-    // SAFETY: geteuid takes no arguments and has no memory-safety preconditions.
-    let effective_uid = unsafe { libc::geteuid() };
-    if metadata.uid() != effective_uid {
-        return Err(anyhow!(
-            "refusing to use agent lock {} owned by another user",
-            lock_path.display()
-        ));
-    }
-    file.set_permissions(Permissions::from_mode(0o600))
-        .with_context(|| format!("failed to restrict agent lock {}", lock_path.display()))?;
+    let file = open_agent_lock(path)?;
 
-    // SAFETY: flock only observes the valid file descriptor owned by `file`.
-    let status = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-    if status == 0 {
-        return Ok(file);
+    match try_lock_agent(file) {
+        Ok(Some(file)) => Ok(file),
+        Ok(None) => agent_already_running(path),
+        Err(error) => {
+            Err(error).with_context(|| format!("failed to lock agent socket {}", path.display()))
+        }
     }
-    let error = io::Error::last_os_error();
-    let raw_error = error.raw_os_error();
-    if raw_error == Some(libc::EWOULDBLOCK) || raw_error == Some(libc::EAGAIN) {
-        return agent_already_running(path);
-    }
-    Err(error).with_context(|| format!("failed to lock agent socket {}", path.display()))
 }
 
 async fn handle(mut stream: UnixStream, state: Arc<State>) {
@@ -587,7 +547,10 @@ fn agent_already_running<T>(path: &Path) -> Result<T> {
 mod tests {
     use std::{
         future::pending,
-        os::unix::{fs::symlink, net::UnixListener as TestUnixListener},
+        os::unix::{
+            fs::{PermissionsExt, symlink},
+            net::UnixListener as TestUnixListener,
+        },
         sync::atomic::{AtomicUsize, Ordering},
     };
 
@@ -596,6 +559,7 @@ mod tests {
     use tokio::sync::Notify;
 
     use super::*;
+    use crate::socket::agent_lock_path;
 
     #[derive(Debug, Parser)]
     struct AgentParser {
@@ -889,9 +853,7 @@ mod tests {
         );
         assert!(!path.exists());
         assert!(!parent.exists());
-        let mut lock_name = path.as_os_str().to_os_string();
-        lock_name.push(".lock");
-        assert!(!PathBuf::from(lock_name).exists());
+        assert!(!agent_lock_path(&path).exists());
     }
 
     #[tokio::test]
