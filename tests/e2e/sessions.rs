@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 
 use crate::{
+    identity::managed_key_file,
     policy_helpers::{allow_once, tag_consensus},
     run::{AGENT_TAG, HUMAN_TAG, Run, created_user_id, id_of, user_params},
 };
@@ -208,7 +209,7 @@ fn session_loop_rotates_an_agent_profile_and_reports_status() {
         run.ok(run
             .cli()
             .args(["profile", "show", "--profile-name", &agent_profile]))["data"]["profile"]["api_key_file"],
-        fs::canonicalize(&first_key_file).unwrap().to_str().unwrap()
+        managed_key_file(&run, &first_public).to_str().unwrap()
     );
 
     run.submit(
@@ -223,7 +224,7 @@ fn session_loop_rotates_an_agent_profile_and_reports_status() {
     assert_eq!(activated["command"], "session.activate");
     assert_eq!(activated["data"]["publicKey"], public_key);
     assert_eq!(activated["data"]["previousPublicKey"], first_public);
-    assert_eq!(activated["data"]["previousKeyFileRemoved"], false);
+    assert_eq!(activated["data"]["previousKeyFileRemoved"], true);
     assert_eq!(activated["data"]["identity"]["userId"], agent_id);
     assert!(first_key_file.exists());
     assert_eq!(
@@ -672,7 +673,7 @@ fn provisioning_session_agent_recovers_after_expiry() {
         activated["data"]["identity"]["userId"], agent_id,
         "{activated}"
     );
-    assert_eq!(activated["data"]["previousKeyFileRemoved"], false);
+    assert_eq!(activated["data"]["previousKeyFileRemoved"], true);
     let identity = run.ok(run.cli().args(["--profile", &profile, "whoami"]));
     assert_eq!(identity["data"]["userId"], agent_id);
 

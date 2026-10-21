@@ -32,7 +32,7 @@ use crate::{
         OrganizationMismatch, ProfileNotFound, SavedProfiles, is_unauthorized,
     },
     gpg::registry::{GpgKeyEntry, GpgKeyTable, KeyName, SelectError, SigningKeyName, StoredGpgKey},
-    keygen::{GeneratedApiKey, generate},
+    keygen::{GeneratedApiKey, ImportedApiKey, generate, import},
     operations::OperationOutput,
     sessions::public_key::CompressedPublicKey,
     ssh::registry::{
@@ -100,7 +100,9 @@ pub struct LoginArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ProfileCommand {
-    /// Save a new profile without contacting Turnkey.
+    /// Save a new profile and generate its credential, whose public key must then be registered on a user.
+    ///
+    /// Turnkey is not contacted.
     Create(CreateArgs),
     #[command(flatten)]
     Saved(SavedProfileCommand),
@@ -135,7 +137,7 @@ pub enum SavedProfileCommand {
         /// Saved profile to update.
         #[arg(long = "profile-name", value_parser = NonEmptyStringValueParser::new())]
         name: String,
-        /// Existing P256 credential JSON file to use from now on.
+        /// Existing P256 credential JSON file to copy under ~/.config/turnkey/tk/api-keys/ and use from now on.
         #[arg(long)]
         api_key_file: Option<PathBuf>,
     },
@@ -150,8 +152,7 @@ pub struct CreateArgs {
         value_parser = NonEmptyStringValueParser::new()
     )]
     name: String,
-    /// Existing P256 credential JSON file to use; without it, a fresh
-    /// credential is written under ~/.config/turnkey/tk/api-keys/.
+    /// Existing P256 credential JSON file to copy under ~/.config/turnkey/tk/api-keys/ instead of generating one.
     #[arg(long)]
     api_key_file: Option<PathBuf>,
 }
@@ -166,6 +167,7 @@ pub struct StoredApiKey {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KeyCurve {
+    #[serde(alias = "API_KEY_CURVE_P256")]
     P256,
 }
 
@@ -1131,10 +1133,11 @@ async fn login(args: LoginArgs, options: &AuthOptions) -> Result<OperationOutput
         ))
         .into());
     }
+    let human = format!("logged in with profile {name} to organization {organization_id}");
     let record = json!({"profile": name, "identity": identity});
     registry.active_profile = Some(name);
     save(&path, &registry).await?;
-    Ok(OperationOutput::result("auth.login", record))
+    Ok(OperationOutput::result("auth.login", record).with_human(human))
 }
 
 pub async fn create_profile(
@@ -1156,17 +1159,23 @@ pub async fn create_profile(
         }
         Entry::Vacant(slot) => slot,
     };
-    let (api_key_file, public_key, generated) = match api_key_file {
+    let (api_key_file, public_key, created, next_step) = match api_key_file {
         Some(file) => {
-            let resolved = fs::canonicalize(&file)
-                .await
-                .context("resolve credential path")?;
-            let key = read_key(&resolved).await?;
-            (resolved, CompressedPublicKey::from(&key), None)
+            let ImportedApiKey {
+                public_key,
+                path,
+                created,
+            } = import(&read_key(&file).await?).await?;
+            let next_step = format!("run tk login --profile-name {}", slot.key());
+            (path.clone(), public_key, created.then_some(path), next_step)
         }
         None => {
             let GeneratedApiKey { public_key, path } = generate(None).await?;
-            (path.clone(), public_key, Some(path))
+            let next_step = format!(
+                "register public key {public_key} (API_KEY_CURVE_P256) on a user in organization {organization_id}, under Advanced settings when adding the API key in the dashboard, then run tk login --profile-name {}",
+                slot.key()
+            );
+            (path.clone(), public_key, Some(path), next_step)
         }
     };
     let profile = Profile {
@@ -1175,20 +1184,24 @@ pub async fn create_profile(
         api_key_file,
     };
     let name = slot.key();
+    let human = format!(
+        "saved profile {name} with credential {}; {next_step}",
+        profile.api_key_file.display()
+    );
     let record = json!({
         "name": name,
         "profile": profile,
         "publicKey": public_key,
-        "nextStep": format!("register public key {public_key} (API_KEY_CURVE_P256) on a user in organization {organization_id}, then run tk login --profile-name {name}"),
+        "nextStep": next_step,
     });
     slot.insert(profile);
     if let Err(error) = save(&path, &registry).await {
-        if let Some(generated) = generated {
-            let _ = fs::remove_file(generated).await;
+        if let Some(created) = created {
+            let _ = fs::remove_file(created).await;
         }
         return Err(error);
     }
-    Ok(OperationOutput::result("profile.create", record))
+    Ok(OperationOutput::result("profile.create", record).with_human(human))
 }
 
 pub(crate) async fn set_profile_key(name: &str, api_key_file: PathBuf) -> Result<PathBuf> {
@@ -1238,10 +1251,11 @@ pub async fn run_profile(
             read_key(&profile.api_key_file).await?;
             registry.active_profile = Some(name.clone());
             save(&path, &registry).await?;
-            Ok(OperationOutput::result(
-                "profile.use",
-                json!({"activeProfile": name}),
-            ))
+            let human = format!("selected profile {name}");
+            Ok(
+                OperationOutput::result("profile.use", json!({"activeProfile": name}))
+                    .with_human(human),
+            )
         }
         SavedProfileCommand::Delete { name } => {
             if registry.profiles.remove(&name).is_none() {
@@ -1251,10 +1265,12 @@ pub async fn run_profile(
                 registry.active_profile = None;
             }
             save(&path, &registry).await?;
+            let human = format!("deleted profile {name}; its credential file is kept");
             Ok(OperationOutput::result(
                 "profile.delete",
                 json!({"name": name, "credentialFilesDeleted": false}),
-            ))
+            )
+            .with_human(human))
         }
         SavedProfileCommand::Set { name, api_key_file } => {
             let Some(profile) = registry.profiles.get_mut(&name) else {
@@ -1267,22 +1283,27 @@ pub async fn run_profile(
                 profile.api_base_url = ApiBaseUrl::try_from(api_base_url.clone())?;
             }
             let mut record = json!({"name": name});
+            let mut created = None;
             if let Some(api_key_file) = api_key_file {
-                let current = match fs::canonicalize(&api_key_file).await {
-                    Ok(current) => current,
-                    Err(error) if error.kind() == ErrorKind::NotFound => {
-                        return Err(MissingCredentialFile { path: api_key_file }.into());
-                    }
-                    Err(error) => return Err(error).context("resolve credential path"),
-                };
-                let key = read_key(&current).await?;
-                let previous = mem::replace(&mut profile.api_key_file, current);
-                record["publicKey"] = CompressedPublicKey::from(&key).to_string().into();
+                let ImportedApiKey {
+                    public_key,
+                    path: key_file,
+                    created: new_file,
+                } = import(&read_key(&api_key_file).await?).await?;
+                created = new_file.then(|| key_file.clone());
+                let previous = mem::replace(&mut profile.api_key_file, key_file);
+                record["publicKey"] = public_key.to_string().into();
                 record["previousApiKeyFile"] = previous.to_string_lossy().into();
             }
             record["profile"] = serde_json::to_value(&*profile)?;
-            save(&path, &registry).await?;
-            Ok(OperationOutput::result("profile.set", record))
+            if let Err(error) = save(&path, &registry).await {
+                if let Some(created) = created {
+                    let _ = fs::remove_file(created).await;
+                }
+                return Err(error);
+            }
+            Ok(OperationOutput::result("profile.set", record)
+                .with_human(format!("updated profile {name}")))
         }
     }
 }

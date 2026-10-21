@@ -45,10 +45,14 @@ which human approves. The organization id comes from step 1.
    ```
 
 3. **Save the root profile.** Operator. Either path leaves a credential file
-   under `~/.config/turnkey/tk/api-keys/`; the private key is never printed.
+   under `~/.config/turnkey/tk/api-keys/`, copying an existing file rather
+   than referencing it; the private key is never printed.
 
-   With an existing root API key file in `{"public_key","private_key","curve"}`
-   form:
+   With an existing root API key file of this shape:
+
+   ```json
+   {"public_key":"02…","private_key":"…","curve":"p256"}
+   ```
 
    <!-- example: bootstrap.profile-create-existing -->
    ```sh
@@ -57,8 +61,9 @@ which human approves. The organization id comes from step 1.
 
    Without one, let `tk` generate the credential, then register it: in the
    dashboard at https://app.turnkey.com open the root user, add an API key,
-   and paste the printed `data.publicKey` (curve P-256). Continue once the
-   key shows on the user:
+   open the dialog's Advanced settings, and paste the printed
+   `data.publicKey` (curve P-256) instead of generating a key in the browser.
+   Continue once the key shows on the user:
 
    <!-- example: bootstrap.profile-create-fresh -->
    ```sh
@@ -66,7 +71,8 @@ which human approves. The organization id comes from step 1.
    ```
 
    Proceed when `command` is `profile.create`. `data.nextStep` names the
-   registration step.
+   registration step for a generated credential and `login` for an existing
+   one.
 
 4. **Verify and select the profile.**
 

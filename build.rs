@@ -13,7 +13,8 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use sha2::{Digest, Sha256};
+#[path = "src/skills/digest.rs"]
+mod digest;
 
 fn files_under(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
@@ -183,18 +184,12 @@ fn main() {
         }
     }
 
-    let mut hasher = Sha256::new();
-    for (path, (_, text)) in &bundle {
-        hasher.update(path.as_bytes());
-        hasher.update([0]);
-        hasher.update((text.len() as u64).to_le_bytes());
-        hasher.update(text.as_bytes());
-    }
-    let digest: String = hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let digest = digest::of(
+        &bundle
+            .iter()
+            .map(|(path, (_, text))| (path, text))
+            .collect::<BTreeMap<_, _>>(),
+    );
 
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
     let staged = out.join("bundle");

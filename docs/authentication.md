@@ -33,8 +33,10 @@ tk profile delete --profile-name agent
 tk auth logout
 ```
 
-The registry lives at `~/.config/turnkey/tk.config.toml` and generated
-credentials under `~/.config/turnkey/tk/api-keys/`.
+The registry lives at `~/.config/turnkey/tk.config.toml` and every profile's
+credential under `~/.config/turnkey/tk/api-keys/`: `--api-key-file` copies the
+given file there and never modifies or deletes it. A credential file's `curve`
+is `p256`; the API spelling `API_KEY_CURVE_P256` is also accepted.
 
 ## CI
 
