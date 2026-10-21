@@ -25,6 +25,12 @@ include = [
 name = "tk"
 path = "src/main.rs"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/tk-{ target }-v{ version }{ archive-suffix }"
+bin-dir = "tk-{ target }-v{ version }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+disabled-strategies = ["quick-install"]
+
 [lints.rust]
 missing_docs = "deny"
 # Coding style
