@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use anyhow::{Error, Result};
 use tokio::time::sleep;
-use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::{
     ActivityResult, TurnkeyClient, TurnkeyClientError,
     generated::{
@@ -17,6 +16,7 @@ use uuid::Uuid;
 use crate::{
     errors::{ActivityError, ActivityErrorKind, transient_status},
     ssh::registry::PrivateKeyId,
+    stamper::Stamper,
 };
 
 const ATTEMPTS: u32 = 5;
@@ -52,7 +52,7 @@ fn transient(error: &TurnkeyClientError) -> bool {
 }
 
 pub struct TurnkeySigner<'a> {
-    client: &'a TurnkeyClient<TurnkeyP256ApiKey>,
+    client: &'a TurnkeyClient<Stamper>,
     organization_id: Uuid,
     private_key_id: &'a PrivateKeyId,
     backoff: Duration,
@@ -60,7 +60,7 @@ pub struct TurnkeySigner<'a> {
 
 impl<'a> TurnkeySigner<'a> {
     pub fn new(
-        client: &'a TurnkeyClient<TurnkeyP256ApiKey>,
+        client: &'a TurnkeyClient<Stamper>,
         organization_id: Uuid,
         private_key_id: &'a PrivateKeyId,
         backoff: Duration,

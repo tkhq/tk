@@ -36,6 +36,34 @@ tk auth logout
 The registry lives at `~/.config/turnkey/tk.config.toml` and generated
 credentials under `~/.config/turnkey/tk/api-keys/`.
 
+## YubiKey
+
+A profile can sign with a P256 key that never leaves a YubiKey, so every
+Turnkey request waits for a touch:
+
+```bash
+# Generate the key on the YubiKey in any signing slot. tk refuses a key that
+# needs the PIN, signs without a touch, or was imported.
+ykman piv keys generate --algorithm eccp256 --pin-policy never --touch-policy cached 9a -
+
+# Save the profile. Reading the public key from the slot needs no touch.
+tk profile create --profile-name admin --organization-id ORG_UUID --yubikey-slot 9a
+
+# Register the printed public key with Turnkey, then touch the YubiKey to log in.
+tk login --profile-name admin
+```
+
+With touch policy `cached`, one touch covers the requests of the next 15
+seconds, so a command that polls, such as `activity wait`, needs a touch about
+every 15 seconds; with `always`, every request needs its own touch. `tk` never
+asks for the PIV PIN, writes to the YubiKey, or uses its management key, so
+anyone holding the YubiKey can touch it. `auth status` and `profile use` fail
+when the YubiKey is unplugged or the slot holds a different key, and
+`session request` refuses a YubiKey profile because a session key would
+replace the YubiKey key with one stored on disk. The macOS release includes
+YubiKey support; on Linux, install `libpcsclite-dev` and run
+`cargo install turnkey_tk --features yubikey`.
+
 ## CI
 
 Skip the registry and pass the credential through the environment:

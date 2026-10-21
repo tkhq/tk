@@ -18,7 +18,6 @@ use tokio::{
     process::{Child, Command},
     time::{sleep, timeout},
 };
-use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::TurnkeyClient;
 use uuid::Uuid;
 
@@ -38,6 +37,7 @@ use crate::{
         selection_error,
         signer::{BACKOFF, TurnkeySigner},
     },
+    stamper::Stamper,
     wire::ssh::{
         Ed25519PublicKey,
         agent::{
@@ -53,7 +53,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(20);
 const PROBE_TIMEOUT: Duration = Duration::from_millis(250);
 
 enum CredentialReload {
-    Fixed(Arc<TurnkeyClient<TurnkeyP256ApiKey>>),
+    Fixed(Arc<TurnkeyClient<Stamper>>),
     FromRegistry {
         options: AuthOptions,
         clients: BTreeMap<Uuid, Mutex<ReloadingClient>>,
@@ -653,6 +653,7 @@ mod tests {
 
     use serde_json::json;
     use tempfile::TempDir;
+    use turnkey_api_key_stamper::TurnkeyP256ApiKey;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
 
     use super::*;

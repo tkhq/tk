@@ -35,8 +35,10 @@ jobs:
           toolchain: 1.95.0
           components: clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpcsclite-dev
       - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --locked
+      - run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features --locked
 
   machete:
     runs-on: ubuntu-latest
@@ -57,4 +59,5 @@ jobs:
         with:
           toolchain: 1.95.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo test --locked
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpcsclite-dev
+      - run: cargo test --locked --all-features

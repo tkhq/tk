@@ -1327,7 +1327,7 @@ Subcommands:
 - [`tk profile create`](#tk-profile-create): Save a new profile without contacting Turnkey
 - [`tk profile list`](#tk-profile-list): List saved profiles and the active selection
 - [`tk profile show`](#tk-profile-show): Show one saved profile
-- [`tk profile use`](#tk-profile-use): Select a saved profile after checking its credential file
+- [`tk profile use`](#tk-profile-use): Select a saved profile after checking its credential
 - [`tk profile delete`](#tk-profile-delete): Remove a saved profile
 - [`tk profile set`](#tk-profile-set): Update a saved profile
 
@@ -1343,6 +1343,12 @@ tk profile create [OPTIONS]
 |---|---|---|
 | `--profile-name <NAME>` | default `default` | Name for the new profile |
 | `--api-key-file <API_KEY_FILE>` |  | Existing P256 credential JSON file to use; without it, a fresh credential is written under ~/.config/turnkey/tk/api-keys/ |
+| `--yubikey-slot <SLOT>` |  | YubiKey PIV slot whose P256 key signs this profile's requests, such as 9a |
+| `--yubikey-serial <SERIAL>` |  | Serial number of the YubiKey to use; defaults to the only connected YubiKey |
+
+Constraints:
+
+- `--api-key-file` conflicts with `--yubikey-slot`
 
 #### `tk profile list`
 
@@ -1366,7 +1372,7 @@ tk profile show [OPTIONS] --profile-name <NAME>
 
 #### `tk profile use`
 
-Select a saved profile after checking its credential file
+Select a saved profile after checking its credential
 
 ```
 tk profile use [OPTIONS] --profile-name <NAME>

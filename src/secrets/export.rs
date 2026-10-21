@@ -99,7 +99,7 @@ impl Binding {
         Self {
             organization_id: auth.org_id,
             api_base_url: auth.api_base_url.as_str().trim_end_matches('/').to_owned(),
-            api_public_key: hex::encode(auth.stamper.compressed_public_key()),
+            api_public_key: auth.stamper.public_key().to_string(),
         }
     }
 
