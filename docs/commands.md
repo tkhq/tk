@@ -1197,7 +1197,7 @@ Subcommands:
 
 - [`tk skills list`](#tk-skills-list): List the embedded skills with their descriptions
 - [`tk skills show`](#tk-skills-show): Print one embedded skill as Markdown
-- [`tk skills install`](#tk-skills-install): Install the turnkey-tk package as DIR/turnkey-tk; an existing destination is never replaced, the same package is a no-op, and any other content is refused with `invalid_input`
+- [`tk skills install`](#tk-skills-install): Install the turnkey-tk package as DIR/turnkey-tk; the same package is a no-op, an unmodified older install is replaced, and any other content is refused with `invalid_input`
 
 #### `tk skills list`
 
@@ -1221,7 +1221,7 @@ tk skills show [OPTIONS] --name <NAME>
 
 #### `tk skills install`
 
-Install the turnkey-tk package as DIR/turnkey-tk; an existing destination is never replaced, the same package is a no-op, and any other content is refused with `invalid_input`
+Install the turnkey-tk package as DIR/turnkey-tk; the same package is a no-op, an unmodified older install is replaced, and any other content is refused with `invalid_input`
 
 ```
 tk skills install [OPTIONS] --into <DIR>
@@ -1324,7 +1324,7 @@ tk profile [OPTIONS] <COMMAND>
 
 Subcommands:
 
-- [`tk profile create`](#tk-profile-create): Save a new profile without contacting Turnkey
+- [`tk profile create`](#tk-profile-create): Save a new profile and generate its credential, whose public key must then be registered on a user
 - [`tk profile list`](#tk-profile-list): List saved profiles and the active selection
 - [`tk profile show`](#tk-profile-show): Show one saved profile
 - [`tk profile use`](#tk-profile-use): Select a saved profile after checking its credential file
@@ -1333,7 +1333,7 @@ Subcommands:
 
 #### `tk profile create`
 
-Save a new profile without contacting Turnkey
+Save a new profile and generate its credential, whose public key must then be registered on a user
 
 ```
 tk profile create [OPTIONS]
@@ -1342,7 +1342,7 @@ tk profile create [OPTIONS]
 | Argument | Notes | Description |
 |---|---|---|
 | `--profile-name <NAME>` | default `default` | Name for the new profile |
-| `--api-key-file <API_KEY_FILE>` |  | Existing P256 credential JSON file to use; without it, a fresh credential is written under ~/.config/turnkey/tk/api-keys/ |
+| `--api-key-file <API_KEY_FILE>` |  | Existing P256 credential JSON file to copy under ~/.config/turnkey/tk/api-keys/ instead of generating one |
 
 #### `tk profile list`
 
@@ -1399,4 +1399,4 @@ tk profile set [OPTIONS] --profile-name <NAME>
 | Argument | Notes | Description |
 |---|---|---|
 | `--profile-name <NAME>` | required | Saved profile to update |
-| `--api-key-file <API_KEY_FILE>` |  | Existing P256 credential JSON file to use from now on |
+| `--api-key-file <API_KEY_FILE>` |  | Existing P256 credential JSON file to copy under ~/.config/turnkey/tk/api-keys/ and use from now on |

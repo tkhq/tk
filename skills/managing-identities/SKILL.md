@@ -96,10 +96,11 @@ for a new key the machine that will hold it.
    tk --profile agent --message-format json whoami
    ```
 
-   `profile set` reports `data.publicKey` and `data.previousApiKeyFile`.
-   Proceed only when `whoami` succeeds with the expected `userId`; if it
-   fails with `unauthorized`, point the profile back at
-   `data.previousApiKeyFile` and inspect the registration activity.
+   `profile set` reports `data.publicKey` and `data.previousApiKeyFile`, and
+   removes the stored copy of the old key. Proceed only when `whoami` succeeds
+   with the expected `userId`; if it fails with `unauthorized`, point the
+   profile back at the original old key file and inspect the registration
+   activity.
 
 4. **Revoke the old key.** Root. List first to find the id of the key that is
    not `PUBLIC_KEY`:
@@ -159,7 +160,7 @@ intended user and the user is not a root quorum member. Deletion is final.
   credential DENY is in force, which is intended. Run it as root, or as a
   revoker from [revoking-agent-keys](../revoking-agent-keys/SKILL.md).
 - `whoami` fails after `profile set`: the registration has not completed.
-  Restore `data.previousApiKeyFile` with another `profile set` and wait on
+  Restore the original old key file with another `profile set` and wait on
   the activity.
 
 ## Related Skills
