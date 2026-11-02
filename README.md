@@ -39,31 +39,28 @@ long-lived credential:
 
 ## Getting started
 
-1. Install `tk` in your own terminal:
+Paste this into your agent:
 
-   ```bash
-   curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh
-   ```
+```
+Install the Turnkey tk CLI with
+`curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh`.
+Install the tk skills with `tk skills install --into <your skills directory>`,
+read the installed turnkey-tk/SKILL.md, and walk me through bootstrapping my
+Turnkey organization at https://app.turnkey.com.
+```
 
-2. Install the skills. In Claude Code, for example, type these two commands:
+### Claude plugin
 
-   ```
-   /plugin marketplace add tkhq/tk
-   /plugin install tk@tkhq
-   ```
+```
+/plugin marketplace add tkhq/tk
+/plugin install tk@tkhq
+```
 
-   For another agent, run `tk skills install --into DIR`, where `DIR` is that
-   agent's skills directory.
+## Manual installation
 
-3. Tell your agent:
-
-   ```
-   Use the turnkey-tk skill to walk me through bootstrapping my Turnkey
-   organization at https://app.turnkey.com.
-   ```
-
-The plugin skill reads the workflows from the installed `tk` binary, so the
-workflows always match its commands. Run `tk update` to get newer workflows.
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh
+```
 
 ## Docs
 

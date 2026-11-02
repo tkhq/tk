@@ -16,14 +16,14 @@ installed binary, so each workflow describes the commands that binary has.
    [Getting started](https://github.com/tkhq/tk#getting-started). Do not
    download or run an installer yourself.
 3. Run `tk skills show --name turnkey-tk` and follow the index it prints.
+   The binary prints the complete index, which is a different file. This
+   file only loads it.
 4. Load each linked file with `tk skills show`, not from a repository
    checkout or the web:
    - `NAME/SKILL.md` is `tk skills show --name NAME`.
    - `references/NAME.md` is `tk skills show --name references/NAME`.
    - For a link into `docs/`, such as the command reference, run
      `tk COMMAND --help`.
-5. If a workflow names a command that the binary does not have, tell the user
-   that their `tk` is older than the workflow expects, and stop.
 
 ## Rules
 
