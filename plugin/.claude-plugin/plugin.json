@@ -1,0 +1,12 @@
+{
+  "name": "tk",
+  "description": "Loads the turnkey-tk skills from the installed tk binary, so the skills always match its commands.",
+  "author": {
+    "name": "Turnkey",
+    "url": "https://www.turnkey.com"
+  },
+  "homepage": "https://github.com/tkhq/tk",
+  "repository": "https://github.com/tkhq/tk",
+  "license": "Apache-2.0",
+  "keywords": ["turnkey", "git-signing", "ssh", "agent-auth"]
+}
