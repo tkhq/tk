@@ -45,7 +45,7 @@ long-lived credential:
    curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh
    ```
 
-2. Install the skills. In Claude Code, type these two commands:
+2. Install the skills. In Claude Code, for example, type these two commands:
 
    ```
    /plugin marketplace add tkhq/tk
