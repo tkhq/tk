@@ -120,3 +120,34 @@ fn update_defers_to_cargo_for_a_cargo_install() {
     );
     assert_eq!(fs::read(&tk).unwrap(), before);
 }
+
+#[test]
+fn update_defers_to_homebrew_for_a_homebrew_install() {
+    let dir = TempDir::new().unwrap();
+    let keg = dir.path().join("Cellar/tk/0.4.0");
+    let tk = copy_tk(&keg.join("bin"));
+    fs::write(keg.join("INSTALL_RECEIPT.json"), "{}").unwrap();
+    let before = fs::read(&tk).unwrap();
+
+    assert_eq!(
+        update(&tk, dir.path(), &[]),
+        json!({
+            "reason": "update_via_homebrew",
+            "command": "brew upgrade tkhq/tap/tk",
+        })
+    );
+    let pinned = cli_at(&tk, dir.path())
+        .args(["--message-format", "json", "update", "--tag", PINNED])
+        .output()
+        .unwrap();
+    assert_eq!(pinned.status.code(), Some(1), "{pinned:?}");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&pinned.stdout).unwrap(),
+        json!({
+            "reason": "command_error",
+            "code": "invalid_input",
+            "message": "Homebrew installed this tk, and Homebrew installs only the latest release, not v0.4.0",
+        })
+    );
+    assert_eq!(fs::read(&tk).unwrap(), before);
+}

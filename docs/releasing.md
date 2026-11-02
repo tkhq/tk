@@ -2,7 +2,9 @@
 
 Push a `v*` tag to start the `release` workflow. The workflow builds a native
 binary for every supported target, checksums each one, and publishes a GitHub
-release. `install.sh` and `tk update` install from that release.
+release. `install.sh` and `tk update` install from that release, and the
+`homebrew` job commits the new formula to
+[tkhq/homebrew-tap](https://github.com/tkhq/homebrew-tap).
 
 1. Open a pull request that bumps `version` under `[package]` in the root
    `Cargo.toml` and refreshes the pinned entry in `Cargo.lock`, and wait for CI
@@ -62,4 +64,31 @@ Each release publishes two files for every target:
 ```
 tk-<target>-<vX.Y.Z>.tar.gz          # one directory, tk-<target>-<vX.Y.Z>/, holding tk and README.md
 tk-<target>-<vX.Y.Z>.tar.gz.sha256   # `shasum -a 256` output (hash and filename)
+```
+
+The build job that compiles each archive also records a signed SLSA build
+provenance attestation for it. The attestation names the repository, the
+workflow, the tag, and the commit. Verify an archive before you install it:
+
+```sh
+gh attestation verify tk-aarch64-apple-darwin-vX.Y.Z.tar.gz -R tkhq/tk
+```
+
+`verify` exits nonzero when the archive has no attestation from a `tkhq/tk`
+workflow. Prereleases have no attestation.
+
+## Homebrew
+
+The `homebrew` job renders `packaging/homebrew/tk.rb` with
+`packaging/homebrew/render.sh` and writes it to `Formula/tk.rb` in
+`tkhq/homebrew-tap`. It authenticates as a GitHub App installed on that
+repository with contents write access. The job reads the App's client ID from
+the `HOMEBREW_TAP_CLIENT_ID` repository variable and its private key from the
+`HOMEBREW_TAP_PRIVATE_KEY` repository secret. When the job fails, the GitHub
+release is already published; render the formula by hand and open a pull
+request against the tap:
+
+```sh
+gh release download vX.Y.Z -R tkhq/tk -p '*.sha256' -D dist
+packaging/homebrew/render.sh X.Y.Z dist > tk.rb
 ```
