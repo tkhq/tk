@@ -12,6 +12,7 @@ https://app.turnkey.com; nothing here creates an agent.
 
 ## Reference
 
+- [installation](../../docs/installation.md): installer requirements and release verification.
 - [authentication](../../docs/authentication.md): profiles, `login`, and the environment bundle.
 - [resources](../../docs/resources.md): `user`, `user tag`, and `policy` command records.
 
@@ -35,8 +36,9 @@ which human approves. The organization id comes from step 1.
    https://app.turnkey.com. Sign in, create an organization if there is none,
    and copy the Organization ID from the dashboard; it is `ORG_UUID` below.
 
-2. **Install `tk`.** Operator, on their machine. The installer fetches the
-   latest release:
+2. **Install `tk`.** Operator, on their machine. Install `minisign` with
+   `brew install minisign` on macOS or `sudo apt-get install minisign` on
+   Debian and Ubuntu. The installer verifies the latest release's signature:
 
    <!-- example: bootstrap.install -->
    ```sh

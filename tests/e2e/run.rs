@@ -264,9 +264,9 @@ impl Run {
         )
     }
 
-    fn admin_at(&self, base: &str) -> Command {
+    pub(crate) fn as_admin(&self, cmd: Command) -> Command {
         Self::with_bundle(
-            self.cli_at(base),
+            cmd,
             self.org(),
             &self.config.public_key,
             &self.config.private_key.0,
@@ -275,12 +275,12 @@ impl Run {
 
     /// Admin key scoped to this run's sub-organization.
     pub(crate) fn admin(&self) -> Command {
-        self.admin_at(&self.config.api_base_url)
+        self.as_admin(self.cli())
     }
 
     /// Root bundle pointed at an unroutable host for preflight tests.
     pub(crate) fn admin_offline(&self) -> Command {
-        self.admin_at(UNROUTABLE)
+        self.as_admin(self.cli_at(UNROUTABLE))
     }
 
     pub(crate) fn generate_key(&self, path: &Path) -> Value {

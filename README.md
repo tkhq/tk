@@ -49,11 +49,17 @@ read the installed turnkey-tk/SKILL.md, and walk me through bootstrapping my
 Turnkey organization at https://app.turnkey.com.
 ```
 
+The shell installer requires `minisign`; install it with `brew install minisign`
+on macOS or `sudo apt-get install minisign` on Debian and Ubuntu.
+
 ## Manual installation
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh
 ```
+
+[Installation and updates](./docs/installation.md) covers signature verification
+and downloading releases from Bash scripts.
 
 ## Docs
 

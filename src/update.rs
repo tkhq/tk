@@ -16,6 +16,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 use flate2::read::GzDecoder;
 use hex::FromHex;
+use minisign_verify::{PublicKey, Signature};
 use reqwest::Client;
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -52,6 +53,8 @@ const TARGET: Option<&str> = if cfg!(all(target_os = "linux", target_arch = "x86
 #[derive(Debug, Args)]
 pub struct UpdateArgs {
     /// Install this release or pull request prerelease tag, even an older one, instead of the latest release.
+    ///
+    /// Pull request and development prereleases are verified by checksum only.
     #[arg(long, value_name = "TAG")]
     tag: Option<ReleaseTag>,
 }
@@ -247,7 +250,23 @@ pub async fn run(UpdateArgs { tag }: UpdateArgs) -> Result<Outcome> {
             fetch(&client, &download, MAX_ARCHIVE_BYTES),
             fetch(&client, &checksum_url, MAX_CHECKSUM_BYTES),
         )?;
-        extract_verified_binary(&archive, &checksum, &package, &mut file)?;
+        let signature = if tag.0.starts_with("pr-") || tag.0.starts_with("dev-") {
+            None
+        } else {
+            let signature = fetch(&client, &format!("{download}.sig"), MAX_CHECKSUM_BYTES).await?;
+            let key = PublicKey::decode(include_str!("../keys/release.pub"))
+                .context("parse the embedded release signing key")?;
+            Some((key, signature))
+        };
+        extract_verified_binary(
+            &archive,
+            &checksum,
+            signature
+                .as_ref()
+                .map(|(key, bytes)| (key, bytes.as_slice())),
+            &package,
+            &mut file,
+        )?;
         file.sync_all()
             .with_context(|| format!("write the new tk binary to {}", staged.0.display()))?;
     }
@@ -369,6 +388,7 @@ async fn fetch(client: &Client, url: &str, limit: usize) -> Result<Vec<u8>> {
 fn extract_verified_binary(
     archive: &[u8],
     checksum: &[u8],
+    signature: Option<(&PublicKey, &[u8])>,
     package: &str,
     binary: &mut impl Write,
 ) -> Result<()> {
@@ -388,6 +408,15 @@ fn extract_verified_binary(
         .with_context(|| format!("{checksum_name} does not hold a SHA-256 digest"))?;
     if expected[..] != Sha256::digest(archive)[..] {
         bail!("{archive_name} does not match {checksum_name}");
+    }
+    if let Some((key, signature)) = signature {
+        let signature_name = format!("{archive_name}.sig");
+        let signature =
+            str::from_utf8(signature).with_context(|| format!("{signature_name} is not UTF-8"))?;
+        let signature =
+            Signature::decode(signature).with_context(|| format!("parse {signature_name}"))?;
+        key.verify(archive, &signature, false)
+            .with_context(|| format!("verify the release signature of {archive_name}"))?;
     }
 
     let expected_binary = Path::new(package).join("tk");
@@ -429,6 +458,7 @@ fn extract_verified_binary(
 #[cfg(test)]
 mod tests {
     use flate2::{Compression, write::GzEncoder};
+    use minisign_verify::Error as SignatureError;
     use tar::{Builder, EntryType, Header};
 
     use super::*;
@@ -450,7 +480,7 @@ mod tests {
     }
 
     fn error(archive: &[u8], checksum: &[u8]) -> String {
-        extract_verified_binary(archive, checksum, PACKAGE, &mut io::sink())
+        extract_verified_binary(archive, checksum, None, PACKAGE, &mut io::sink())
             .unwrap_err()
             .to_string()
     }
@@ -485,6 +515,69 @@ mod tests {
                 "{PACKAGE}.tar.gz holds tk-aarch64-apple-darwin-v1.0.0/tk as something other than a regular file"
             )
         );
+    }
+
+    #[test]
+    fn signed_archives_are_verified_before_extracting_any_bytes() {
+        let archive = include_bytes!("../tests/fixtures/release-signing/archive.tar.gz");
+        let signature = include_bytes!("../tests/fixtures/release-signing/archive.tar.gz.sig");
+        let key =
+            PublicKey::decode(include_str!("../tests/fixtures/release-signing/test.pub")).unwrap();
+        let package = "tk-test-v1.0.0";
+        let expected_checksum = checksum(archive, &format!("{package}.tar.gz"));
+        let mut binary = Vec::new();
+        extract_verified_binary(
+            archive,
+            &expected_checksum,
+            Some((&key, signature)),
+            package,
+            &mut binary,
+        )
+        .unwrap();
+        assert_eq!(
+            binary,
+            br#"#!/bin/sh
+echo "tk 1.0.0"
+"#
+        );
+
+        let wrong_key = PublicKey::decode(include_str!("../keys/release.pub")).unwrap();
+        let mut binary = Vec::new();
+        for (key, signature) in [
+            (&wrong_key, signature.as_slice()),
+            (&key, b"malformed".as_slice()),
+        ] {
+            let error = extract_verified_binary(
+                archive,
+                &expected_checksum,
+                Some((key, signature)),
+                package,
+                &mut binary,
+            )
+            .unwrap_err();
+            assert!(
+                error.downcast_ref::<SignatureError>().is_some(),
+                "{error:#}"
+            );
+            assert_eq!(binary, b"");
+        }
+
+        let mut changed = archive.to_vec();
+        changed[0] ^= 1;
+        let checksum = checksum(&changed, &format!("{package}.tar.gz"));
+        let error = extract_verified_binary(
+            &changed,
+            &checksum,
+            Some((&key, signature)),
+            package,
+            &mut binary,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<SignatureError>(),
+            Some(SignatureError::InvalidSignature)
+        ));
+        assert_eq!(binary, b"");
     }
 
     #[test]

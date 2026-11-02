@@ -2,16 +2,48 @@
 //! first to catch.
 use std::{collections::BTreeSet, fs, path::Path};
 
+use minisign_verify::PublicKey;
+
 const WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
 const INSTALLER: &str = include_str!("../install.sh");
 const UPDATER: &str = include_str!("../src/update.rs");
+const PUBLIC_KEY: &str = include_str!("../keys/release.pub");
 
 #[test]
 fn release_tag_must_name_the_manifest_version_and_be_on_main() {
     assert!(WORKFLOW.contains(r#"if [ "$GITHUB_REF_NAME" != "v$manifest_version" ]; then"#));
     assert!(WORKFLOW.contains("fetch-depth: 0"));
     assert!(WORKFLOW.contains(r#"git merge-base --is-ancestor "$GITHUB_SHA" origin/main"#));
-    assert!(WORKFLOW.contains("needs: validate"));
+}
+
+#[test]
+fn nothing_is_published_until_every_archive_is_signed_and_verified() {
+    let needs: Vec<_> = WORKFLOW
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("needs: "))
+        .collect();
+    assert_eq!(needs, ["validate", "build", "sign"]);
+    assert!(WORKFLOW.contains(r#"rsign verify "$archive" -P "$pubkey" -x "$archive.sig""#));
+    assert!(WORKFLOW.contains("dist/*.sig"));
+    assert!(WORKFLOW.contains("dist/minisign.pub"));
+}
+
+#[test]
+fn signing_uses_the_pinned_key_and_the_actions_secret() {
+    let key = PUBLIC_KEY.lines().nth(1).unwrap();
+    PublicKey::decode(PUBLIC_KEY).unwrap();
+    let installer_key = INSTALLER
+        .lines()
+        .find_map(|line| line.strip_prefix(r#"release_pubkey=""#)?.strip_suffix('"'))
+        .unwrap();
+    assert_eq!(installer_key, key);
+    assert!(UPDATER.contains(r#"include_str!("../keys/release.pub")"#));
+    assert!(WORKFLOW.contains("TK_RELEASE_SIGNING_KEY: ${{ secrets.TK_RELEASE_SIGNING_KEY }}"));
+    assert!(WORKFLOW.contains("cp keys/release.pub dist/minisign.pub"));
+    assert!(!WORKFLOW.contains("rsign generate"));
+    assert!(
+        INSTALLER.contains(r#"minisign -Vm "$archive" -x "$archive.sig" -P "$release_pubkey""#)
+    );
 }
 
 #[test]

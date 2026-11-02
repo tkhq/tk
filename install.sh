@@ -11,6 +11,7 @@
 set -eu
 
 repository_url="https://github.com/tkhq/tk"
+release_pubkey="RWSDsovatPaWT9HcRg0VXl7ARwrjhixImIcBBqb9z7XE74uvlvfCt2XD"
 
 for tool in awk curl install mkdir mktemp mv rm tar uname; do
     if ! command -v "$tool" >/dev/null 2>&1; then
@@ -84,6 +85,18 @@ else
 fi
 
 archive_name="tk-$target-$version.tar.gz"
+case "$version" in
+    pr-*|dev-*)
+        echo "Installing a prerelease; only its checksum will be verified." >&2
+        ;;
+    *)
+        if ! command -v minisign >/dev/null 2>&1; then
+            echo "error: install minisign to verify tk release signatures (brew install minisign or apt-get install minisign)" >&2
+            exit 1
+        fi
+        ;;
+esac
+
 checksum_name="$archive_name.sha256"
 download_url="$repository_url/releases/download/$version"
 archive="$temporary_dir/$archive_name"
@@ -92,6 +105,15 @@ checksum="$temporary_dir/$checksum_name"
 curl --proto '=https' --tlsv1.2 -LsSf --fail-early \
     -o "$archive" "$download_url/$archive_name" \
     -o "$checksum" "$download_url/$checksum_name"
+
+case "$version" in
+    pr-*|dev-*) ;;
+    *)
+        curl --proto '=https' --tlsv1.2 -LsSf \
+            -o "$archive.sig" "$download_url/$archive_name.sig"
+        minisign -Vm "$archive" -x "$archive.sig" -P "$release_pubkey"
+        ;;
+esac
 
 # A checksum file that validates some other filename proves nothing about the
 # archive we downloaded, so require it to name exactly this archive.

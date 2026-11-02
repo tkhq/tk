@@ -6,7 +6,7 @@ use std::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use crate::run::cli_at;
+use crate::run::{Run, cli_at};
 
 const PINNED: &str = "v0.4.0";
 
@@ -31,21 +31,25 @@ fn update(tk: &Path, home: &Path, args: &[&str]) -> Value {
 
 #[test]
 #[ignore]
-fn update_replaces_the_binary_with_a_pinned_release() {
-    let dir = TempDir::new().unwrap();
-    let tk = copy_tk(&dir.path().join("install"));
+fn update_refuses_an_unsigned_release_without_replacing_the_binary() {
+    let run = Run::new();
+    let tk = copy_tk(&run.home().join("install"));
 
-    assert_eq!(
-        update(&tk, dir.path(), &["--tag", PINNED]),
-        json!({
-            "reason": "updated",
-            "from": env!("CARGO_PKG_VERSION"),
-            "to": PINNED,
-            "path": tk,
-        })
-    );
-    let version = cli_at(&tk, dir.path()).arg("--version").output().unwrap();
-    assert_eq!(String::from_utf8(version.stdout).unwrap(), "tk 0.4.0\n");
+    let before = fs::read(&tk).unwrap();
+    let output = run
+        .as_admin(cli_at(&tk, run.home()))
+        .env_remove("CARGO_HOME")
+        .env_remove("CARGO_INSTALL_ROOT")
+        .arg("--api-base-url")
+        .arg(&run.config.api_base_url)
+        .args(["--message-format=json", "update", "--tag", PINNED])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let record: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(record["code"], "not_found", "{record}");
+    assert_eq!(record["httpStatus"], 404, "{record}");
+    assert_eq!(fs::read(&tk).unwrap(), before);
     assert_eq!(
         fs::read_dir(tk.parent().unwrap()).unwrap().count(),
         1,

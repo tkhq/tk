@@ -1,0 +1,4 @@
+untrusted comment: signature from rsign secret key
+RUTEjc5YUpqH8hETYnsStuNf8fFsK4Q533zjNTBHrXz9yzZUPm1aiTP4mU3HwNPLhaBdpx1Q+ASqd8enK+oJPIphVSdUxRk/SQU=
+trusted comment: timestamp:1793660983	file:tests/fixtures/release-signing/archive.tar.gz	prehashed
+0Mr8HTfwcTqCkJ+QU5DvlN8JW9w4RxFclbO9p02x5nB+6iBmEsEuqxmcgsV+WQ18UYMVSZmzI8IapEn4KA+0CA==
