@@ -66,6 +66,17 @@ tk-<target>-<vX.Y.Z>.tar.gz          # one directory, tk-<target>-<vX.Y.Z>/, hol
 tk-<target>-<vX.Y.Z>.tar.gz.sha256   # `shasum -a 256` output (hash and filename)
 ```
 
+The build job that compiles each archive also records a signed SLSA build
+provenance attestation for it. The attestation names the repository, the
+workflow, the tag, and the commit. Verify an archive before you install it:
+
+```sh
+gh attestation verify tk-aarch64-apple-darwin-vX.Y.Z.tar.gz -R tkhq/tk
+```
+
+`verify` exits nonzero when the archive has no attestation from a `tkhq/tk`
+workflow. Prereleases have no attestation.
+
 ## Homebrew
 
 The `homebrew` job renders `packaging/homebrew/tk.rb` with
