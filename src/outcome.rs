@@ -49,6 +49,7 @@ pub enum Outcome {
     Updated(update::Updated),
     AlreadyUpToDate(update::AlreadyUpToDate),
     UpdateViaCargo(update::UpdateViaCargo),
+    UpdateViaHomebrew(update::UpdateViaHomebrew),
 }
 
 impl Display for Outcome {
@@ -86,6 +87,7 @@ impl Display for Outcome {
             Outcome::Updated(msg) => msg.fmt(f),
             Outcome::AlreadyUpToDate(msg) => msg.fmt(f),
             Outcome::UpdateViaCargo(msg) => msg.fmt(f),
+            Outcome::UpdateViaHomebrew(msg) => msg.fmt(f),
         }
     }
 }

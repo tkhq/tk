@@ -143,6 +143,23 @@ impl Display for UpdateViaCargo {
     }
 }
 
+#[derive(Serialize)]
+#[cfg_attr(test, derive(Default))]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateViaHomebrew {
+    command: &'static str,
+}
+
+impl Display for UpdateViaHomebrew {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Homebrew installed this tk; update it with `{}`",
+            self.command
+        )
+    }
+}
+
 #[derive(Deserialize)]
 struct CargoInstalls {
     v1: BTreeMap<String, Vec<String>>,
@@ -167,6 +184,9 @@ pub async fn run(UpdateArgs { tag }: UpdateArgs) -> Result<Outcome> {
         .expect("the running tk binary has a parent directory");
     if let Some(command) = cargo_update_command(directory, tag.as_ref())? {
         return Ok(Outcome::UpdateViaCargo(UpdateViaCargo { command }));
+    }
+    if let Some(update) = homebrew_update(directory, tag.as_ref())? {
+        return Ok(Outcome::UpdateViaHomebrew(update));
     }
     let Some(target) = TARGET else {
         bail!(
@@ -323,6 +343,33 @@ fn cargo_update_command(bin: &Path, tag: Option<&ReleaseTag>) -> Result<Option<S
     } else {
         let quoted = root.display().to_string().replace('\'', r"'\''");
         format!("{command} --root '{quoted}'")
+    }))
+}
+
+// Homebrew installs each version as a keg, `Cellar/tk/VERSION`, with an
+// `INSTALL_RECEIPT.json` beside `bin`, and links it into the prefix.
+fn homebrew_update(bin: &Path, tag: Option<&ReleaseTag>) -> Result<Option<UpdateViaHomebrew>> {
+    let Some(keg) = bin
+        .parent()
+        .filter(|_| bin.file_name() == Some("bin".as_ref()))
+    else {
+        return Ok(None);
+    };
+    let formula = keg.parent();
+    let in_cellar = formula.and_then(Path::file_name) == Some("tk".as_ref())
+        && formula.and_then(Path::parent).and_then(Path::file_name) == Some("Cellar".as_ref())
+        && keg.join("INSTALL_RECEIPT.json").is_file();
+    if !in_cellar {
+        return Ok(None);
+    }
+    if let Some(tag) = tag {
+        return Err(InvalidInput(format!(
+            "Homebrew installed this tk, and Homebrew installs only the latest release, not {tag}"
+        ))
+        .into());
+    }
+    Ok(Some(UpdateViaHomebrew {
+        command: "brew upgrade tkhq/tap/tk",
     }))
 }
 

@@ -58,6 +58,14 @@ Turnkey organization at https://app.turnkey.com.
 
 ## Manual installation
 
+With Homebrew on Apple silicon macOS or Linux:
+
+```bash
+brew install tkhq/tap/tk
+```
+
+Or with the install script:
+
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh
 ```

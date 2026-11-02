@@ -71,3 +71,25 @@ fn updater_targets_match_the_build_matrix() {
         .collect();
     assert_eq!(updater, matrix);
 }
+
+#[test]
+fn homebrew_formula_targets_match_the_build_matrix() {
+    let formula = include_str!("../packaging/homebrew/tk.rb");
+    let renderer = include_str!("../packaging/homebrew/render.sh");
+    let matrix: BTreeSet<_> = WORKFLOW
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("target: "))
+        .collect();
+    let placeholders: BTreeSet<_> = formula
+        .lines()
+        .filter_map(|line| line.split_once("@SHA256_")?.1.split('@').next())
+        .collect();
+    let rendered: BTreeSet<_> = renderer
+        .lines()
+        .find_map(|line| line.strip_prefix("for target in ")?.strip_suffix("; do"))
+        .unwrap()
+        .split(' ')
+        .collect();
+    assert_eq!(placeholders, matrix);
+    assert_eq!(rendered, matrix);
+}

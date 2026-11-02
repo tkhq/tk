@@ -113,3 +113,38 @@ jobs:
             dist/*.tar.gz
             dist/*.sha256
           fail_on_unmatched_files: true
+
+  homebrew:
+    name: Update the Homebrew formula
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: tap-token
+        with:
+          client-id: ${{ vars.HOMEBREW_TAP_CLIENT_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_PRIVATE_KEY }}
+          owner: tkhq
+          repositories: homebrew-tap
+          permission-contents: write
+      - name: Commit the rendered formula to tkhq/homebrew-tap
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          version=${GITHUB_REF_NAME#v}
+          packaging/homebrew/render.sh "$version" dist > tk.rb
+          sha=$(gh api repos/tkhq/homebrew-tap/contents/Formula/tk.rb --jq '.sha // empty' 2>/dev/null || true)
+          gh api --method PUT repos/tkhq/homebrew-tap/contents/Formula/tk.rb \
+            -f message="tk $version" \
+            -f content="$(base64 -w0 tk.rb)" \
+            ${sha:+-f sha="$sha"}
