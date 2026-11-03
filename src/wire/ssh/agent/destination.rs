@@ -1,8 +1,9 @@
 //! Destination constraints limiting which servers an agent signs for.
 
 use anyhow::{Context, Result, anyhow};
+use sha2::{Digest, Sha256};
 use signature::Verifier;
-use ssh_key::{HashAlg, PublicKey, Signature, public::KeyData};
+use ssh_key::{Fingerprint, HashAlg, PublicKey, Signature, public::KeyData};
 
 use super::super::protocol::{
     AgentSignRequest, SessionBind, SignedData, classify_signed_data, parse_session_bind,
@@ -11,7 +12,7 @@ use super::super::protocol::{
 pub enum DestinationPolicy {
     Unrestricted,
     Restricted {
-        hosts: Vec<KeyData>,
+        hosts: Vec<Fingerprint>,
         namespaces: Vec<String>,
     },
 }
@@ -50,7 +51,7 @@ impl<'a> AuthorizedData<'a> {
 }
 
 impl Destinations {
-    pub(super) fn bind(&mut self, contents: &[u8]) -> Result<()> {
+    pub(super) fn bind(&mut self, contents: &[u8], hosts: &[Fingerprint]) -> Result<()> {
         // OpenSSH's process_ext_session_bind marks a bind attempted before parsing it, and
         // identity_permitted refuses destination-constrained keys after a failed attempt,
         // because ssh forwards the agent even when its forwarding bind fails.
@@ -58,7 +59,7 @@ impl Destinations {
             return Err(anyhow!("an earlier session-bind failed on this connection"));
         };
 
-        let recorded = parse_session_bind(contents).and_then(|bind| sessions.bind(bind));
+        let recorded = parse_session_bind(contents).and_then(|bind| sessions.bind(bind, hosts));
         if recorded.is_err() {
             *self = Self::FailedBind;
         }
@@ -67,7 +68,7 @@ impl Destinations {
 }
 
 impl BoundSessions {
-    fn bind(&mut self, bind: SessionBind<'_>) -> Result<()> {
+    fn bind(&mut self, bind: SessionBind<'_>, hosts: &[Fingerprint]) -> Result<()> {
         let SessionBind {
             host_key_blob,
             session_id,
@@ -75,6 +76,12 @@ impl BoundSessions {
             is_forwarding,
         } = bind;
 
+        let fingerprint = Fingerprint::Sha256(Sha256::digest(host_key_blob).into());
+        if !hosts.contains(&fingerprint) {
+            return Err(anyhow!(
+                "host key {fingerprint} is not in the allowed hosts file"
+            ));
+        }
         let host_key =
             PublicKey::from_bytes(host_key_blob).context("decode the session-bind host key")?;
         let signature =
@@ -145,7 +152,7 @@ impl DestinationPolicy {
             public_key_blob: requested_key_blob,
             data,
         } = request;
-        let Self::Restricted { hosts, namespaces } = self else {
+        let Self::Restricted { namespaces, .. } = self else {
             return Ok(AuthorizedData(data));
         };
         let Destinations::Bound(sessions) = destinations else {
@@ -186,13 +193,6 @@ impl DestinationPolicy {
                         ));
                     }
                 }
-                if !hosts.contains(&destination.host_key) {
-                    return Err(anyhow!(
-                        "host key {} is not in the allowed hosts file",
-                        destination.host_key.fingerprint(HashAlg::Sha256)
-                    ));
-                }
-
                 Ok(AuthorizedData(data))
             }
             SignedData::SshSig { namespace } => {

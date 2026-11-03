@@ -80,7 +80,7 @@ flate2 = { version = "1.1.10", default-features = false, features = ["rust_backe
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
 libc = { version = "0.2.189", default-features = false }
 rand_core = { version = "0.6.4", default-features = false, features = ["getrandom"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rpassword = { version = "7.4", default-features = false }
 semver = { version = "1.0.28", default-features = false, features = ["std"] }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
@@ -92,13 +92,13 @@ socket2 = { version = "0.6.5", default-features = false }
 ssh-key = { version = "0.6.7", default-features = false, features = ["ed25519", "p256", "p384", "p521", "rsa", "std"] }
 tar = { version = "0.4.46", default-features = false }
 thiserror = { version = "2.0.20", default-features = false }
-tokio = { version = "=1.53.1", default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }
+tokio = { version = "=1.54.1", default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }
 toml = { version = "1.1.5", default-features = false, features = ["serde", "parse", "display"] }
 tracing = { version = "0.1.44", default-features = false, features = ["attributes", "std"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt"] }
-turnkey_api_key_stamper = "0.16.0"
-turnkey_client = "0.16.0"
-turnkey_enclave_encrypt = "0.16.0"
+turnkey_api_key_stamper = { git = "https://github.com/tkhq/rust-sdk", branch = "zeke/tk-dependency-audit-trims", default-features = false }
+turnkey_client = { git = "https://github.com/tkhq/rust-sdk", branch = "zeke/tk-dependency-audit-trims", default-features = false }
+turnkey_enclave_encrypt = { git = "https://github.com/tkhq/rust-sdk", branch = "zeke/tk-dependency-audit-trims" }
 uuid = { version = "1", default-features = false, features = ["serde", "std", "v4"] }
 zeroize = { version = "1.8", default-features = false, features = ["alloc", "serde"] }
 
@@ -111,5 +111,5 @@ predicates = { version = "3.1.4", default-features = false }
 ssh-key = { version = "0.6.7", default-features = false, features = ["rand_core"] }
 strum = { version = "0.28.0", default-features = false, features = ["derive", "std", "strum_macros"] }
 tempfile = { version = "3.27.0", default-features = false }
-tokio = { version = "=1.53.1", default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "=1.54.1", default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "test-util", "time"] }
 wiremock = { version = "0.6.5", default-features = false }

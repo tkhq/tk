@@ -10,6 +10,7 @@ use anyhow::{Error, Result};
 use clap::ValueEnum;
 use serde::Serialize;
 use serde_json::Value;
+use zeroize::Zeroizing;
 
 use crate::errors::{Classification, ErrorCode, classify, error_details, render_error_chain};
 
@@ -81,16 +82,17 @@ impl<W, W2> Shell<W, W2> {
     {
         match self.message_format {
             MessageFormat::Human => {
-                let text = message.to_string();
+                let text = Zeroizing::new(message.to_string());
 
                 if text.is_empty() {
                     return Ok(());
                 }
 
-                self.human().line(text)
+                self.human().line(text.as_str())
             }
             MessageFormat::Json => {
-                writeln!(self.stdout, "{}", serde_json::to_string(message)?)?;
+                serde_json::to_writer(&mut self.stdout, message)?;
+                writeln!(self.stdout)?;
                 Ok(())
             }
         }

@@ -34,6 +34,7 @@ const CURRENT: &str = env!("CARGO_PKG_VERSION");
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const MAX_ARCHIVE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_CHECKSUM_BYTES: usize = 4 * 1024;
 const BINARY_MODE: u32 = 0o755;
@@ -179,6 +180,7 @@ pub async fn run(UpdateArgs { tag }: UpdateArgs) -> Result<Outcome> {
         .user_agent(concat!("tk/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(READ_TIMEOUT)
+        .timeout(DOWNLOAD_TIMEOUT)
         .build()
         .context("build the release download client")?;
 

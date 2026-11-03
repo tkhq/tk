@@ -227,6 +227,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn trusted_quorum_keys_are_pinned() {
+        let pinned = |hex: &str| QuorumPublicKey::from_string(hex).unwrap();
+        assert_eq!(
+            [
+                "https://api.turnkey.com",
+                "https://api.preprod.turnkey.engineering/",
+                "https://api.dev.turnkey.engineering",
+            ]
+            .map(|url| quorum_for(url).unwrap()),
+            [
+                pinned(
+                    "04ca7c0d624c75de6f34af342e87a21e0d8c83efd1bd5b5da0c0177c147f744fba6f01f9f37356f9c617659aafa55f6e0af8d169a8f054d153ab3201901fb63ecb04cf288fe433cc4e1aa0ce1632feac4ea26bf2f5a09dcfe5a42c398e06898710330f0572882f4dbdf0f5304b8fc8703acd69adca9a4bbf7f5d00d20a5e364b2569"
+                ),
+                pinned(
+                    "048e92f6cdcc0b375505980a298d9b79201db1f08b1f135360d2864af1a67186ec0dbeb570d396a456226b0844be93dbc0180abbf7e2e4c9cfde8d5da4e3f8a49004f3422b8afbe425d6ece77b8d2469954715a2ff273ab7ac89f1ed70e0a9325eaa1698b4351fd1b23734e65c0b6a86b62dd49d70b37c94606aac402cbd84353212"
+                ),
+                pinned(TURNKEY_DEV_SIGNER_QUORUM_PUBLIC_KEY),
+            ]
+        );
+        quorum_for("https://example.com").unwrap_err();
+    }
+
+    #[test]
     fn import_name_must_be_a_non_blank_non_uuid_label() {
         assert_eq!(
             SecretName::parse_new("api-token").unwrap(),
