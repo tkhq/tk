@@ -1666,12 +1666,12 @@ dependencies = [
 [[package]]
 name = "qos_hex"
 version = "0.15.1"
-source = "git+https://github.com/tkhq/qos?branch=zeke%2Fdep-review-reductions#f85f79f1f08b53766d6c11e911de891c35e42030"
+source = "git+https://github.com/tkhq/qos?branch=zeke%2Fdep-review-reductions#8c3ece513b81181b259f2ae0b28be06fc5f2ba08"
 
 [[package]]
 name = "qos_p256"
 version = "0.15.1"
-source = "git+https://github.com/tkhq/qos?branch=zeke%2Fdep-review-reductions#f85f79f1f08b53766d6c11e911de891c35e42030"
+source = "git+https://github.com/tkhq/qos?branch=zeke%2Fdep-review-reductions#8c3ece513b81181b259f2ae0b28be06fc5f2ba08"
 dependencies = [
  "aes-gcm",
  "borsh",
@@ -2687,7 +2687,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "turnkey_api_key_stamper"
 version = "0.17.1"
-source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Ftk-dependency-audit-trims#26c25ec60946e4b76974cc29b72ba42a7550ccf8"
+source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Ftk-dependency-audit-trims#bdecbd3f88373257e610801f66a0f6955f7c8e73"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -2701,7 +2701,7 @@ dependencies = [
 [[package]]
 name = "turnkey_client"
 version = "0.17.1"
-source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Ftk-dependency-audit-trims#26c25ec60946e4b76974cc29b72ba42a7550ccf8"
+source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Ftk-dependency-audit-trims#bdecbd3f88373257e610801f66a0f6955f7c8e73"
 dependencies = [
  "chrono",
  "hex",
@@ -2721,7 +2721,7 @@ dependencies = [
 [[package]]
 name = "turnkey_enclave_encrypt"
 version = "0.17.1"
-source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Ftk-dependency-audit-trims#26c25ec60946e4b76974cc29b72ba42a7550ccf8"
+source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Ftk-dependency-audit-trims#bdecbd3f88373257e610801f66a0f6955f7c8e73"
 dependencies = [
  "bs58",
  "hex",
