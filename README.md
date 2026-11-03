@@ -55,6 +55,23 @@ Turnkey organization at https://app.turnkey.com.
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh
 ```
 
+We recommend installing
+[Cosign](https://docs.sigstore.dev/cosign/system_config/installation/) first so
+the installer verifies release signatures.
+
+To verify a release archive and its matching `.sigstore.json` bundle downloaded
+from [Releases](https://github.com/tkhq/tk/releases) manually:
+
+```bash
+cosign verify-blob-attestation tk-aarch64-apple-darwin-vX.Y.Z.tar.gz \
+  --bundle tk-aarch64-apple-darwin-vX.Y.Z.tar.gz.sigstore.json \
+  --type slsaprovenance1 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity https://github.com/tkhq/tk/.github/workflows/release.yml@refs/tags/vX.Y.Z
+```
+
+See [update](./docs/update.md) for updating an existing installation.
+
 ## Docs
 
 Git signing and SSH:

@@ -57,9 +57,19 @@ cargo publish
 
 ## Artifact contract
 
-Each release publishes two files for every target:
+Each release publishes three files for every target:
 
 ```
 tk-<target>-<vX.Y.Z>.tar.gz          # one directory, tk-<target>-<vX.Y.Z>/, holding tk and README.md
 tk-<target>-<vX.Y.Z>.tar.gz.sha256   # `shasum -a 256` output (hash and filename)
+tk-<target>-<vX.Y.Z>.tar.gz.sigstore.json # signed provenance bundle
 ```
+
+The build job that compiles each archive also records a signed SLSA build
+provenance attestation for it. The attestation names the repository, the
+workflow, the tag, and the commit. For manual verification, see
+[manual installation](../README.md#manual-installation).
+
+Verification exits nonzero unless the archive matches a signed SLSA v1
+attestation from the release workflow at the requested tag. Prereleases have no
+attestation. For installation and update behavior, see [update](./update.md).

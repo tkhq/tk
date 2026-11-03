@@ -1,7 +1,7 @@
 name: prerelease
 # Publishes a GitHub prerelease for every pull request push, tagged
 # pr-<number>-<short sha>, with the same archives the release workflow ships.
-# Install one with: TK_VERSION=pr-44-abc1234 sh install.sh
+# Download and extract unsigned prerelease archives manually for testing.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -122,7 +122,7 @@ jobs:
           prerelease: true
           body: |
             Automated build of ${{ github.event.pull_request.html_url || github.ref }} at ${{ github.event.pull_request.head.sha || github.sha }}.
-            Install with `TK_VERSION=${{ needs.build.outputs.tag }} sh install.sh`.
+            Download and extract an unsigned prerelease archive manually for testing.
           files: |
             dist/*.tar.gz
             dist/*.sha256

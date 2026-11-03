@@ -34,8 +34,10 @@ const CURRENT: &str = env!("CARGO_PKG_VERSION");
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
+const VERIFICATION_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_ARCHIVE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_CHECKSUM_BYTES: usize = 4 * 1024;
+const MAX_BUNDLE_BYTES: usize = 1024 * 1024;
 const BINARY_MODE: u32 = 0o755;
 
 // Linux releases are static musl builds, so they also replace a glibc build.
@@ -51,7 +53,7 @@ const TARGET: Option<&str> = if cfg!(all(target_os = "linux", target_arch = "x86
 
 #[derive(Debug, Args)]
 pub struct UpdateArgs {
-    /// Install this release or pull request prerelease tag, even an older one, instead of the latest release.
+    /// Install this signed release tag, even an older one, instead of the latest release.
     #[arg(long, value_name = "TAG")]
     tag: Option<ReleaseTag>,
 }
@@ -150,6 +152,8 @@ struct CargoInstalls {
 
 struct Staged(PathBuf);
 
+struct AttestedArchive(Vec<u8>);
+
 impl Drop for Staged {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.0);
@@ -244,10 +248,10 @@ pub async fn run(UpdateArgs { tag }: UpdateArgs) -> Result<Outcome> {
         file.set_permissions(Permissions::from_mode(BINARY_MODE))
             .with_context(|| format!("write the new tk binary to {}", staged.0.display()))?;
         let (archive, checksum) = tokio::try_join!(
-            fetch(&client, &download, MAX_ARCHIVE_BYTES),
+            download_attested_archive(&client, &download, &tag, Path::new("cosign")),
             fetch(&client, &checksum_url, MAX_CHECKSUM_BYTES),
         )?;
-        extract_verified_binary(&archive, &checksum, &package, &mut file)?;
+        extract_verified_binary(&archive.0, &checksum, &package, &mut file)?;
         file.sync_all()
             .with_context(|| format!("write the new tk binary to {}", staged.0.display()))?;
     }
@@ -272,6 +276,51 @@ pub async fn run(UpdateArgs { tag }: UpdateArgs) -> Result<Outcome> {
         to: tag,
         path: executable,
     }))
+}
+
+async fn download_attested_archive(
+    client: &Client,
+    download: &str,
+    tag: &ReleaseTag,
+    cosign: &Path,
+) -> Result<AttestedArchive> {
+    let bundle_url = format!("{download}.sigstore.json");
+    let (archive, bundle) = tokio::try_join!(
+        fetch(client, download, MAX_ARCHIVE_BYTES),
+        fetch(client, &bundle_url, MAX_BUNDLE_BYTES),
+    )?;
+    let temporary = tempfile::tempdir().context("create a directory for release verification")?;
+    let archive_path = temporary.path().join("archive.tar.gz");
+    let bundle_path = temporary.path().join("provenance.sigstore.json");
+    fs::write(&archive_path, &archive).context("stage the release archive for verification")?;
+    fs::write(&bundle_path, bundle).context("stage the release provenance for verification")?;
+    let identity = format!("{REPOSITORY}/.github/workflows/release.yml@refs/tags/{tag}");
+    let verified = timeout(
+        VERIFICATION_TIMEOUT,
+        Command::new(cosign)
+            .arg("verify-blob-attestation")
+            .arg(&archive_path)
+            .arg("--bundle")
+            .arg(&bundle_path)
+            .args(["--type", "slsaprovenance1"])
+            .args([
+                "--certificate-oidc-issuer",
+                "https://token.actions.githubusercontent.com",
+            ])
+            .args(["--certificate-identity", &identity])
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .context("Cosign release verification timed out")?
+    .context("run cosign to verify the release; install a current cosign executable on PATH")?;
+    if !verified.status.success() {
+        bail!(
+            "Cosign rejected the {tag} release provenance: {}",
+            String::from_utf8_lossy(&verified.stderr).trim()
+        );
+    }
+    Ok(AttestedArchive(archive))
 }
 
 fn cargo_update_command(bin: &Path, tag: Option<&ReleaseTag>) -> Result<Option<String>> {
@@ -430,6 +479,7 @@ fn extract_verified_binary(
 mod tests {
     use flate2::{Compression, write::GzEncoder};
     use tar::{Builder, EntryType, Header};
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
 
     use super::*;
 
@@ -495,5 +545,108 @@ mod tests {
         for tag in ["", ".", "..", ".x", "v0.4.0/../x", "v0.4.0?x", "v0 4"] {
             assert!(tag.parse::<ReleaseTag>().is_err(), "{tag}");
         }
+    }
+
+    #[tokio::test]
+    async fn cosign_checks_the_archive_and_exact_release_identity() -> Result<()> {
+        let server = MockServer::start().await;
+        let archive = Mock::given(path("/archive.tar.gz"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"archive"))
+            .expect(3);
+        let bundle = Mock::given(path("/archive.tar.gz.sigstore.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"bundle"))
+            .expect(3);
+        tokio::join!(archive.mount(&server), bundle.mount(&server));
+        let directory = tempfile::tempdir()?;
+        let cosign = directory.path().join("cosign");
+        fs::write(
+            &cosign,
+            r#"#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "${0%/*}/arguments"
+cp "$2" "${0%/*}/archive"
+cp "$4" "${0%/*}/bundle"
+read -r status < "${0%/*}/exit"
+echo 'verification diagnostic' >&2
+exit "$status"
+"#,
+        )?;
+        fs::set_permissions(&cosign, Permissions::from_mode(0o755))?;
+        let client = Client::new();
+        let download = format!("{}/archive.tar.gz", server.uri());
+        let tag = "v1.2.3".parse::<ReleaseTag>()?;
+        for status in [0, 17] {
+            fs::write(directory.path().join("exit"), format!("{status}\n"))?;
+            let result = download_attested_archive(&client, &download, &tag, &cosign).await;
+            if status == 0 {
+                assert_eq!(result?.0, b"archive");
+            } else {
+                assert_eq!(
+                    result.err().context("verification must fail")?.to_string(),
+                    "Cosign rejected the v1.2.3 release provenance: verification diagnostic"
+                );
+            }
+        }
+        let arguments = fs::read_to_string(directory.path().join("arguments"))?;
+        let arguments: Vec<_> = arguments.lines().collect();
+        assert_eq!(
+            arguments,
+            [
+                "verify-blob-attestation",
+                arguments[1],
+                "--bundle",
+                arguments[3],
+                "--type",
+                "slsaprovenance1",
+                "--certificate-oidc-issuer",
+                "https://token.actions.githubusercontent.com",
+                "--certificate-identity",
+                "https://github.com/tkhq/tk/.github/workflows/release.yml@refs/tags/v1.2.3",
+            ]
+        );
+        assert_eq!(fs::read(directory.path().join("archive"))?, b"archive");
+        assert_eq!(fs::read(directory.path().join("bundle"))?, b"bundle");
+        assert!(!Path::new(arguments[1]).exists());
+        assert!(!Path::new(arguments[3]).exists());
+        fs::remove_file(&cosign)?;
+        let error = download_attested_archive(&client, &download, &tag, &cosign)
+            .await
+            .err()
+            .context("missing cosign must fail")?;
+        assert_eq!(
+            error.downcast_ref::<io::Error>().map(io::Error::kind),
+            Some(ErrorKind::NotFound)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oversized_provenance_cannot_produce_an_attested_archive() -> Result<()> {
+        let server = MockServer::start().await;
+        let archive = Mock::given(path("/archive.tar.gz"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"archive"));
+        let bundle = Mock::given(path("/archive.tar.gz.sigstore.json"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_bytes(vec![b' '; MAX_BUNDLE_BYTES + 1]),
+            )
+            .expect(1);
+        tokio::join!(archive.mount(&server), bundle.mount(&server));
+        let error = download_attested_archive(
+            &Client::new(),
+            &format!("{}/archive.tar.gz", server.uri()),
+            &"v1.2.3".parse()?,
+            Path::new("/missing-cosign"),
+        )
+        .await
+        .err()
+        .context("oversized provenance must fail")?;
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "{}/archive.tar.gz.sigstore.json exceeds the {MAX_BUNDLE_BYTES}-byte download limit",
+                server.uri()
+            )
+        );
+        Ok(())
     }
 }

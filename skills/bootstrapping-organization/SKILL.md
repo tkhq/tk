@@ -35,8 +35,9 @@ which human approves. The organization id comes from step 1.
    https://app.turnkey.com. Sign in, create an organization if there is none,
    and copy the Organization ID from the dashboard; it is `ORG_UUID` below.
 
-2. **Install `tk`.** Operator, on their machine. The installer fetches the
-   latest release:
+2. **Install `tk`.** Operator, on their machine. For signature verification,
+   install [Cosign](https://docs.sigstore.dev/cosign/system_config/installation/)
+   on PATH before running the installer:
 
    <!-- example: bootstrap.install -->
    ```sh

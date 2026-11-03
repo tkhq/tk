@@ -71,3 +71,19 @@ fn updater_targets_match_the_build_matrix() {
         .collect();
     assert_eq!(updater, matrix);
 }
+
+#[test]
+fn every_release_archive_gets_a_provenance_attestation() {
+    let build = WORKFLOW
+        .split_once("\n  build:\n")
+        .and_then(|(_, rest)| rest.split_once("\n  release:\n"))
+        .map(|(build, _)| build)
+        .unwrap();
+    assert!(build.contains("id-token: write"));
+    assert!(build.contains("attestations: write"));
+    assert!(build.contains("subject-path: tk-${{ matrix.target }}-${{ github.ref_name }}.tar.gz"));
+    assert!(build.contains("BUNDLE: ${{ steps.provenance.outputs.bundle-path }}"));
+    assert!(build.contains(r#"run: cp "$BUNDLE" "$ARCHIVE.sigstore.json""#));
+    assert!(build.contains("tk-${{ matrix.target }}-${{ github.ref_name }}.tar.gz.sigstore.json"));
+    assert!(WORKFLOW.contains("dist/*.sigstore.json"));
+}

@@ -3,10 +3,10 @@
 #
 #   curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/tkhq/tk/main/install.sh | sh
 #
-# Set TK_INSTALL_DIR to an absolute directory to install somewhere other than
-# $HOME/.local/bin. Set TK_VERSION to a release tag (v0.2.0) or a pull request
-# prerelease tag (pr-44-abc1234) to install that build instead of the latest
-# release.
+# Uses cosign to verify provenance when it is on PATH. Set TK_INSTALL_DIR to
+# an absolute directory to install somewhere other than $HOME/.local/bin.
+# Set TK_VERSION to a release or prerelease tag to install that build instead
+# of the latest release.
 
 set -eu
 
@@ -92,6 +92,18 @@ checksum="$temporary_dir/$checksum_name"
 curl --proto '=https' --tlsv1.2 -LsSf --fail-early \
     -o "$archive" "$download_url/$archive_name" \
     -o "$checksum" "$download_url/$checksum_name"
+
+if command -v cosign >/dev/null 2>&1; then
+    bundle_name="$archive_name.sigstore.json"
+    bundle="$temporary_dir/$bundle_name"
+    curl --proto '=https' --tlsv1.2 -LsSf \
+        -o "$bundle" "$download_url/$bundle_name"
+    cosign verify-blob-attestation "$archive" \
+        --bundle "$bundle" \
+        --type slsaprovenance1 \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+        --certificate-identity "$repository_url/.github/workflows/release.yml@refs/tags/$version"
+fi
 
 # A checksum file that validates some other filename proves nothing about the
 # archive we downloaded, so require it to name exactly this archive.
