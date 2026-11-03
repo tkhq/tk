@@ -10,7 +10,11 @@ use std::{
 
 use anyhow::{Context, Error, Result, bail};
 use clap::{Args, Subcommand, builder::NonEmptyStringValueParser};
-use reqwest::{Client, ClientBuilder, Url, redirect::Policy};
+use reqwest::{
+    Client, ClientBuilder, Url,
+    header::{HeaderMap, HeaderName, HeaderValue},
+    redirect::Policy,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::{
@@ -43,6 +47,7 @@ use crate::{
 const DEFAULT_URL: &str = "https://api.turnkey.com";
 const DEFAULT_PROFILE_NAME: &str = "default";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const CLIENT_VERSION: &str = concat!("tk/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Clone, Debug, Args)]
 pub struct AuthOptions {
@@ -327,7 +332,13 @@ impl ResolvedAuth {
 }
 
 fn transport(builder: ClientBuilder) -> ClientBuilder {
-    builder.redirect(Policy::none()).timeout(REQUEST_TIMEOUT)
+    builder
+        .redirect(Policy::none())
+        .timeout(REQUEST_TIMEOUT)
+        .default_headers(HeaderMap::from_iter([(
+            HeaderName::from_static("x-client-version"),
+            HeaderValue::from_static(CLIENT_VERSION),
+        )]))
 }
 
 pub fn build_turnkey_client(
@@ -1328,6 +1339,11 @@ pub async fn run_profile(
 
 #[cfg(test)]
 mod tests {
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{header, method},
+    };
+
     use super::*;
 
     #[test]
@@ -1385,5 +1401,30 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[tokio::test]
+    async fn api_clients_send_the_tk_client_version() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(header("X-Client-Version", CLIENT_VERSION))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let auth = ResolvedAuth::for_tests(
+            "00000000-0000-4000-8000-000000000001",
+            &server.uri(),
+            TurnkeyP256ApiKey::generate(),
+        );
+        auth.http()
+            .unwrap()
+            .post(server.uri())
+            .send()
+            .await
+            .unwrap();
+        let client = build_turnkey_client(auth.stamper, &auth.api_base_url).unwrap();
+        let _ = whoami(&client, auth.org_id).await;
+        server.verify().await;
     }
 }

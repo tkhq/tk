@@ -30,6 +30,7 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
+    auth::CLIENT_VERSION,
     errors::{InvalidInput, UnexpectedHttpStatus},
     outcome::Outcome,
 };
@@ -203,7 +204,7 @@ async fn update(UpdateArgs { tag }: UpdateArgs) -> Result<Outcome> {
         );
     };
     let client = Client::builder()
-        .user_agent(concat!("tk/", env!("CARGO_PKG_VERSION")))
+        .user_agent(CLIENT_VERSION)
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(READ_TIMEOUT)
         .build()
