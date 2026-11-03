@@ -1,0 +1,18 @@
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "rsa Marvin timing attack needs a private-key operation; tk only verifies RSA host-key signatures" },
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 has no fix; exploiting it needs a co-located side-channel observer; tracked in EMG-401 until qos_p256 and ssh-key move to RustCrypto 0.14" },
+]
+
+[bans]
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = ["https://github.com/tkhq/rust-sdk", "https://github.com/tkhq/qos"]
