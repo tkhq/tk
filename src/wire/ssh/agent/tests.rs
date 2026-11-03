@@ -11,18 +11,21 @@ use std::{
 use anyhow::{Result, anyhow};
 use rand_core::OsRng;
 use signature::Signer;
-use ssh_key::{Algorithm, PrivateKey, Signature};
+use ssh_key::{Algorithm, HashAlg, PrivateKey, Signature};
 use tempfile::TempDir;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
     task::JoinHandle,
-    time::{Duration, sleep},
+    time::{Duration, Instant, sleep},
 };
 
 use crate::wire::ssh::{
     Ed25519PublicKey,
-    agent::{self, AgentIdentity, Keyring, SignError, SignFuture, destination::DestinationPolicy},
+    agent::{
+        self, AgentIdentity, IDLE_TIMEOUT, Keyring, MAX_CONNECTIONS, SignError, SignFuture,
+        destination::DestinationPolicy,
+    },
     build_signed_data, protocol,
 };
 
@@ -348,6 +351,45 @@ async fn a_connection_idle_between_requests_still_gets_a_signature() {
     assert!(join_error.is_cancelled());
 }
 
+#[tokio::test(start_paused = true)]
+async fn idle_connections_hold_the_cap_until_the_idle_deadline_reaps_them() {
+    let identities = vec![identity(0x11, "turnkey:first")];
+    let UnrestrictedAgent {
+        _directory,
+        socket,
+        server,
+    } = UnrestrictedAgent::start(StubKeyring {
+        signatures: BTreeMap::new(),
+        identities: identities.clone(),
+        refused: Ed25519PublicKey::from_bytes([0xff; 32]),
+    });
+    let identities_request =
+        protocol::encode_agent_frame(protocol::SSH_AGENTC_REQUEST_IDENTITIES, &[]);
+
+    let started = Instant::now();
+    let mut idle = Vec::with_capacity(MAX_CONNECTIONS);
+    for _ in 0..MAX_CONNECTIONS {
+        idle.push(connect(&socket).await.expect("agent socket should accept"));
+    }
+    assert_eq!(
+        exchange(&socket, &identities_request)
+            .await
+            .expect("a connection past the cap should be served once idle ones are reaped"),
+        expected_identities_frame(&identities)
+    );
+    assert!(started.elapsed() >= IDLE_TIMEOUT);
+    for mut stream in idle {
+        assert_eq!(
+            stream
+                .read(&mut [0; 1])
+                .await
+                .expect("a reaped connection reads end of file"),
+            0
+        );
+    }
+    assert!(!server.is_finished());
+}
+
 #[tokio::test]
 async fn unsupported_and_malformed_requests_are_refused_with_exact_codes() {
     let identities = vec![identity(0x11, "turnkey:first")];
@@ -527,7 +569,7 @@ impl RestrictedAgent {
         let served = identity(0x11, "turnkey:served");
         let allowed_host = host_key();
         let policy = DestinationPolicy::Restricted {
-            hosts: vec![allowed_host.public_key().key_data().clone()],
+            hosts: vec![allowed_host.public_key().fingerprint(HashAlg::Sha256)],
             namespaces: namespaces.iter().map(ToString::to_string).collect(),
         };
         let keyring: Arc<dyn Keyring> = Arc::new(StubKeyring {
@@ -668,7 +710,7 @@ async fn a_hostbound_userauth_is_signed_only_for_the_bound_host_key() {
 #[tokio::test]
 async fn a_forwarding_hop_anywhere_on_the_connection_refuses_userauth() {
     let agent = RestrictedAgent::start(&[]);
-    let forwarding_hop = bind_session_frame(&host_key(), &[0xbb; 32], true);
+    let forwarding_hop = bind_session_frame(&agent.allowed_host, &[0xbb; 32], true);
 
     let mut stream = agent.connect().await;
     assert_eq!(answer(&mut stream, &forwarding_hop).await, success_frame());
@@ -845,7 +887,7 @@ async fn forwarding_binds_followed_by_one_authentication_bind_are_accepted() {
         assert_eq!(
             answer(
                 &mut stream,
-                &bind_session_frame(&host_key(), &session_id, true)
+                &bind_session_frame(&agent.allowed_host, &session_id, true)
             )
             .await,
             success_frame()
@@ -863,6 +905,29 @@ async fn forwarding_binds_followed_by_one_authentication_bind_are_accepted() {
         .await,
         extension_failure_frame()
     );
+}
+
+#[tokio::test]
+async fn a_validly_signed_session_bind_from_an_unlisted_host_fails_and_taints_the_connection() {
+    let agent = RestrictedAgent::start(&["git"]);
+    let identities_request =
+        protocol::encode_agent_frame(protocol::SSH_AGENTC_REQUEST_IDENTITIES, &[]);
+
+    for is_forwarding in [false, true] {
+        let mut stream = agent.connect().await;
+        assert_eq!(
+            answer(&mut stream, &bind_frame(&host_key(), is_forwarding)).await,
+            extension_failure_frame()
+        );
+        assert_eq!(
+            answer(&mut stream, &identities_request).await,
+            expected_identities_frame(&[])
+        );
+        assert_eq!(
+            answer(&mut stream, &agent.userauth_sign_frame()).await,
+            failure_frame()
+        );
+    }
 }
 
 #[tokio::test]

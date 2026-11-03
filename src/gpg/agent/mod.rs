@@ -42,7 +42,9 @@ use super::{
     unix_now,
 };
 use crate::{
-    auth::{self, AuthOptions, CredentialSource, ReloadingClient, config_dir},
+    auth::{
+        self, AuthOptions, CredentialSource, ReloadingClient, config_dir, create_private_dir_all,
+    },
     outcome::{MachineOnly, Outcome},
     socket::{SocketMode, open_agent_lock, restrict_agent_socket, try_lock_agent},
     wire::openpgp::{
@@ -316,7 +318,7 @@ fn report_handler_completion(completed: std::result::Result<(), JoinError>) {
 async fn acquire_socket(socket: &SocketPath, mode: SocketMode) -> Result<SocketGuard> {
     let path = socket.path.as_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
+        create_private_dir_all(parent)
             .await
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }

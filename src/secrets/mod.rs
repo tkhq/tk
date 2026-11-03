@@ -222,6 +222,12 @@ impl From<OperationOutput> for SecretOutput {
     }
 }
 
+impl Drop for SecretOutput {
+    fn drop(&mut self) {
+        self.record.zeroize_data();
+    }
+}
+
 impl Serialize for SecretOutput {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.record.serialize(serializer)

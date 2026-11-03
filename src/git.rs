@@ -11,6 +11,8 @@ use std::{
 use anyhow::{Context, Error, Result, bail};
 use clap::Subcommand;
 
+use crate::auth::PRIVATE_KEY_ENV;
+
 const CO_AUTHOR_TRAILER: &str = "Co-authored-by: Turnkey <noreply@turnkey.com>";
 // Git's `commit -v` and `--cleanup=scissors` drop everything from this line on, after the comment character.
 const SCISSORS: &[u8] = b" ------------------------ >8 ------------------------";
@@ -40,6 +42,7 @@ pub fn run(command: GitCommand) -> Result<()> {
         .collect();
     let mut stripspace = Command::new("git")
         .args(["stripspace", "--strip-comments"])
+        .env_remove(PRIVATE_KEY_ENV)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -61,6 +64,7 @@ pub fn run(command: GitCommand) -> Result<()> {
         return Ok(());
     }
     let error = Command::new("git")
+        .env_remove(PRIVATE_KEY_ENV)
         .args([
             "interpret-trailers",
             "--in-place",

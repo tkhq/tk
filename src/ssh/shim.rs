@@ -218,7 +218,10 @@ fn passthrough(args: Vec<String>) -> ExitCode {
     let program = env::var_os("TK_SSH_KEYGEN_PROGRAM")
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| OsString::from(DEFAULT_PROGRAM));
-    let error = Command::new(&program).args(args).exec();
+    let error = Command::new(&program)
+        .args(args)
+        .env_remove(auth::PRIVATE_KEY_ENV)
+        .exec();
     let _ = writeln!(
         io::stderr(),
         "error: cannot run {}: {error}; install ssh-keygen or set TK_SSH_KEYGEN_PROGRAM",

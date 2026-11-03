@@ -8,7 +8,10 @@ use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    auth::{KeyCurve, SecureCreateError, StoredApiKey, read_key, secure_create, state_dir},
+    auth::{
+        KeyCurve, SecureCreateError, StoredApiKey, read_key, secure_create, secure_create_dir_all,
+        state_dir,
+    },
     operations::OperationOutput,
     sessions::public_key::CompressedPublicKey,
 };
@@ -80,9 +83,7 @@ pub(crate) async fn import(key: &TurnkeyP256ApiKey) -> Result<ImportedApiKey> {
 
 async fn managed_path(public_key: &CompressedPublicKey) -> Result<PathBuf> {
     let dir = state_dir()?.join("api-keys");
-    fs::create_dir_all(&dir)
-        .await
-        .with_context(|| format!("create {}", dir.display()))?;
+    secure_create_dir_all(&dir).await?;
     let dir = fs::canonicalize(&dir)
         .await
         .with_context(|| format!("resolve {}", dir.display()))?;

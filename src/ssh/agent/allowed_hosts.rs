@@ -3,14 +3,14 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use ssh_key::{Algorithm, PublicKey, public::KeyData};
+use ssh_key::{Algorithm, Fingerprint, HashAlg, PublicKey, public::KeyData};
 use tokio::fs;
 
 use crate::errors::{InvalidInput, Malformed};
 
 pub(super) struct AllowedHosts {
     pub(super) names: Vec<String>,
-    pub(super) keys: Vec<KeyData>,
+    pub(super) fingerprints: Vec<Fingerprint>,
 }
 
 pub(super) async fn read(path: &Path) -> Result<String> {
@@ -21,7 +21,7 @@ pub(super) async fn read(path: &Path) -> Result<String> {
 
 pub(super) fn parse(path: &Path, contents: &str) -> Result<AllowedHosts> {
     let mut names = Vec::new();
-    let mut keys = Vec::new();
+    let mut fingerprints = Vec::new();
 
     for (index, line) in contents.lines().enumerate() {
         let line = line.trim();
@@ -76,14 +76,17 @@ pub(super) fn parse(path: &Path, contents: &str) -> Result<AllowedHosts> {
         }
 
         names.push(name.to_string());
-        keys.push(key.into());
+        fingerprints.push(key.fingerprint(HashAlg::Sha256));
     }
 
-    if keys.is_empty() {
+    if fingerprints.is_empty() {
         return Err(InvalidInput(format!("{} names no host keys", path.display())).into());
     }
 
     names.sort();
     names.dedup();
-    Ok(AllowedHosts { names, keys })
+    Ok(AllowedHosts {
+        names,
+        fingerprints,
+    })
 }
