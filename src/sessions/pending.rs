@@ -12,7 +12,7 @@ use tokio::fs;
 
 use super::public_key::CompressedPublicKey;
 use crate::{
-    auth::secure_create,
+    auth::{secure_create, secure_create_dir_all},
     errors::{InvalidInput, Malformed},
 };
 
@@ -63,9 +63,7 @@ impl PendingSession {
 
     pub(crate) async fn create(&self, state: &Path, profile: &str) -> Result<()> {
         let dir = Self::dir(state);
-        fs::create_dir_all(&dir)
-            .await
-            .with_context(|| format!("create {}", dir.display()))?;
+        secure_create_dir_all(&dir).await?;
         let path = Self::path(state, profile);
         secure_create(&path, &to_vec(self)?)
             .await

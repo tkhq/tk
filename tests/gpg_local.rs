@@ -331,6 +331,36 @@ fn a_verify_call_becomes_the_configured_program() {
 }
 
 #[test]
+fn the_configured_program_does_not_inherit_the_private_key() {
+    let home = tempdir().expect("temp home should be creatable");
+    let program = home.path().join("print-env");
+    fs::write(
+        &program,
+        r#"#!/bin/sh
+printf '%s\n' "${TURNKEY_API_PRIVATE_KEY-unset}" "${TURNKEY_API_PUBLIC_KEY-unset}"
+"#,
+    )
+    .expect("the stand in should be writable");
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
+        .expect("the stand in should be executable");
+
+    let output = tk(&home)
+        .env("TK_GPG_PROGRAM", &program)
+        .env("TURNKEY_API_PRIVATE_KEY", "secret")
+        .env("TURNKEY_API_PUBLIC_KEY", "public")
+        .args(VERIFY_ARGS)
+        .output()
+        .expect("tk should run");
+
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("the stand in prints text"),
+        r#"unset
+public
+"#
+    );
+}
+
+#[test]
 fn a_missing_program_names_the_environment_variable() {
     let home = tempdir().expect("temp home should be creatable");
     let program = home.path().join("no-such-gpg");

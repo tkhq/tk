@@ -3,6 +3,8 @@ use std::{
     fmt::{self, Display, Formatter},
     io::{self, ErrorKind},
     mem,
+    net::IpAddr,
+    os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock, PoisonError},
     time::{Duration, SystemTime},
@@ -18,7 +20,7 @@ use reqwest::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::{
-    fs::{self, OpenOptions},
+    fs::{self, DirBuilder, OpenOptions},
     io::AsyncWriteExt,
 };
 use tracing::debug;
@@ -275,7 +277,15 @@ impl TryFrom<String> for ApiBaseUrl {
     fn try_from(raw: String) -> Result<Self> {
         let url =
             Url::parse(&raw).map_err(|error| Malformed::new("invalid API base URL", error))?;
-        if !matches!(url.scheme(), "https" | "http")
+        let loopback = url.host_str().is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse::<IpAddr>()
+                    .is_ok_and(|address| address.is_loopback())
+        });
+        if !(url.scheme() == "https" || url.scheme() == "http" && loopback)
             || url.host_str().is_none()
             || !url.username().is_empty()
             || url.password().is_some()
@@ -283,7 +293,7 @@ impl TryFrom<String> for ApiBaseUrl {
             || url.fragment().is_some()
         {
             return Err(InvalidInput(
-                "API base URL must be an HTTP(S) URL without credentials, query or fragment".into(),
+                "API base URL must be an HTTPS URL, or HTTP to a loopback host, without credentials, query or fragment".into(),
             )
             .into());
         }
@@ -517,12 +527,16 @@ struct LockHeld {
 impl FileLock {
     async fn acquire(lock: PathBuf, resource: &str) -> Result<Self> {
         if let Some(parent) = lock.parent() {
-            fs::create_dir_all(parent).await?;
+            secure_create_dir_all(parent).await?;
         }
         let mut options = OpenOptions::new();
-        options.read(true).write(true).create(true).truncate(false);
-        #[cfg(unix)]
-        options.mode(0o600);
+        options
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
         let file = options
             .open(&lock)
             .await
@@ -556,7 +570,7 @@ async fn registry_lock(path: &Path) -> Result<FileLock> {
 
 async fn save(path: &Path, registry: &Registry) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
+        secure_create_dir_all(parent).await?;
     }
     let temporary = path.with_extension(format!("{}.tmp", Uuid::new_v4()));
     let content = toml::to_string_pretty(registry)?;
@@ -568,6 +582,28 @@ async fn save(path: &Path, registry: &Registry) -> Result<()> {
         return Err(error).context("replace identity registry");
     }
     Ok(())
+}
+
+pub async fn create_private_dir_all(path: &Path) -> io::Result<()> {
+    DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path)
+        .await
+}
+
+pub async fn secure_create_dir_all(path: &Path) -> Result<()> {
+    async {
+        create_private_dir_all(path).await?;
+        let metadata = fs::metadata(path).await?;
+        // SAFETY: geteuid takes no arguments and has no memory-safety preconditions.
+        if metadata.uid() == unsafe { libc::geteuid() } && metadata.mode() & 0o077 != 0 {
+            fs::set_permissions(path, PermissionsExt::from_mode(0o700)).await?;
+        }
+        Ok::<_, io::Error>(())
+    }
+    .await
+    .with_context(|| format!("create {}", path.display()))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -651,10 +687,12 @@ pub(crate) fn endpoint_override(options: &AuthOptions) -> Result<Option<ApiBaseU
         .transpose()
 }
 
+pub(crate) const PRIVATE_KEY_ENV: &str = "TURNKEY_API_PRIVATE_KEY";
+
 const ENV_BUNDLE: [&str; 3] = [
     "TURNKEY_ORGANIZATION_ID",
     "TURNKEY_API_PUBLIC_KEY",
-    "TURNKEY_API_PRIVATE_KEY",
+    PRIVATE_KEY_ENV,
 ];
 
 pub async fn resolve(options: &AuthOptions) -> Result<ResolvedAuth> {
@@ -1339,6 +1377,8 @@ pub async fn run_profile(
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::symlink;
+
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{header, method},
@@ -1351,6 +1391,24 @@ mod tests {
         assert_eq!(
             ApiBaseUrl::default(),
             ApiBaseUrl::try_from(DEFAULT_URL.to_owned()).unwrap()
+        );
+    }
+
+    #[test]
+    fn plain_http_api_base_urls_are_accepted_only_for_loopback_hosts() {
+        let accepted = |raw: &str| ApiBaseUrl::try_from(raw.to_owned()).is_ok();
+        assert_eq!(
+            [
+                "https://api.turnkey.com",
+                "http://localhost:8080",
+                "http://127.0.0.1:8080",
+                "http://[::1]:8080",
+                "http://api.turnkey.com",
+                "http://10.0.0.1",
+                "http://localhost.example.com",
+            ]
+            .map(accepted),
+            [true, true, true, true, false, false, false]
         );
     }
 
@@ -1368,6 +1426,40 @@ mod tests {
         assert_eq!(resolve("/state/tk/api-keys/.."), None);
         assert_eq!(resolve("/state/tk/api-keys"), None);
         assert_eq!(resolve("/home/me/key.json"), None);
+    }
+
+    #[tokio::test]
+    async fn secret_directories_are_created_and_tightened_to_owner_only() {
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("profile");
+        std::fs::create_dir(&existing).unwrap();
+        std::fs::set_permissions(&existing, PermissionsExt::from_mode(0o755)).unwrap();
+        let keys = existing.join("keys").join("api-keys");
+
+        secure_create_dir_all(&keys).await.unwrap();
+        secure_create_dir_all(&existing).await.unwrap();
+
+        assert_eq!(
+            [&existing, &keys.parent().unwrap().to_path_buf(), &keys].map(|path| mode(path)),
+            [0o700; 3]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_registry_lock_refuses_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("elsewhere");
+        std::fs::write(&target, b"").unwrap();
+        let registry = dir.path().join("registry.toml");
+        symlink(&target, registry.with_extension("lock")).unwrap();
+
+        let error = registry_lock(&registry).await.err().unwrap();
+
+        assert_eq!(
+            error.downcast_ref::<io::Error>().unwrap().raw_os_error(),
+            Some(libc::ELOOP)
+        );
     }
 
     #[tokio::test]

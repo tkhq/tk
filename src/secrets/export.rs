@@ -30,7 +30,10 @@ use super::{
     input::{SecretName, SecretRef, UniqueKeyValues, quorum_for},
 };
 use crate::{
-    auth::{ResolvedAuth, SecureCreateError, build_turnkey_client, secure_create, state_dir},
+    auth::{
+        ResolvedAuth, SecureCreateError, build_turnkey_client, secure_create,
+        secure_create_dir_all, state_dir,
+    },
     errors::{ActivityError, ActivityErrorKind, InvalidInput, Malformed, MissingResource},
     operations::{OperationOutput, observed, query, query_activity, submit_activity},
 };
@@ -178,7 +181,7 @@ impl PendingExport {
 
     async fn create(&self, path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).await?;
+            secure_create_dir_all(parent).await?;
         }
         let bytes = Zeroizing::new(to_vec(self)?);
         secure_create(path, &bytes).await.map_err(|error| match error {

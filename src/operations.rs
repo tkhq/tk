@@ -19,6 +19,7 @@ use turnkey_client::generated::{
     external::options::v1::Pagination,
 };
 use uuid::Uuid;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     auth::ResolvedAuth,
@@ -34,6 +35,7 @@ const WALK_PAGE_SIZE: usize = 100;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 const MAX_ERROR_BODY_BYTES: usize = 4 * 1024;
+const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Args)]
 pub struct RequestArgs {
@@ -188,6 +190,18 @@ impl OperationOutput {
         self.data
     }
 
+    pub(crate) fn zeroize_data(&mut self) {
+        fn walk(value: &mut Value) {
+            match value {
+                Value::String(text) => text.zeroize(),
+                Value::Array(items) => items.iter_mut().for_each(walk),
+                Value::Object(fields) => fields.values_mut().for_each(walk),
+                Value::Null | Value::Bool(_) | Value::Number(_) => {}
+            }
+        }
+        walk(&mut self.data);
+    }
+
     fn status(&self) -> Status {
         self.activity.as_ref().map_or(Status::Completed, Status::of)
     }
@@ -327,7 +341,7 @@ async fn post<R: DeserializeOwned>(
         .rsplit_once('/')
         .map_or(endpoint.path(), |(_, end)| end)
         .to_owned();
-    let response = auth
+    let mut response = auth
         .http()?
         .post(endpoint)
         .header(stamp.name, stamp.value)
@@ -349,10 +363,16 @@ async fn post<R: DeserializeOwned>(
         })?;
     let status = response.status();
     if !status.is_success() {
-        let mut body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "unreadable response body".into());
+        let mut raw = Zeroizing::new(Vec::new());
+        let mut body = loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) if raw.len() <= MAX_ERROR_BODY_BYTES => {
+                    raw.extend_from_slice(&chunk);
+                }
+                Ok(_) => break String::from_utf8_lossy(&raw).into_owned(),
+                Err(_) => break "unreadable response body".to_owned(),
+            }
+        };
         if body.len() > MAX_ERROR_BODY_BYTES {
             let mut cut = MAX_ERROR_BODY_BYTES;
             while !body.is_char_boundary(cut) {
@@ -372,9 +392,23 @@ async fn post<R: DeserializeOwned>(
     } else {
         ActivityErrorKind::MalformedResponse
     };
-    let bytes = response.bytes().await.map_err(|error| {
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .map_or(0, |length| length.min(MAX_RESPONSE_BYTES));
+    let mut bytes = Zeroizing::new(Vec::with_capacity(capacity));
+    while let Some(chunk) = response.chunk().await.map_err(|error| {
         ActivityError::new(kind, "API returned an unreadable response").with_source(error)
-    })?;
+    })? {
+        if bytes.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Err(ActivityError::new(
+                kind,
+                format!("{name} response exceeds the {MAX_RESPONSE_BYTES}-byte limit"),
+            )
+            .into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
     from_slice(&bytes).map_err(|error| match error.classify() {
         Category::Data => ActivityError::new(
             ActivityErrorKind::MalformedResponse,

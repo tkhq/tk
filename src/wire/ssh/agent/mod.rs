@@ -8,21 +8,27 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::{Context, Result, anyhow};
 use destination::{DestinationPolicy, Destinations};
 use socket2::{Domain, SockAddr, Socket, Type};
+use ssh_key::Fingerprint;
 use tokio::{
     fs,
     net::{UnixListener, UnixStream},
     signal::unix::{SignalKind, signal},
     task::JoinSet,
+    time::timeout,
 };
 use tracing::{debug, warn};
 
 use super::{Ed25519PublicKey, protocol};
 use crate::socket::{SocketMode, restrict_agent_socket};
+
+const MAX_CONNECTIONS: usize = 16;
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// One identity advertised by the SSH agent.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,8 +94,14 @@ pub async fn run(
 
         loop {
             tokio::select! {
-                accept_result = listener.accept() => {
-                    let (stream, _) = accept_result.context("failed to accept SSH agent connection")?;
+                accept_result = listener.accept(), if connections.len() < MAX_CONNECTIONS => {
+                    let stream = match accept_result {
+                        Ok((stream, _)) => stream,
+                        Err(error) if is_connection_error_kind(error.kind()) => continue,
+                        Err(error) => {
+                            return Err(error).context("failed to accept SSH agent connection");
+                        }
+                    };
                     let keyring = Arc::clone(&keyring);
                     let policy = Arc::clone(&policy);
                     connections.spawn(async move { handle_connection(stream, keyring, policy).await });
@@ -100,12 +112,11 @@ pub async fn run(
                     match join_result {
                         Ok(Ok(())) => {}
                         Ok(Err(error)) if is_connection_error_kind(error.kind()) => {}
-                        Ok(Err(error)) => {
-                            return Err(error).context("failed to serve SSH agent connection");
+                        Ok(Err(error)) => warn!(?error, "failed to serve an SSH agent connection"),
+                        Err(error) if error.is_panic() => {
+                            return Err(error).context("ssh-agent connection task panicked");
                         }
-                        Err(error) => {
-                            return Err(error).context("ssh-agent connection task failed");
-                        }
+                        Err(error) => warn!(?error, "ssh-agent connection task was cancelled"),
                     }
                 }
             }
@@ -136,7 +147,10 @@ async fn handle_connection(
     let mut destinations = Destinations::default();
 
     loop {
-        let frame = match protocol::read_frame(&mut stream).await {
+        let Ok(read) = timeout(IDLE_TIMEOUT, protocol::read_frame(&mut stream)).await else {
+            return Ok(());
+        };
+        let frame = match read {
             Ok(Some(frame)) => frame,
             Ok(None) => return Ok(()),
             Err(error) if error.kind() == ErrorKind::InvalidData => {
@@ -159,11 +173,12 @@ async fn handle_connection(
             Ok((protocol::SSH_AGENTC_SIGN_REQUEST, payload)) => {
                 sign_response(payload, keyring.as_ref(), &policy, &destinations).await
             }
-            Ok((protocol::SSH_AGENTC_EXTENSION, payload))
-                if matches!(policy.as_ref(), DestinationPolicy::Restricted { .. }) =>
-            {
-                bind_response(payload, &mut destinations)
-            }
+            Ok((protocol::SSH_AGENTC_EXTENSION, payload)) => match policy.as_ref() {
+                DestinationPolicy::Restricted { hosts, .. } => {
+                    bind_response(payload, hosts, &mut destinations)
+                }
+                DestinationPolicy::Unrestricted => failure_frame(),
+            },
             Ok(_) | Err(_) => failure_frame(),
         };
 
@@ -176,12 +191,16 @@ async fn handle_connection(
     }
 }
 
-fn bind_response(payload: &[u8], destinations: &mut Destinations) -> Vec<u8> {
+fn bind_response(
+    payload: &[u8],
+    hosts: &[Fingerprint],
+    destinations: &mut Destinations,
+) -> Vec<u8> {
     let Some(contents) = protocol::parse_extension(payload) else {
         return failure_frame();
     };
 
-    match destinations.bind(contents) {
+    match destinations.bind(contents, hosts) {
         Ok(()) => protocol::encode_agent_frame(protocol::SSH_AGENT_SUCCESS, &[]),
         Err(error) => {
             debug!(?error, "refused an SSH agent session-bind");

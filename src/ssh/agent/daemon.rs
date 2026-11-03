@@ -29,7 +29,10 @@ use super::{
     lock::{AgentLock, is_lock_held_by_other},
 };
 use crate::{
-    auth::{self, AuthOptions, CredentialSource, LoadedRegistry, ReloadingClient, secure_create},
+    auth::{
+        self, AuthOptions, CredentialSource, LoadedRegistry, ReloadingClient,
+        create_private_dir_all, secure_create,
+    },
     errors::InvalidInput,
     outcome::{MachineOnly, Outcome},
     socket::SocketMode,
@@ -287,12 +290,15 @@ pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result
         None => None,
         Some(path) => {
             let contents = allowed_hosts::read(path).await?;
-            let AllowedHosts { names, keys } = allowed_hosts::parse(path, &contents)?;
+            let AllowedHosts {
+                names,
+                fingerprints,
+            } = allowed_hosts::parse(path, &contents)?;
             let constraints = DestinationConstraints {
                 allowed_hosts: names,
                 allowed_namespaces: args.serving.allow_namespace,
             };
-            Some((keys, constraints))
+            Some((fingerprints, constraints))
         }
     };
 
@@ -476,7 +482,7 @@ async fn wait_for_startup(socket: &Path, child: &mut Child) -> Result<()> {
 
 async fn create_parent_dir(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
+        create_private_dir_all(parent)
             .await
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }

@@ -104,6 +104,28 @@ async fn query_names_the_endpoint_when_the_response_shape_mismatches() {
     server.verify().await;
 }
 
+#[tokio::test]
+async fn query_refuses_a_response_body_over_the_size_limit() {
+    let server = MockServer::start().await;
+    Mock::given(path("/public/v1/query/get_activity"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![b' '; MAX_RESPONSE_BYTES + 1]))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let auth = auth(&server, TurnkeyP256ApiKey::generate());
+    let error =
+        query::<Value, GetActivityRequest>("/public/v1/query/get_activity", &json!({}), &auth)
+            .await
+            .unwrap_err();
+    let error = activity_error(&error);
+    assert_eq!(error.kind(), ActivityErrorKind::MalformedResponse);
+    assert_eq!(
+        error.to_string(),
+        format!("get_activity response exceeds the {MAX_RESPONSE_BYTES}-byte limit")
+    );
+    server.verify().await;
+}
+
 #[test]
 fn url_keeps_a_base_path_prefix() {
     assert_eq!(
