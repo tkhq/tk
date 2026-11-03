@@ -133,6 +133,18 @@ Default guidance for coding-agent runs in this repository.
   wildcard only when all current and future non-target variants are
   intentionally handled alike.
 
+## Concurrency
+
+- Find sequential async calls and run independent operations concurrently with
+  `tokio::join!`, or `tokio::try_join!` when an error should cancel the remaining
+  work. Keep operations sequential when they depend on earlier results or
+  require ordered side effects.
+- Prefer lock-free designs. When locks are necessary, shard them by key or
+  resource so unrelated work can proceed concurrently.
+- For shared mutable state, prefer an actor that owns the state and receives
+  messages through bounded channels. Apply backpressure by awaiting channel
+  capacity instead of growing an unbounded queue.
+
 ## I/O, errors, and compatibility
 
 - Perform config loading, authentication, and network work only on paths that
