@@ -15,4 +15,4 @@ multiple-versions = "warn"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/tkhq/rust-sdk"]
+allow-git = ["https://github.com/tkhq/rust-sdk", "https://github.com/tkhq/qos"]
