@@ -265,8 +265,12 @@ impl Run {
     }
 
     fn admin_at(&self, base: &str) -> Command {
+        self.admin_command(self.cli_at(base))
+    }
+
+    pub(crate) fn admin_command(&self, command: Command) -> Command {
         Self::with_bundle(
-            self.cli_at(base),
+            command,
             self.org(),
             &self.config.public_key,
             &self.config.private_key.0,

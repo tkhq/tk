@@ -1,8 +1,6 @@
 # Releasing `tk`
 
-Push a `v*` tag to start the `release` workflow. The workflow builds a native
-binary for every supported target, checksums each one, and publishes a GitHub
-release. `install.sh` and `tk update` install from that release.
+Push a `v*` tag to publish a GitHub release.
 
 1. Open a pull request that bumps `version` under `[package]` in the root
    `Cargo.toml` and refreshes the pinned entry in `Cargo.lock`, and wait for CI
@@ -57,9 +55,13 @@ cargo publish
 
 ## Artifact contract
 
-Each release publishes two files for every target:
+Each release publishes three files for every target:
 
 ```
 tk-<target>-<vX.Y.Z>.tar.gz          # one directory, tk-<target>-<vX.Y.Z>/, holding tk and README.md
 tk-<target>-<vX.Y.Z>.tar.gz.sha256   # `shasum -a 256` output (hash and filename)
+tk-<target>-<vX.Y.Z>.tar.gz.sigstore.json # signed provenance bundle
 ```
+
+For manual verification, see
+[manual installation](../README.md#manual-installation).

@@ -48,7 +48,7 @@ Subcommands:
 - [`tk gpg`](#tk-gpg): Sign with PGP keys backed by wallet accounts
 - [`tk git`](#tk-git): Serve Git hooks for commits signed with `tk`
 - [`tk skills`](#tk-skills): Serve the embedded turnkey-tk agent skills
-- [`tk update`](#tk-update): Replace this tk binary with the latest release
+- [`tk update`](#tk-update): Replace this tk binary with a verified release
 - [`tk login`](#tk-login): Verify a saved profile with Turnkey and select it
 - [`tk whoami`](#tk-whoami): Verify the selected identity with Turnkey
 - [`tk auth`](#tk-auth): Manage API authentication
@@ -1233,7 +1233,7 @@ tk skills install [OPTIONS] --into <DIR>
 
 ### `tk update`
 
-Replace this tk binary with the latest release
+Replace this tk binary with a verified release
 
 ```
 tk update [OPTIONS]
@@ -1241,7 +1241,7 @@ tk update [OPTIONS]
 
 | Argument | Notes | Description |
 |---|---|---|
-| `--tag <TAG>` |  | Install this release or pull request prerelease tag, even an older one, instead of the latest release |
+| `--tag <TAG>` |  | Install this release tag instead of the latest release |
 
 ### `tk login`
 

@@ -421,10 +421,9 @@ enum Operation {
         #[command(subcommand)]
         command: SkillsCommand,
     },
-    /// Replace this tk binary with the latest release.
+    /// Replace this tk binary with a verified release.
     ///
-    /// A binary that cargo installed is never replaced; the record names the
-    /// `cargo install` command to run instead.
+    /// Direct updates require Cosign 2.4.2 or later on PATH.
     Update(UpdateArgs),
     /// Verify a saved profile with Turnkey and select it.
     Login(LoginArgs),

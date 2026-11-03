@@ -6,9 +6,19 @@ use std::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use crate::run::cli_at;
+use crate::run::{Run, cli_at};
 
 const PINNED: &str = "v0.4.0";
+
+const TARGET: Option<&str> = if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    Some("x86_64-unknown-linux-musl")
+} else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+    Some("aarch64-unknown-linux-musl")
+} else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    Some("aarch64-apple-darwin")
+} else {
+    None
+};
 
 fn copy_tk(dir: &Path) -> PathBuf {
     fs::create_dir_all(dir).unwrap();
@@ -31,21 +41,30 @@ fn update(tk: &Path, home: &Path, args: &[&str]) -> Value {
 
 #[test]
 #[ignore]
-fn update_replaces_the_binary_with_a_pinned_release() {
+fn update_refuses_an_unsigned_release_without_replacing_the_binary() {
+    let run = Run::new();
     let dir = TempDir::new().unwrap();
     let tk = copy_tk(&dir.path().join("install"));
-
+    let before = fs::read(&tk).unwrap();
+    let output = run
+        .admin_command(cli_at(&tk, dir.path()))
+        .args(["--message-format", "json", "update", "--tag", PINNED])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let target = TARGET.expect("tk publishes releases for this platform");
     assert_eq!(
-        update(&tk, dir.path(), &["--tag", PINNED]),
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
         json!({
-            "reason": "updated",
-            "from": env!("CARGO_PKG_VERSION"),
-            "to": PINNED,
-            "path": tk,
+            "reason": "command_error",
+            "code": "not_found",
+            "httpStatus": 404,
+            "message": format!(
+                "download https://github.com/tkhq/tk/releases/download/{PINNED}/tk-{target}-{PINNED}.tar.gz.sigstore.json: HTTP response was not successful: 404 (Not Found)"
+            ),
         })
     );
-    let version = cli_at(&tk, dir.path()).arg("--version").output().unwrap();
-    assert_eq!(String::from_utf8(version.stdout).unwrap(), "tk 0.4.0\n");
+    assert_eq!(fs::read(&tk).unwrap(), before);
     assert_eq!(
         fs::read_dir(tk.parent().unwrap()).unwrap().count(),
         1,
@@ -99,23 +118,17 @@ fn update_defers_to_cargo_for_a_cargo_install() {
             ),
         })
     );
-    let prerelease = cli_at(&tk, dir.path())
-        .args([
-            "--message-format",
-            "json",
-            "update",
-            "--tag",
-            "pr-70-6f683c2",
-        ])
+    let non_semver = cli_at(&tk, dir.path())
+        .args(["--message-format", "json", "update", "--tag", "v1"])
         .output()
         .unwrap();
-    assert_eq!(prerelease.status.code(), Some(1), "{prerelease:?}");
+    assert_eq!(non_semver.status.code(), Some(1), "{non_semver:?}");
     assert_eq!(
-        serde_json::from_slice::<Value>(&prerelease.stdout).unwrap(),
+        serde_json::from_slice::<Value>(&non_semver.stdout).unwrap(),
         json!({
             "reason": "command_error",
             "code": "invalid_input",
-            "message": "cargo installed this tk, and crates.io publishes only vX.Y.Z releases, not pr-70-6f683c2",
+            "message": "cargo installed this tk, and crates.io publishes only vX.Y.Z releases, not v1",
         })
     );
     assert_eq!(fs::read(&tk).unwrap(), before);
