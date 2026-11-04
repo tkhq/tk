@@ -188,11 +188,21 @@ async fn run_operation(
             command: ApiKeyCommands::Generate(generate),
         } => return emit(&mut ctx, generate.run().await),
         Operation::Gpg { command } => return emit(&mut ctx, gpg::run(command, options).await),
-        Operation::Git { command } => {
-            return match git::run(command) {
+        Operation::Git {
+            command: GitCommand::CoAuthor { message_file },
+        } => {
+            return match git::co_author(message_file) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => emit::<Outcome>(&mut ctx, Err(error)),
             };
+        }
+        Operation::Git {
+            command: GitCommand::CoAuthorCheck,
+        } => {
+            return emit(
+                &mut ctx,
+                git::check_co_author().map(Outcome::CoAuthorHookReady),
+            );
         }
         Operation::Skills { command } => return emit(&mut ctx, skills::run(command)),
         Operation::Update(update) => return emit(&mut ctx, update::run(update).await),

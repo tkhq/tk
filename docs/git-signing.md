@@ -94,14 +94,19 @@ Run this after either signing setup:
 git config --global hook.turnkey-co-author.event commit-msg
 git config --global hook.turnkey-co-author.command "$(command -v tk) git co-author"
 
-# Prints `turnkey-co-author` when the Git on `PATH` runs the hook.
-git hook list commit-msg
+# Inside a repository the agent commits to, check that its Git runs the hook.
+tk git co-author-check
 ```
 
-Git older than 2.54, including the `/usr/bin/git` that ships with macOS,
-ignores the hook without an error, and its `git hook list` fails with
-`unknown subcommand`. Put a newer Git first on the `PATH` of every process
-that commits, including an agent runtime that builds its own `PATH`.
+The check exits 1 with `invalid_input` when the hook is not configured for
+`commit-msg` or when the Git on `PATH` is older than 2.54. That older Git,
+including the `/usr/bin/git` that ships with macOS, ignores the hook without
+an error, so put a newer Git first on the `PATH` of every process that
+commits, including an agent runtime that builds its own `PATH`. The hook
+does not remove a co-author trailer that the agent runtime writes itself;
+turn that off in the runtime, for example Claude Code's `Co-Authored-By`
+trailer with `"attribution": {"commit": "", "pr": ""}` in
+`~/.claude/settings.json`.
 
 ## Committer identity
 
