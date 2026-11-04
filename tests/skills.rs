@@ -485,3 +485,37 @@ fn every_package_file_is_reachable_from_the_index_or_a_workflow() {
         .collect();
     assert!(unreachable.is_empty(), "unreachable: {unreachable:?}");
 }
+
+#[test]
+fn plugin_skill_loads_from_the_binary_and_triggers_like_the_index() {
+    let root = repo_root();
+    let marketplace: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join(".claude-plugin/marketplace.json")).unwrap(),
+    )
+    .unwrap();
+    let [entry] = marketplace["plugins"].as_array().unwrap().as_slice() else {
+        panic!("marketplace.json must list exactly one plugin");
+    };
+    let plugin_root = root.join(entry["source"].as_str().unwrap());
+    let manifest: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(plugin_root.join(".claude-plugin/plugin.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest["name"], entry["name"]);
+
+    let index_path = skills_root().join("SKILL.md");
+    let index = frontmatter(&fs::read_to_string(&index_path).unwrap(), &index_path);
+    let skill_path = plugin_root.join("skills/turnkey-tk/SKILL.md");
+    let skill_text = fs::read_to_string(&skill_path).unwrap();
+    assert_eq!(frontmatter(&skill_text, &skill_path), index);
+    // The plugin ships from `main`, so it must not carry workflow text that can
+    // run ahead of the installed binary.
+    assert!(
+        skill_text.contains("tk skills show --name turnkey-tk"),
+        "{}: does not load the index from the binary",
+        skill_path.display()
+    );
+    let mut plugin_files = Vec::new();
+    files_under(&plugin_root.join("skills"), &mut plugin_files);
+    assert_eq!(plugin_files, vec![skill_path]);
+}
