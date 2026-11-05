@@ -119,16 +119,14 @@ tk wallet account create --wallet-id WALLET_ID --address-format ethereum --path 
 tk wallet account create --input-file ./accounts.json
 ```
 
-Without `--path`, `wallet account create` lists the wallet's accounts and picks
+Without `--path`, `wallet account create` lists the wallet's accounts and uses
 the lowest index whose conventional path no account of the same address format
-uses. The conventional paths are `m/44'/60'/N'/0/0` for `ethereum`,
-`m/44'/118'/N'/0/0` for `cosmos`, `m/44'/501'/N'/0'` for `solana`, and `m/N'`
-for `compressed` and `uncompressed`. Other formats need `--path`. The curve is inferred as `CURVE_SECP256K1` for
-`ethereum`, `cosmos`, and `uncompressed`, `CURVE_ED25519` for `solana`, and
-needs `--curve` otherwise. The lookup and the creation are two requests, so concurrent creations can pick the
-same path. Enum flags take the API names, such as `ADDRESS_FORMAT_ETHEREUM`,
-case-insensitively and with or without the prefix. Flags and
-`--input-json`/`--input-file` are mutually exclusive.
+holds. The paths are `m/44'/60'/N'/0/0` for `ethereum`, `m/44'/118'/N'/0/0`
+for `cosmos`, `m/44'/501'/N'/0'` for `solana`, and `m/N'` for `compressed` and
+`uncompressed`; other formats need `--path`. The curve is inferred as
+`secp256k1` for `ethereum`, `cosmos`, and `uncompressed`, and `ed25519` for
+`solana`; other formats need `--curve`. The lookup and the creation are two
+requests, so concurrent creations can pick the same path.
 
 A command that needs approval exits zero with status `pending` and an
 activity ID; see [activities](./activities.md).

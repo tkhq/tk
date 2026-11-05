@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     io::{self, Read},
     path::PathBuf,
@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::Result;
 use clap::{ArgGroup, Args, Subcommand};
+use serde::Deserialize;
 use serde_json::{json, to_value};
 use turnkey_client::generated::{
     GetWalletAccountsRequest, GetWalletAccountsResponse, GetWalletRequest, GetWalletsRequest,
@@ -26,48 +27,13 @@ use uuid::Uuid;
 
 use crate::{
     auth::{ResolvedAuth, build_turnkey_client},
+    enum_args::{self, ApiEnum},
     errors::{InvalidInput, Malformed, MissingResource},
     operations::{OperationOutput, query, submit_activity},
     resources::{BodyArgs, BodySource},
 };
 
 const ACCOUNT_PAGE_SIZE: u32 = 100;
-
-trait ApiEnum: Sized {
-    const PREFIX: &'static str;
-    fn from_name(name: &str) -> Option<Self>;
-}
-
-macro_rules! api_enum {
-    ($type:ty, $prefix:literal) => {
-        impl ApiEnum for $type {
-            const PREFIX: &'static str = $prefix;
-            fn from_name(name: &str) -> Option<Self> {
-                Self::from_str_name(name)
-            }
-        }
-    };
-}
-
-api_enum!(AddressFormat, "ADDRESS_FORMAT_");
-api_enum!(Curve, "CURVE_");
-api_enum!(PathFormat, "PATH_FORMAT_");
-api_enum!(PayloadEncoding, "PAYLOAD_ENCODING_");
-api_enum!(HashFunction, "HASH_FUNCTION_");
-api_enum!(TransactionType, "TRANSACTION_TYPE_");
-
-/// Parses an API enum name, case-insensitively and with or without its prefix.
-fn parse_api_enum<T: ApiEnum>(value: &str) -> Result<T, String> {
-    let upper = value.to_ascii_uppercase().replace('-', "_");
-    let parsed = T::from_name(&upper).or_else(|| T::from_name(&format!("{}{upper}", T::PREFIX)));
-    match parsed {
-        Some(parsed) if !upper.ends_with("UNSPECIFIED") => Ok(parsed),
-        _ => Err(format!(
-            "unknown value `{value}`; expected an API name such as {}…",
-            T::PREFIX
-        )),
-    }
-}
 
 fn parse_mnemonic_length(value: &str) -> Result<i32, String> {
     match value.parse() {
@@ -102,6 +68,23 @@ fn curve_for(address_format: AddressFormat) -> Option<Curve> {
     }
 }
 
+/// One page of accounts, decoded loosely so an address format newer than this
+/// client does not fail path prediction.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountPage {
+    #[serde(default)]
+    accounts: Vec<PredictedAccount>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PredictedAccount {
+    wallet_account_id: String,
+    path: String,
+    address_format: String,
+}
+
 /// An address format with a conventional BIP-32 account path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StandardFormat {
@@ -122,11 +105,15 @@ impl StandardFormat {
         }
     }
 
-    fn next_path(self, taken: &HashSet<&str>) -> String {
-        (0..)
-            .map(|index| self.path(index))
-            .find(|path| !taken.contains(path.as_str()))
-            .unwrap_or_default()
+    fn next_path(self, taken: &HashSet<String>) -> String {
+        let mut index = 0;
+        loop {
+            let path = self.path(index);
+            if !taken.contains(&path) {
+                return path;
+            }
+            index += 1;
+        }
     }
 }
 
@@ -142,7 +129,7 @@ impl TryFrom<AddressFormat> for StandardFormat {
             AddressFormat::Compressed => Ok(Self::Compressed),
             other => Err(InvalidInput(format!(
                 "no conventional derivation path for {}; pass --path",
-                other.as_str_name()
+                other.cli_name()
             ))),
         }
     }
@@ -152,7 +139,7 @@ fn require_curve(address_format: AddressFormat, curve: Option<Curve>, hint: &str
     curve.or_else(|| curve_for(address_format)).ok_or_else(|| {
         InvalidInput(format!(
             "cannot infer the curve for {}; {hint}",
-            address_format.as_str_name()
+            address_format.cli_name()
         ))
         .into()
     })
@@ -174,8 +161,10 @@ impl FromStr for AccountSpec {
             Some(_) => return Err("the path after `:` must not be empty".into()),
             None => (value, None),
         };
+        let address_format = AddressFormat::lookup(format)
+            .ok_or_else(|| format!("unknown address format `{format}`, such as ethereum"))?;
         Ok(Self {
-            address_format: parse_api_enum(format)?,
+            address_format,
             path,
         })
     }
@@ -190,11 +179,12 @@ pub struct CreateWalletArgs {
     /// Name of the new wallet.
     #[arg(long)]
     name: Option<String>,
-    /// Account to create with the wallet; without a path, the conventional
-    /// path for the address format is used.
+    /// Account to create with the wallet; without a path, the next unused
+    /// conventional path for the address format is used.
     ///
-    /// The curve is inferred from the address format. With no `--account`,
-    /// the wallet is created without accounts.
+    /// The curve is inferred from the address format, so formats with no
+    /// inferred curve need `--input-json`. Without this flag the wallet has no
+    /// accounts.
     #[arg(
         long = "account",
         value_name = "ADDRESS_FORMAT[:PATH]",
@@ -216,13 +206,13 @@ pub struct CreateAccountArgs {
     #[arg(long, requires = "address_format")]
     wallet_id: Option<Uuid>,
     /// Address format of the account.
-    #[arg(long, requires = "wallet_id", value_parser = parse_api_enum::<AddressFormat>)]
+    #[arg(long, requires = "wallet_id", value_parser = enum_args::parser::<AddressFormat>())]
     address_format: Option<AddressFormat>,
     /// Curve of the account; inferred from the address format when omitted.
-    #[arg(long, requires = "wallet_id", value_parser = parse_api_enum::<Curve>)]
+    #[arg(long, requires = "wallet_id", value_parser = enum_args::parser::<Curve>())]
     curve: Option<Curve>,
     /// Derivation path format.
-    #[arg(long, requires = "wallet_id", value_parser = parse_api_enum::<PathFormat>, default_value = "PATH_FORMAT_BIP32")]
+    #[arg(long, requires = "wallet_id", value_parser = enum_args::parser::<PathFormat>(), default_value = "bip32")]
     path_format: PathFormat,
     /// Derivation path; the next unused conventional path is used when omitted.
     #[arg(long, requires = "wallet_id")]
@@ -248,10 +238,10 @@ pub struct SignPayloadArgs {
     #[arg(long, requires = "sign_with")]
     payload_file: Option<PathBuf>,
     /// How the payload is encoded.
-    #[arg(long, requires = "sign_with", value_parser = parse_api_enum::<PayloadEncoding>)]
+    #[arg(long, requires = "sign_with", value_parser = enum_args::parser::<PayloadEncoding>())]
     encoding: Option<PayloadEncoding>,
     /// Hash function applied to the payload before signing.
-    #[arg(long, requires = "sign_with", value_parser = parse_api_enum::<HashFunction>)]
+    #[arg(long, requires = "sign_with", value_parser = enum_args::parser::<HashFunction>())]
     hash_function: Option<HashFunction>,
 }
 
@@ -274,7 +264,7 @@ pub struct SignTransactionArgs {
     #[arg(long, requires = "sign_with")]
     unsigned_transaction_file: Option<PathBuf>,
     /// Transaction type.
-    #[arg(long = "type", requires = "sign_with", value_parser = parse_api_enum::<TransactionType>)]
+    #[arg(long = "type", requires = "sign_with", value_parser = enum_args::parser::<TransactionType>())]
     transaction_type: Option<TransactionType>,
 }
 
@@ -316,9 +306,6 @@ pub enum AccountCommand {
     },
     /// Create an account from flags, or accounts from a
     /// `CreateWalletAccountsIntent` parameters object.
-    ///
-    /// Without `--path`, the path is the lowest conventional path for the
-    /// address format that no account of that format in the wallet uses yet.
     Create(CreateAccountArgs),
 }
 
@@ -382,7 +369,25 @@ impl WalletCommand {
                 mnemonic_length,
                 body: _,
             }) => {
-                let mut counts: Vec<(AddressFormat, usize)> = Vec::new();
+                let mut taken: HashMap<AddressFormat, HashSet<String>> = HashMap::new();
+                for AccountSpec {
+                    address_format,
+                    path,
+                } in &accounts
+                {
+                    if let Some(path) = path
+                        && !taken
+                            .entry(*address_format)
+                            .or_default()
+                            .insert(path.clone())
+                    {
+                        return Err(InvalidInput(format!(
+                            "duplicate account path {path} for {}",
+                            address_format.cli_name()
+                        ))
+                        .into());
+                    }
+                }
                 let mut params = Vec::with_capacity(accounts.len());
                 for AccountSpec {
                     address_format,
@@ -391,22 +396,14 @@ impl WalletCommand {
                 {
                     let curve =
                         require_curve(address_format, None, "use --input-json to name the curve")?;
-                    let index = match counts
-                        .iter_mut()
-                        .find(|(format, _)| *format == address_format)
-                    {
-                        Some((_, count)) => {
-                            *count += 1;
-                            *count
-                        }
-                        None => {
-                            counts.push((address_format, 0));
-                            0
-                        }
-                    };
                     let path = match path {
                         Some(path) => path,
-                        None => StandardFormat::try_from(address_format)?.path(index),
+                        None => {
+                            let used = taken.entry(address_format).or_default();
+                            let path = StandardFormat::try_from(address_format)?.next_path(used);
+                            used.insert(path.clone());
+                            path
+                        }
                     };
                     params.push(WalletAccountParams {
                         curve,
@@ -609,10 +606,10 @@ impl WalletMutation {
                 path_format,
                 standard,
             } => {
-                let mut paths = Vec::new();
+                let mut taken = HashSet::new();
                 let mut cursor = String::new();
                 loop {
-                    let GetWalletAccountsResponse { accounts } = query(
+                    let AccountPage { accounts } = query(
                         "/public/v1/query/get_wallet_accounts",
                         &GetWalletAccountsRequest {
                             organization_id: auth.org_id.to_string(),
@@ -632,17 +629,16 @@ impl WalletMutation {
                         .last()
                         .map(|account| account.wallet_account_id.clone())
                         .unwrap_or_default();
-                    paths.extend(
+                    taken.extend(
                         accounts
                             .into_iter()
-                            .filter(|account| account.address_format == address_format)
+                            .filter(|account| account.address_format == address_format.api_name())
                             .map(|account| account.path),
                     );
                     if !full_page {
                         break;
                     }
                 }
-                let taken = paths.iter().map(String::as_str).collect();
                 (
                     "wallet.account.create",
                     "create_wallet_accounts",

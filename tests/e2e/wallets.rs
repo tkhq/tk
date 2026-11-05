@@ -153,7 +153,15 @@ fn wallet_create_get_update_and_account_pagination() {
         .map(|account| account["path"].as_str().unwrap())
         .collect();
     paths.sort_unstable();
-    assert!(paths.contains(&"m/44'/60'/1'/0/0"), "{paths:?}");
+    assert_eq!(
+        paths,
+        [
+            "m/44'/60'/0'/0/0",
+            "m/44'/60'/0'/0/1",
+            "m/44'/60'/0'/0/2",
+            "m/44'/60'/1'/0/0"
+        ]
+    );
 }
 
 #[test]
@@ -186,9 +194,9 @@ fn sign_payload_returns_r_s_v_and_sign_transaction_returns_type2_hex() {
             "--payload",
             &digest,
             "--encoding",
-            "PAYLOAD_ENCODING_HEXADECIMAL",
+            "hexadecimal",
             "--hash-function",
-            "HASH_FUNCTION_NO_OP",
+            "no-op",
         ]),
         "sign.payload",
     );
@@ -206,12 +214,13 @@ fn sign_payload_returns_r_s_v_and_sign_transaction_returns_type2_hex() {
         run.admin().args([
             "sign",
             "transaction",
-            "--sign-with",
-            &address,
-            "--unsigned-transaction",
-            UNSIGNED_EIP1559_TX,
-            "--type",
-            "TRANSACTION_TYPE_ETHEREUM",
+            "--input-json",
+            &json!({
+                "signWith": address,
+                "unsignedTransaction": UNSIGNED_EIP1559_TX,
+                "type": "TRANSACTION_TYPE_ETHEREUM",
+            })
+            .to_string(),
         ]),
         "sign.transaction",
     );

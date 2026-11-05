@@ -8,15 +8,15 @@ Follow [authentication](./authentication.md) first.
 ```bash
 # Sign a 32-byte digest as is. Encoding and hash function are always explicit.
 tk sign payload --sign-with 0xYourAddress --payload 0x… \
-  --encoding hexadecimal --hash-function no_op
+  --encoding hexadecimal --hash-function no-op
 
 # Hash text before signing.
 tk sign payload --sign-with 0xYourAddress --payload hello \
-  --encoding text_utf8 --hash-function keccak256
+  --encoding text-utf8 --hash-function keccak256
 
 # Read the payload verbatim from a file, or - for stdin.
 tk sign payload --sign-with 0xYourAddress --payload-file ./message.txt \
-  --encoding text_utf8 --hash-function sha256
+  --encoding text-utf8 --hash-function sha256
 
 # Sign a serialized transaction. tk does not broadcast it.
 tk sign transaction --sign-with 0xYourAddress --unsigned-transaction 02… \
@@ -32,13 +32,10 @@ tk sign payload --input-json '{
 ```
 
 `--sign-with` takes a wallet account address or a private key ID. Encoding,
-hash function, and transaction type take the API enum names, such as
-`PAYLOAD_ENCODING_HEXADECIMAL`, case-insensitively and with or without the
-prefix. They have no defaults, because a silent hash function changes which
-digest is signed; the command exits with `usage_error` when one is missing.
-`--payload-file` keeps a trailing newline as part of the payload;
-`--unsigned-transaction-file` trims surrounding whitespace. Flags and
-`--input-json`/`--input-file` are mutually exclusive.
+hash function, and transaction type have no defaults, because a silent hash
+function changes which digest is signed; the command exits with `usage_error`
+when one is missing. `--payload-file` keeps a trailing newline as part of the
+payload; `--unsigned-transaction-file` trims surrounding whitespace.
 
 Scripting:
 

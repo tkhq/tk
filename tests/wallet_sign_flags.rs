@@ -148,7 +148,9 @@ async fn wallet_create_accounts_infer_curve_and_number_repeated_formats() {
             "--account",
             "ethereum",
             "--account",
-            "ADDRESS_FORMAT_ETHEREUM",
+            "ethereum:m/44'/60'/1'/0/0",
+            "--account",
+            "ethereum",
             "--account",
             "solana",
             "--account",
@@ -165,6 +167,7 @@ async fn wallet_create_accounts_infer_curve_and_number_repeated_formats() {
             "accounts": [
                 eth_account("m/44'/60'/0'/0/0"),
                 eth_account("m/44'/60'/1'/0/0"),
+                eth_account("m/44'/60'/2'/0/0"),
                 {
                     "curve": "CURVE_ED25519",
                     "pathFormat": "PATH_FORMAT_BIP32",
@@ -182,6 +185,57 @@ async fn wallet_create_accounts_infer_curve_and_number_repeated_formats() {
             ],
             "mnemonicLength": 24,
         })
+    );
+}
+
+#[tokio::test]
+async fn wallet_create_predicted_paths_skip_explicit_paths_given_later() {
+    let parameters = run_flags(
+        "create_wallet",
+        "ACTIVITY_TYPE_CREATE_WALLET",
+        &[
+            "wallet",
+            "create",
+            "--name",
+            "main",
+            "--account",
+            "ethereum:m/44'/60'/1'/0/0",
+            "--account",
+            "ethereum",
+            "--account",
+            "ethereum",
+        ],
+    )
+    .await;
+    assert_eq!(
+        parameters["accounts"],
+        json!([
+            eth_account("m/44'/60'/1'/0/0"),
+            eth_account("m/44'/60'/0'/0/0"),
+            eth_account("m/44'/60'/2'/0/0"),
+        ])
+    );
+}
+
+#[test]
+fn wallet_create_rejects_a_repeated_explicit_path_before_credentials() {
+    let result = record(
+        cli().args([
+            "wallet",
+            "create",
+            "--name",
+            "main",
+            "--account",
+            "ethereum:m/0'",
+            "--account",
+            "ethereum:m/0'",
+        ]),
+        1,
+    );
+    assert_eq!(result["code"], "invalid_input");
+    assert_eq!(
+        result["message"],
+        "duplicate account path m/0' for ethereum"
     );
 }
 
@@ -255,6 +309,42 @@ async fn account_create_predicts_the_lowest_unused_path_of_the_same_format() {
             "accounts": [eth_account("m/44'/60'/1'/0/0")],
             "persist": null,
         })
+    );
+}
+
+#[tokio::test]
+async fn account_create_prediction_ignores_address_formats_this_client_does_not_know() {
+    let server = MockServer::start().await;
+    mount_accounts(
+        &server,
+        vec![json!([
+            account(1, "ADDRESS_FORMAT_ETHEREUM", "m/44'/60'/0'/0/0"),
+            account(2, "ADDRESS_FORMAT_FUTURE_CHAIN", "m/44'/60'/1'/0/0"),
+        ])],
+    )
+    .await;
+    mount_activity(
+        &server,
+        "create_wallet_accounts",
+        "ACTIVITY_STATUS_COMPLETED",
+    )
+    .await;
+    record(
+        authed(&server.uri()).args([
+            "wallet",
+            "account",
+            "create",
+            "--wallet-id",
+            WALLET,
+            "--address-format",
+            "ethereum",
+        ]),
+        0,
+    );
+    let body = submitted(&server, "create_wallet_accounts").await;
+    assert_eq!(
+        body["parameters"]["accounts"],
+        json!([eth_account("m/44'/60'/1'/0/0")])
     );
 }
 
@@ -333,9 +423,9 @@ async fn account_create_with_explicit_path_and_curve_skips_the_lookup() {
             "--wallet-id",
             WALLET,
             "--address-format",
-            "ADDRESS_FORMAT_TRON",
+            "tron",
             "--curve",
-            "curve_secp256k1",
+            "secp256k1",
             "--path",
             "m/44'/195'/0'/0/0",
         ]),
@@ -394,11 +484,11 @@ fn account_create_without_inferable_curve_or_path_is_invalid_input_before_creden
     for (args, message) in [
         (
             ["--address-format", "tron", "--path", "m/0'"],
-            "cannot infer the curve for ADDRESS_FORMAT_TRON; pass --curve",
+            "cannot infer the curve for tron; pass --curve",
         ),
         (
             ["--address-format", "tron", "--curve", "p256"],
-            "no conventional derivation path for ADDRESS_FORMAT_TRON; pass --path",
+            "no conventional derivation path for tron; pass --path",
         ),
     ] {
         let result = record(
@@ -428,9 +518,9 @@ async fn sign_payload_flags_build_the_intent() {
             "--payload",
             "hello",
             "--encoding",
-            "text_utf8",
+            "text-utf8",
             "--hash-function",
-            "HASH_FUNCTION_SHA256",
+            "sha256",
         ],
     )
     .await;
@@ -454,9 +544,9 @@ async fn sign_payload_flags_build_the_intent() {
             "--payload-file",
             file.to_str().unwrap(),
             "--encoding",
-            "PAYLOAD_ENCODING_HEXADECIMAL",
+            "hexadecimal",
             "--hash-function",
-            "no_op",
+            "no-op",
         ],
     )
     .await;
@@ -492,7 +582,7 @@ async fn sign_transaction_flags_build_the_intent() {
             "--unsigned-transaction",
             "02ab",
             "--type",
-            "transaction_type_ethereum",
+            "ethereum",
         ],
     )
     .await;
@@ -580,7 +670,7 @@ fn raw_json_and_flags_are_mutually_exclusive_and_exit_two() {
             "--input-json",
             "{}",
             "--encoding",
-            "text_utf8",
+            "text-utf8",
         ],
         vec![
             "sign",
@@ -634,7 +724,7 @@ fn missing_flags_are_usage_errors() {
                 "--payload",
                 "x",
                 "--encoding",
-                "text_utf8",
+                "text-utf8",
             ],
             "--hash-function",
         ),
@@ -645,7 +735,7 @@ fn missing_flags_are_usage_errors() {
                 "--sign-with",
                 "a",
                 "--encoding",
-                "text_utf8",
+                "text-utf8",
                 "--hash-function",
                 "sha256",
             ],
@@ -677,6 +767,82 @@ fn missing_flags_are_usage_errors() {
 }
 
 #[test]
+fn enum_flags_take_kebab_case_names_only() {
+    for (flag, value) in [
+        ("--address-format", "ADDRESS_FORMAT_ETHEREUM"),
+        ("--address-format", "Ethereum"),
+        ("--address-format", "unspecified"),
+        ("--curve", "CURVE_SECP256K1"),
+        ("--path-format", "PATH_FORMAT_BIP32"),
+    ] {
+        let result = record(
+            cli().args([
+                "wallet",
+                "account",
+                "create",
+                "--wallet-id",
+                WALLET,
+                flag,
+                value,
+            ]),
+            2,
+        );
+        assert_eq!(result["code"], "usage_error", "{flag} {value}");
+        assert!(
+            result["message"]
+                .as_str()
+                .unwrap()
+                .contains("invalid value"),
+            "{flag} {value}"
+        );
+    }
+    for (flag, value) in [
+        ("--encoding", "PAYLOAD_ENCODING_TEXT_UTF8"),
+        ("--encoding", "text_utf8"),
+        ("--hash-function", "HASH_FUNCTION_SHA256"),
+        ("--hash-function", "SHA256"),
+    ] {
+        let mut args = vec!["sign", "payload", "--sign-with", "a", "--payload", "x"];
+        args.extend(["--encoding", "text-utf8", "--hash-function", "sha256"]);
+        args.extend([flag, value]);
+        let result = record(cli().args(&args), 2);
+        assert_eq!(result["code"], "usage_error", "{flag} {value}");
+    }
+    for value in ["TRANSACTION_TYPE_ETHEREUM", "unspecified", "Ethereum"] {
+        let result = record(
+            cli().args([
+                "sign",
+                "transaction",
+                "--sign-with",
+                "a",
+                "--unsigned-transaction",
+                "00",
+                "--type",
+                value,
+            ]),
+            2,
+        );
+        assert_eq!(result["code"], "usage_error", "{value}");
+    }
+}
+
+#[test]
+fn enum_flags_list_their_values_in_help() {
+    let output = cli()
+        .args(["sign", "payload", "--help"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let help = String::from_utf8(output).unwrap();
+    for value in ["text-utf8", "hexadecimal", "no-op", "keccak256"] {
+        assert!(help.contains(value), "{value} missing from help:\n{help}");
+    }
+    assert!(!help.contains("unspecified"));
+}
+
+#[test]
 fn unknown_enum_values_and_double_inputs_are_usage_errors() {
     for args in [
         vec![
@@ -699,7 +865,7 @@ fn unknown_enum_values_and_double_inputs_are_usage_errors() {
             "--payload-file",
             "y",
             "--encoding",
-            "text_utf8",
+            "text-utf8",
             "--hash-function",
             "sha256",
         ],

@@ -752,7 +752,7 @@ tk wallet create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>|
 | `--input-json <INPUT_JSON>` |  | Inline JSON parameters (no activity envelope) |
 | `--input-file <INPUT_FILE>` |  | Read JSON parameters from a file, or - for stdin |
 | `--name <NAME>` |  | Name of the new wallet |
-| `--account <ADDRESS_FORMAT[:PATH]> (repeatable)` |  | Account to create with the wallet; without a path, the conventional path for the address format is used |
+| `--account <ADDRESS_FORMAT[:PATH]> (repeatable)` |  | Account to create with the wallet; without a path, the next unused conventional path for the address format is used |
 | `--mnemonic-length <MNEMONIC_LENGTH>` |  | Number of words in the generated mnemonic |
 
 Constraints:
@@ -816,9 +816,9 @@ tk wallet account create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPU
 | `--input-json <INPUT_JSON>` |  | Inline JSON parameters (no activity envelope) |
 | `--input-file <INPUT_FILE>` |  | Read JSON parameters from a file, or - for stdin |
 | `--wallet-id <WALLET_ID>` |  | Wallet to add the account to |
-| `--address-format <ADDRESS_FORMAT>` |  | Address format of the account |
-| `--curve <CURVE>` |  | Curve of the account; inferred from the address format when omitted |
-| `--path-format <PATH_FORMAT>` | default `PATH_FORMAT_BIP32` | Derivation path format |
+| `--address-format <ADDRESS_FORMAT>` | one of `uncompressed`, `compressed`, `ethereum`, `solana`, `cosmos`, `tron`, `sui`, `aptos`, `bitcoin-mainnet-p2pkh`, `bitcoin-mainnet-p2sh`, `bitcoin-mainnet-p2wpkh`, `bitcoin-mainnet-p2wsh`, `bitcoin-mainnet-p2tr`, `bitcoin-testnet-p2pkh`, `bitcoin-testnet-p2sh`, `bitcoin-testnet-p2wpkh`, `bitcoin-testnet-p2wsh`, `bitcoin-testnet-p2tr`, `bitcoin-signet-p2pkh`, `bitcoin-signet-p2sh`, `bitcoin-signet-p2wpkh`, `bitcoin-signet-p2wsh`, `bitcoin-signet-p2tr`, `bitcoin-regtest-p2pkh`, `bitcoin-regtest-p2sh`, `bitcoin-regtest-p2wpkh`, `bitcoin-regtest-p2wsh`, `bitcoin-regtest-p2tr`, `sei`, `xlm`, `doge-mainnet`, `doge-testnet`, `ton-v3r2`, `ton-v4r2`, `ton-v5r1`, `xrp`, `spark-mainnet`, `spark-regtest` | Address format of the account |
+| `--curve <CURVE>` | one of `secp256k1`, `ed25519`, `p256` | Curve of the account; inferred from the address format when omitted |
+| `--path-format <PATH_FORMAT>` | default `bip32`; one of `bip32` | Derivation path format |
 | `--path <PATH>` |  | Derivation path; the next unused conventional path is used when omitted |
 
 Constraints:
@@ -908,8 +908,8 @@ tk sign payload [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>|-
 | `--sign-with <SIGN_WITH>` |  | Wallet account address or private key ID that signs |
 | `--payload <PAYLOAD>` |  | Payload to sign, in the given encoding |
 | `--payload-file <PAYLOAD_FILE>` |  | Read the payload verbatim from a file, or - for stdin |
-| `--encoding <ENCODING>` |  | How the payload is encoded |
-| `--hash-function <HASH_FUNCTION>` |  | Hash function applied to the payload before signing |
+| `--encoding <ENCODING>` | one of `hexadecimal`, `text-utf8`, `eip712`, `eip7702-authorization` | How the payload is encoded |
+| `--hash-function <HASH_FUNCTION>` | one of `no-op`, `sha256`, `keccak256`, `not-applicable` | Hash function applied to the payload before signing |
 
 Constraints:
 
@@ -931,7 +931,7 @@ tk sign transaction [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FIL
 | `--sign-with <SIGN_WITH>` |  | Wallet account address or private key ID that signs |
 | `--unsigned-transaction <UNSIGNED_TRANSACTION>` |  | Serialized unsigned transaction |
 | `--unsigned-transaction-file <UNSIGNED_TRANSACTION_FILE>` |  | Read the serialized unsigned transaction from a file, or - for stdin |
-| `--type <TRANSACTION_TYPE>` |  | Transaction type |
+| `--type <TRANSACTION_TYPE>` | one of `ethereum`, `solana`, `tron`, `bitcoin`, `tempo` | Transaction type |
 
 Constraints:
 
