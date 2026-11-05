@@ -96,6 +96,10 @@ tk api-key delete --user-id USER_ID --id API_KEY_ID
 ```bash
 tk wallet list
 tk wallet get --id WALLET_ID
+# Create a wallet with one Ethereum and one Solana account; the curve is inferred and the path
+# is the conventional one for the format. Without --account the wallet has no accounts.
+tk wallet create --name treasury --account ethereum --account solana
+# Raw parameters, for anything the flags cannot express.
 tk wallet create --input-file - <<'EOF'
 {"walletName": "treasury", "accounts": [{
   "curve": "CURVE_SECP256K1",
@@ -108,8 +112,22 @@ tk wallet update --input-json '{"walletId": "WALLET_ID", "walletName": "ops"}'
 
 tk wallet account list --wallet-id WALLET_ID --limit 50
 tk wallet account list --wallet-id WALLET_ID --cursor ACCOUNT_ID
+# Add the next unused conventional account for the format.
+tk wallet account create --wallet-id WALLET_ID --address-format ethereum
+# Pin the path instead of predicting it.
+tk wallet account create --wallet-id WALLET_ID --address-format ethereum --path "m/44'/60'/5'/0/0"
 tk wallet account create --input-file ./accounts.json
 ```
+
+Without `--path`, `wallet account create` lists the wallet's accounts and uses
+the lowest index whose conventional path no account of the same address format
+holds. The paths are `m/44'/60'/N'/0/0` for `ethereum`, `m/44'/118'/N'/0/0`
+for `cosmos`, `m/44'/501'/N'/0'` for `solana`, and `m/N'` for `compressed` and
+`uncompressed`; other formats need `--path`. The curve is inferred as
+`secp256k1` for `ethereum`, `cosmos`, and `uncompressed`, and `ed25519` for
+`solana`; other formats need `--curve`. Either one missing exits with
+`usage_error` before any request. The lookup and the creation are two
+requests, so concurrent creations can pick the same path.
 
 A command that needs approval exits zero with status `pending` and an
 activity ID; see [activities](./activities.md).

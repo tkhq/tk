@@ -62,7 +62,7 @@ and the committer identity as `Name <email>`. GnuPG for the GPG path,
 
    <!-- example: signing.wallet-create -->
    ```sh
-   WALLET_ID=$(tk --profile admin --message-format json wallet create --input-json '{"walletName":"gpg","accounts":[]}' | jq -r .data.activity.result.createWalletResult.walletId)
+   WALLET_ID=$(tk --profile admin --message-format json wallet create --name gpg | jq -r .data.activity.result.createWalletResult.walletId)
    ```
 
    Wait on a `pending` record with `activity wait` and read the id from it.

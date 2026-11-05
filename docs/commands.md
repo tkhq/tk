@@ -715,7 +715,7 @@ Subcommands:
 
 - [`tk wallet list`](#tk-wallet-list): List wallets
 - [`tk wallet get`](#tk-wallet-get): Fetch one wallet by ID
-- [`tk wallet create`](#tk-wallet-create): Create a wallet from a `CreateWalletIntent` parameters object
+- [`tk wallet create`](#tk-wallet-create): Create a wallet from flags, or from a `CreateWalletIntent` parameters object
 - [`tk wallet update`](#tk-wallet-update): Update a wallet from an `UpdateWalletIntent` parameters object
 - [`tk wallet account`](#tk-wallet-account): Manage wallet accounts
 
@@ -741,20 +741,23 @@ tk wallet get [OPTIONS] --id <ID>
 
 #### `tk wallet create`
 
-Create a wallet from a `CreateWalletIntent` parameters object
+Create a wallet from flags, or from a `CreateWalletIntent` parameters object
 
 ```
-tk wallet create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>>
+tk wallet create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>|--name <NAME>>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
 | `--input-json <INPUT_JSON>` |  | Inline JSON parameters (no activity envelope) |
 | `--input-file <INPUT_FILE>` |  | Read JSON parameters from a file, or - for stdin |
+| `--name <NAME>` |  | Name of the new wallet |
+| `--account <ADDRESS_FORMAT[:PATH]> (repeatable)` |  | Account to create with the wallet; without a path, the next unused conventional path for the address format is used |
+| `--mnemonic-length <MNEMONIC_LENGTH>` |  | Number of words in the generated mnemonic |
 
 Constraints:
 
-- exactly one of `--input-json`, `--input-file`
+- exactly one of `--input-json`, `--input-file`, `--name`
 
 #### `tk wallet update`
 
@@ -784,7 +787,7 @@ tk wallet account [OPTIONS] <COMMAND>
 Subcommands:
 
 - [`tk wallet account list`](#tk-wallet-account-list): List accounts in one wallet, one page at a time
-- [`tk wallet account create`](#tk-wallet-account-create): Create accounts from a `CreateWalletAccountsIntent` parameters object
+- [`tk wallet account create`](#tk-wallet-account-create): Create an account from flags, or accounts from a `CreateWalletAccountsIntent` parameters object
 
 ##### `tk wallet account list`
 
@@ -802,20 +805,25 @@ tk wallet account list [OPTIONS] --wallet-id <WALLET_ID>
 
 ##### `tk wallet account create`
 
-Create accounts from a `CreateWalletAccountsIntent` parameters object
+Create an account from flags, or accounts from a `CreateWalletAccountsIntent` parameters object
 
 ```
-tk wallet account create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>>
+tk wallet account create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>|--wallet-id <WALLET_ID>>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
 | `--input-json <INPUT_JSON>` |  | Inline JSON parameters (no activity envelope) |
 | `--input-file <INPUT_FILE>` |  | Read JSON parameters from a file, or - for stdin |
+| `--wallet-id <WALLET_ID>` |  | Wallet to add the account to |
+| `--address-format <ADDRESS_FORMAT>` | one of `uncompressed`, `compressed`, `ethereum`, `solana`, `cosmos`, `tron`, `sui`, `aptos`, `bitcoin-mainnet-p2pkh`, `bitcoin-mainnet-p2sh`, `bitcoin-mainnet-p2wpkh`, `bitcoin-mainnet-p2wsh`, `bitcoin-mainnet-p2tr`, `bitcoin-testnet-p2pkh`, `bitcoin-testnet-p2sh`, `bitcoin-testnet-p2wpkh`, `bitcoin-testnet-p2wsh`, `bitcoin-testnet-p2tr`, `bitcoin-signet-p2pkh`, `bitcoin-signet-p2sh`, `bitcoin-signet-p2wpkh`, `bitcoin-signet-p2wsh`, `bitcoin-signet-p2tr`, `bitcoin-regtest-p2pkh`, `bitcoin-regtest-p2sh`, `bitcoin-regtest-p2wpkh`, `bitcoin-regtest-p2wsh`, `bitcoin-regtest-p2tr`, `sei`, `xlm`, `doge-mainnet`, `doge-testnet`, `ton-v3r2`, `ton-v4r2`, `ton-v5r1`, `xrp`, `spark-mainnet`, `spark-regtest` | Address format of the account |
+| `--curve <CURVE>` | one of `secp256k1`, `ed25519`, `p256` | Curve of the account; inferred from the address format when omitted |
+| `--path-format <PATH_FORMAT>` | default `bip32`; one of `bip32` | Derivation path format |
+| `--path <PATH>` |  | Derivation path; the next unused conventional path is used when omitted |
 
 Constraints:
 
-- exactly one of `--input-json`, `--input-file`
+- exactly one of `--input-json`, `--input-file`, `--wallet-id`
 
 ### `tk private-key`
 
@@ -882,42 +890,53 @@ tk sign [OPTIONS] <COMMAND>
 
 Subcommands:
 
-- [`tk sign payload`](#tk-sign-payload): Sign a payload with explicit encoding and hash function in JSON input
+- [`tk sign payload`](#tk-sign-payload): Sign a payload with an explicit encoding and hash function; from flags or a `SignRawPayloadIntentV2` parameters object
 - [`tk sign transaction`](#tk-sign-transaction): Sign an already serialized transaction; does not broadcast
 
 #### `tk sign payload`
 
-Sign a payload with explicit encoding and hash function in JSON input
+Sign a payload with an explicit encoding and hash function; from flags or a `SignRawPayloadIntentV2` parameters object
 
 ```
-tk sign payload [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>>
+tk sign payload [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>|--sign-with <SIGN_WITH>>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
 | `--input-json <INPUT_JSON>` |  | Inline JSON parameters (no activity envelope) |
 | `--input-file <INPUT_FILE>` |  | Read JSON parameters from a file, or - for stdin |
+| `--sign-with <SIGN_WITH>` |  | Wallet account address or private key ID that signs |
+| `--payload <PAYLOAD>` |  | Payload to sign, in the given encoding |
+| `--payload-file <PAYLOAD_FILE>` |  | Read the payload from a file, or - for stdin |
+| `--encoding <ENCODING>` | one of `hexadecimal`, `text-utf8`, `eip712`, `eip7702-authorization` | How the payload is encoded |
+| `--hash-function <HASH_FUNCTION>` | one of `no-op`, `sha256`, `keccak256`, `not-applicable` | Hash function applied to the payload before signing |
 
 Constraints:
 
-- exactly one of `--input-json`, `--input-file`
+- at most one of `--payload`, `--payload-file`
+- exactly one of `--input-json`, `--input-file`, `--sign-with`
 
 #### `tk sign transaction`
 
 Sign an already serialized transaction; does not broadcast
 
 ```
-tk sign transaction [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>>
+tk sign transaction [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>|--sign-with <SIGN_WITH>>
 ```
 
 | Argument | Notes | Description |
 |---|---|---|
 | `--input-json <INPUT_JSON>` |  | Inline JSON parameters (no activity envelope) |
 | `--input-file <INPUT_FILE>` |  | Read JSON parameters from a file, or - for stdin |
+| `--sign-with <SIGN_WITH>` |  | Wallet account address or private key ID that signs |
+| `--unsigned-transaction <UNSIGNED_TRANSACTION>` |  | Serialized unsigned transaction |
+| `--unsigned-transaction-file <UNSIGNED_TRANSACTION_FILE>` |  | Read the serialized unsigned transaction from a file, or - for stdin |
+| `--type <TRANSACTION_TYPE>` | one of `ethereum`, `solana`, `tron`, `bitcoin`, `tempo` | Transaction type |
 
 Constraints:
 
-- exactly one of `--input-json`, `--input-file`
+- at most one of `--unsigned-transaction`, `--unsigned-transaction-file`
+- exactly one of `--input-json`, `--input-file`, `--sign-with`
 
 ### `tk secret`
 

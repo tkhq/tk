@@ -149,16 +149,13 @@ pub(crate) fn import_public_key(
     gnupghome
 }
 
-fn create_wallet(run: &Run, label: &str, accounts: Value) -> String {
-    let created = run.submit(
-        run.admin().args([
-            "wallet",
-            "create",
-            "--input-json",
-            &json!({"walletName": run.name(label), "accounts": accounts}).to_string(),
-        ]),
-        "wallet.create",
-    );
+fn create_wallet(run: &Run, label: &str, accounts: &[&str]) -> String {
+    let mut command = run.admin();
+    command.args(["wallet", "create", "--name", &run.name(label)]);
+    for account in accounts {
+        command.args(["--account", account]);
+    }
+    let created = run.submit(&mut command, "wallet.create");
     result(&created, "createWalletResult")["walletId"]
         .as_str()
         .unwrap()
@@ -166,16 +163,7 @@ fn create_wallet(run: &Run, label: &str, accounts: Value) -> String {
 }
 
 pub(crate) fn create_occupied_wallet(run: &Run) -> String {
-    create_wallet(
-        run,
-        "gpg-wallet",
-        json!([{
-            "curve": "CURVE_SECP256K1",
-            "pathFormat": "PATH_FORMAT_BIP32",
-            "path": "m/5261136'/0'/0'/0'",
-            "addressFormat": "ADDRESS_FORMAT_ETHEREUM",
-        }]),
-    )
+    create_wallet(run, "gpg-wallet", &["ethereum:m/5261136'/0'/0'/0'"])
 }
 
 pub(crate) fn openpgp_config(
@@ -486,8 +474,8 @@ fn signing_git_commits_gpg_with_scoped_policy() {
     let git = locate("git").expect("git must be on PATH: the signing-git-commits gate needs git");
     let run = Run::new();
     let (_, agent_id, agent) = run.create_agent();
-    let wallet = create_wallet(&run, "gpg", json!([]));
-    let other_wallet = create_wallet(&run, "gpg-outside-scope", json!([]));
+    let wallet = create_wallet(&run, "gpg", &[]);
+    let other_wallet = create_wallet(&run, "gpg-outside-scope", &[]);
     run.allow_user_signing("agents-sign-gpg", &agent_id, SignScope::Wallet(&wallet));
 
     let created = create_key(&run, &wallet, USER_ID);
