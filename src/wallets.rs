@@ -51,7 +51,6 @@ fn inferred_curve(address_format: AddressFormat) -> Option<Curve> {
     }
 }
 
-/// `--address-format` values that need `--curve`, because no curve is inferred.
 static NEEDS_CURVE: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
     AddressFormat::names()
         .iter()
@@ -60,7 +59,6 @@ static NEEDS_CURVE: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(
         .collect()
 });
 
-/// `--address-format` values that need `--path`, because no conventional path exists.
 static NEEDS_PATH: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
     AddressFormat::names()
         .iter()
@@ -116,9 +114,7 @@ impl StandardFormat {
             index += 1;
         }
     }
-}
 
-impl StandardFormat {
     fn of(address_format: AddressFormat) -> Option<Self> {
         match address_format {
             AddressFormat::Ethereum => Some(Self::Ethereum),
@@ -314,7 +310,7 @@ pub enum AccountCommand {
         #[arg(long)]
         wallet_id: Uuid,
         /// Page size.
-        #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=100))]
+        #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=i64::from(ACCOUNT_PAGE_SIZE)))]
         limit: u32,
         /// Wallet account ID to continue after.
         #[arg(long)]

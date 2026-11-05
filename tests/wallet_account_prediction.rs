@@ -1,5 +1,5 @@
 //! Mock-API tests for wallet account path prediction against pages the live API cannot produce on demand.
-// Test helpers may panic.
+// Unwraps read mock-server requests and CLI JSON output, which these tests expect to be present and well-formed.
 #![allow(clippy::unwrap_used)]
 
 use assert_cmd::Command;

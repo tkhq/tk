@@ -112,7 +112,7 @@ tk wallet update --input-json '{"walletId": "WALLET_ID", "walletName": "ops"}'
 
 tk wallet account list --wallet-id WALLET_ID --limit 50
 tk wallet account list --wallet-id WALLET_ID --cursor ACCOUNT_ID
-# Add the next unused conventional account for the format; the curve is inferred.
+# Add the next unused conventional account for the format.
 tk wallet account create --wallet-id WALLET_ID --address-format ethereum
 # Pin the path instead of predicting it.
 tk wallet account create --wallet-id WALLET_ID --address-format ethereum --path "m/44'/60'/5'/0/0"

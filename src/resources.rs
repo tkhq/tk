@@ -305,7 +305,6 @@ impl BodyArgs {
     }
 }
 
-/// Reads a file's bytes, or stdin's when the path is `-`.
 pub(crate) fn read_input(path: &Path, what: &str) -> Result<Vec<u8>> {
     if path.as_os_str() == "-" {
         let mut bytes = Vec::new();
