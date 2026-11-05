@@ -2,6 +2,7 @@
 
 mod auth;
 mod cli;
+mod enum_args;
 mod errors;
 mod git;
 mod gpg;

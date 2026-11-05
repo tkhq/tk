@@ -866,7 +866,7 @@ tk private-key create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_F
 | `--name <NAME>` |  | Name of the single private key to create |
 | `--curve <CURVE>` | one of `secp256k1`, `ed25519`, `p256` | Curve of the private key |
 | `--address-format <FORMAT> (repeatable)` | one of `uncompressed`, `compressed`, `ethereum`, `solana`, `cosmos`, `tron`, `sui`, `aptos`, `bitcoin-mainnet-p2pkh`, `bitcoin-mainnet-p2sh`, `bitcoin-mainnet-p2wpkh`, `bitcoin-mainnet-p2wsh`, `bitcoin-mainnet-p2tr`, `bitcoin-testnet-p2pkh`, `bitcoin-testnet-p2sh`, `bitcoin-testnet-p2wpkh`, `bitcoin-testnet-p2wsh`, `bitcoin-testnet-p2tr`, `bitcoin-signet-p2pkh`, `bitcoin-signet-p2sh`, `bitcoin-signet-p2wpkh`, `bitcoin-signet-p2wsh`, `bitcoin-signet-p2tr`, `bitcoin-regtest-p2pkh`, `bitcoin-regtest-p2sh`, `bitcoin-regtest-p2wpkh`, `bitcoin-regtest-p2wsh`, `bitcoin-regtest-p2tr`, `sei`, `xlm`, `doge-mainnet`, `doge-testnet`, `ton-v3r2`, `ton-v4r2`, `ton-v5r1`, `xrp`, `spark-mainnet`, `spark-regtest` | Address format to derive from the key |
-| `--tag <TAGS> (repeatable)` |  | Tag ID to attach |
+| `--tag <TAGS> (repeatable)` |  | ID of a private key tag to attach; user tags do not apply to private keys |
 
 Constraints:
 

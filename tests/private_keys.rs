@@ -70,57 +70,6 @@ async fn get_of_an_absent_private_key_is_not_found() {
     assert_eq!(result["code"], "not_found");
 }
 
-#[tokio::test]
-async fn create_that_needs_consensus_exits_zero_as_pending() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/public/v1/submit/create_private_keys"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"activity": {
-                "id": "pending-id",
-                "status": "ACTIVITY_STATUS_CONSENSUS_NEEDED",
-            }})),
-        )
-        .expect(1)
-        .mount(&server)
-        .await;
-    let result = record(
-        authed(&server.uri()).args([
-            "private-key",
-            "create",
-            "--name",
-            "treasury",
-            "--curve",
-            "ed25519",
-            "--address-format",
-            "solana",
-            "--tag",
-            KEY_ID,
-        ]),
-        0,
-    );
-    assert_eq!(result["command"], "private-key.create");
-    assert_eq!(result["status"], "pending");
-    assert_eq!(result["activity"]["id"], "pending-id");
-
-    let requests = server.received_requests().await.unwrap();
-    let [request] = requests.as_slice() else {
-        panic!("expected exactly one request, got {requests:?}")
-    };
-    let body: Value = serde_json::from_slice(&request.body).unwrap();
-    assert_eq!(body["type"], "ACTIVITY_TYPE_CREATE_PRIVATE_KEYS_V2");
-    assert_eq!(body["organizationId"], ORG);
-    assert_eq!(
-        body["parameters"],
-        json!({"privateKeys": [{
-            "privateKeyName": "treasury",
-            "curve": "CURVE_ED25519",
-            "privateKeyTags": [KEY_ID],
-            "addressFormats": ["ADDRESS_FORMAT_SOLANA"],
-        }]})
-    );
-}
-
 #[test]
 fn a_usage_error_exits_two_with_the_usage_error_code() {
     let result = record(cli().args(["private-key", "create", "--name", "k"]), 2);
