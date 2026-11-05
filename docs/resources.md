@@ -121,6 +121,7 @@ tk private-key list
 tk private-key get --id PRIVATE_KEY_ID
 # Create one key from flags.
 tk private-key create --name treasury --curve secp256k1 --address-format ethereum
+# Create several keys from one parameters object.
 tk private-key create --input-json '{"privateKeys": [{"privateKeyName": "ops", "curve": "CURVE_ED25519"}]}'
 ```
 

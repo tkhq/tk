@@ -50,7 +50,7 @@ macro_rules! api_enum {
             fn names() -> &'static [(&'static str, Self)] {
                 // Clap's possible values borrow the names for the whole process.
                 static NAMES: LazyLock<Vec<(&'static str, $type)>> = LazyLock::new(|| {
-                    <$type as ApiEnum>::ALL
+                    $type::ALL
                         .iter()
                         .map(|&variant| {
                             let name: &'static str =
@@ -129,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn names_are_unique_kebab_case_without_the_prefix() {
+    fn names_are_unique_and_resolve_without_the_prefix() {
         assert_unique_names::<AddressFormat>();
         assert_unique_names::<Curve>();
         assert_eq!(
