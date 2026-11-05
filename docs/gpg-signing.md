@@ -7,7 +7,7 @@ Follow [authentication](./authentication.md) first.
 
 ```bash
 # Create a wallet to hold the signing key, if you don't have one.
-tk wallet create --input-json '{"walletName": "gpg", "accounts": []}'
+tk wallet create --name gpg
 
 # Create and register a signing key under that wallet, keeping its fingerprint.
 # Rerunning with a user ID the wallet already holds registers that key.

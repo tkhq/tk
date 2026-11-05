@@ -123,6 +123,37 @@ fn wallet_create_get_update_and_account_pagination() {
         paths,
         ["m/44'/60'/0'/0/0", "m/44'/60'/0'/0/1", "m/44'/60'/0'/0/2"]
     );
+
+    let predicted = run.submit(
+        run.admin().args([
+            "wallet",
+            "account",
+            "create",
+            "--wallet-id",
+            &wallet_id,
+            "--address-format",
+            "ethereum",
+        ]),
+        "wallet.account.create",
+    );
+    assert_eq!(
+        result(&predicted, "createWalletAccountsResult")["addresses"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let listed = run.ok(run
+        .admin()
+        .args(["wallet", "account", "list", "--wallet-id", &wallet_id]));
+    let mut paths: Vec<&str> = listed["data"]["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|account| account["path"].as_str().unwrap())
+        .collect();
+    paths.sort_unstable();
+    assert!(paths.contains(&"m/44'/60'/1'/0/0"), "{paths:?}");
 }
 
 #[test]
@@ -133,12 +164,10 @@ fn sign_payload_returns_r_s_v_and_sign_transaction_returns_type2_hex() {
         run.admin().args([
             "wallet",
             "create",
-            "--input-json",
-            &json!({
-                "walletName": run.name("signer"),
-                "accounts": [eth_account("m/44'/60'/0'/0/0")],
-            })
-            .to_string(),
+            "--name",
+            &run.name("signer"),
+            "--account",
+            "ethereum",
         ]),
         "wallet.create",
     );
@@ -152,14 +181,14 @@ fn sign_payload_returns_r_s_v_and_sign_transaction_returns_type2_hex() {
         run.admin().args([
             "sign",
             "payload",
-            "--input-json",
-            &json!({
-                "signWith": address,
-                "payload": digest,
-                "encoding": "PAYLOAD_ENCODING_HEXADECIMAL",
-                "hashFunction": "HASH_FUNCTION_NO_OP",
-            })
-            .to_string(),
+            "--sign-with",
+            &address,
+            "--payload",
+            &digest,
+            "--encoding",
+            "PAYLOAD_ENCODING_HEXADECIMAL",
+            "--hash-function",
+            "HASH_FUNCTION_NO_OP",
         ]),
         "sign.payload",
     );
@@ -177,13 +206,12 @@ fn sign_payload_returns_r_s_v_and_sign_transaction_returns_type2_hex() {
         run.admin().args([
             "sign",
             "transaction",
-            "--input-json",
-            &json!({
-                "signWith": address,
-                "unsignedTransaction": UNSIGNED_EIP1559_TX,
-                "type": "TRANSACTION_TYPE_ETHEREUM",
-            })
-            .to_string(),
+            "--sign-with",
+            &address,
+            "--unsigned-transaction",
+            UNSIGNED_EIP1559_TX,
+            "--type",
+            "TRANSACTION_TYPE_ETHEREUM",
         ]),
         "sign.transaction",
     );
