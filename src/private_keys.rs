@@ -1,9 +1,13 @@
 //! The `private-key` commands: list, fetch, and create private keys.
 
-use std::str::FromStr;
+use std::{ffi::OsStr, sync::LazyLock};
 
 use anyhow::Result;
-use clap::{ArgGroup, Args, Subcommand, ValueEnum};
+use clap::{
+    Arg, ArgGroup, Args, Command, Subcommand, ValueEnum,
+    builder::{PossibleValue, PossibleValuesParser, TypedValueParser},
+    error::ErrorKind,
+};
 use serde_json::to_value;
 use turnkey_client::generated::{
     GetPrivateKeyRequest, GetPrivateKeysRequest,
@@ -47,9 +51,14 @@ pub struct CreatePrivateKeyArgs {
     /// Curve of the private key.
     #[arg(long, value_enum, requires = "name")]
     curve: Option<CurveArg>,
-    /// Address format to derive from the key, such as `ethereum`.
-    #[arg(long = "address-format", value_name = "FORMAT", requires = "name")]
-    address_formats: Vec<AddressFormatArg>,
+    /// Address format to derive from the key.
+    #[arg(
+        long = "address-format",
+        value_name = "FORMAT",
+        value_parser = AddressFormatParser,
+        requires = "name"
+    )]
+    address_formats: Vec<AddressFormat>,
     /// Tag ID to attach.
     #[arg(long = "tag", requires = "name")]
     tags: Vec<Uuid>,
@@ -62,25 +71,92 @@ enum CurveArg {
     P256,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct AddressFormatArg(AddressFormat);
+const ADDRESS_FORMATS: [AddressFormat; 38] = [
+    AddressFormat::Uncompressed,
+    AddressFormat::Compressed,
+    AddressFormat::Ethereum,
+    AddressFormat::Solana,
+    AddressFormat::Cosmos,
+    AddressFormat::Tron,
+    AddressFormat::Sui,
+    AddressFormat::Aptos,
+    AddressFormat::BitcoinMainnetP2pkh,
+    AddressFormat::BitcoinMainnetP2sh,
+    AddressFormat::BitcoinMainnetP2wpkh,
+    AddressFormat::BitcoinMainnetP2wsh,
+    AddressFormat::BitcoinMainnetP2tr,
+    AddressFormat::BitcoinTestnetP2pkh,
+    AddressFormat::BitcoinTestnetP2sh,
+    AddressFormat::BitcoinTestnetP2wpkh,
+    AddressFormat::BitcoinTestnetP2wsh,
+    AddressFormat::BitcoinTestnetP2tr,
+    AddressFormat::BitcoinSignetP2pkh,
+    AddressFormat::BitcoinSignetP2sh,
+    AddressFormat::BitcoinSignetP2wpkh,
+    AddressFormat::BitcoinSignetP2wsh,
+    AddressFormat::BitcoinSignetP2tr,
+    AddressFormat::BitcoinRegtestP2pkh,
+    AddressFormat::BitcoinRegtestP2sh,
+    AddressFormat::BitcoinRegtestP2wpkh,
+    AddressFormat::BitcoinRegtestP2wsh,
+    AddressFormat::BitcoinRegtestP2tr,
+    AddressFormat::Sei,
+    AddressFormat::Xlm,
+    AddressFormat::DogeMainnet,
+    AddressFormat::DogeTestnet,
+    AddressFormat::TonV3r2,
+    AddressFormat::TonV4r2,
+    AddressFormat::TonV5r1,
+    AddressFormat::Xrp,
+    AddressFormat::SparkMainnet,
+    AddressFormat::SparkRegtest,
+];
 
-impl FromStr for AddressFormatArg {
-    type Err = String;
+fn address_format_name(format: AddressFormat) -> String {
+    let name = format.as_str_name();
+    name.strip_prefix("ADDRESS_FORMAT_")
+        .unwrap_or(name)
+        .to_ascii_lowercase()
+        .replace('_', "-")
+}
 
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let upper = text.to_ascii_uppercase().replace('-', "_");
-        let full = if upper.starts_with("ADDRESS_FORMAT_") {
-            upper
-        } else {
-            format!("ADDRESS_FORMAT_{upper}")
-        };
-        match AddressFormat::from_str_name(&full) {
-            Some(AddressFormat::Unspecified) | None => {
-                Err(format!("unknown address format {text:?}"))
-            }
-            Some(format) => Ok(Self(format)),
-        }
+static ADDRESS_FORMAT_NAMES: LazyLock<Vec<(String, AddressFormat)>> = LazyLock::new(|| {
+    ADDRESS_FORMATS
+        .into_iter()
+        .map(|format| (address_format_name(format), format))
+        .collect()
+});
+
+#[derive(Clone, Copy)]
+struct AddressFormatParser;
+
+impl TypedValueParser for AddressFormatParser {
+    type Value = AddressFormat;
+
+    fn parse_ref(
+        &self,
+        cmd: &Command,
+        arg: Option<&Arg>,
+        value: &OsStr,
+    ) -> Result<AddressFormat, clap::Error> {
+        let name =
+            PossibleValuesParser::new(ADDRESS_FORMAT_NAMES.iter().map(|(name, _)| name.as_str()))
+                .parse_ref(cmd, arg, value)?;
+        ADDRESS_FORMAT_NAMES
+            .iter()
+            .find_map(|(candidate, format)| (*candidate == name).then_some(*format))
+            .ok_or_else(|| {
+                cmd.clone()
+                    .error(ErrorKind::InvalidValue, "unknown address format")
+            })
+    }
+
+    fn possible_values(&self) -> Option<Box<dyn Iterator<Item = PossibleValue> + '_>> {
+        Some(Box::new(
+            ADDRESS_FORMAT_NAMES
+                .iter()
+                .map(|(name, _)| PossibleValue::new(name.as_str())),
+        ))
     }
 }
 
@@ -110,10 +186,7 @@ impl PrivateKeyCommand {
                         CurveArg::P256 => Curve::P256,
                     },
                     private_key_tags: tags.iter().map(ToString::to_string).collect(),
-                    address_formats: address_formats
-                        .into_iter()
-                        .map(|AddressFormatArg(format)| format)
-                        .collect(),
+                    address_formats,
                 }],
             }),
             Self::Create(CreatePrivateKeyArgs {
@@ -168,7 +241,7 @@ impl PreparedPrivateKeyCommand {
                     "private-key.create",
                     "create_private_keys",
                     "ACTIVITY_TYPE_CREATE_PRIVATE_KEYS_V2",
-                    &to_value(params)?,
+                    &params,
                 )
                 .await
             }
@@ -178,7 +251,7 @@ impl PreparedPrivateKeyCommand {
 
 #[cfg(test)]
 mod tests {
-    use clap::{Parser, error::ErrorKind};
+    use clap::Parser;
 
     use super::*;
 
@@ -210,7 +283,15 @@ mod tests {
             ),
             (
                 "private-key create --name k --curve ed25519 --address-format nope",
-                ErrorKind::ValueValidation,
+                ErrorKind::InvalidValue,
+            ),
+            (
+                "private-key create --name k --curve ed25519 --address-format ADDRESS_FORMAT_ETHEREUM",
+                ErrorKind::InvalidValue,
+            ),
+            (
+                "private-key create --name k --curve ed25519 --address-format Ethereum",
+                ErrorKind::InvalidValue,
             ),
             (
                 "private-key create --name k --curve ed25519 --tag not-a-uuid",
@@ -235,7 +316,7 @@ mod tests {
     fn flags_build_one_private_key_intent() {
         let tag = "8d4b1e7a-0c6d-4d1a-9d3e-6b0f1c2d3e4f";
         let args = format!(
-            "private-key create --name k --curve secp256k1 --address-format ethereum --address-format ADDRESS_FORMAT_SOLANA --tag {tag}"
+            "private-key create --name k --curve secp256k1 --address-format ethereum --address-format bitcoin-mainnet-p2pkh --tag {tag}"
         );
         let PreparedPrivateKeyCommand::Create(intent) =
             parse(&args).unwrap().command.prepare().unwrap()
@@ -248,9 +329,24 @@ mod tests {
                 "privateKeyName": "k",
                 "curve": "CURVE_SECP256K1",
                 "privateKeyTags": [tag],
-                "addressFormats": ["ADDRESS_FORMAT_ETHEREUM", "ADDRESS_FORMAT_SOLANA"],
+                "addressFormats": ["ADDRESS_FORMAT_ETHEREUM", "ADDRESS_FORMAT_BITCOIN_MAINNET_P2PKH"],
             }]})
         );
+    }
+
+    #[test]
+    fn address_formats_cover_every_specified_variant_with_unique_kebab_names() {
+        let mut discriminants: Vec<i32> = ADDRESS_FORMATS.iter().map(|&f| f as i32).collect();
+        discriminants.sort_unstable();
+        assert_eq!(discriminants, (1..=38).collect::<Vec<_>>());
+        let mut names: Vec<&str> = ADDRESS_FORMAT_NAMES
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), 38);
+        assert!(names.contains(&"ton-v3r2"));
     }
 
     #[test]

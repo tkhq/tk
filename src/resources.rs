@@ -363,6 +363,7 @@ fn normalize_ids(value: &mut Value) -> Result<()> {
                         | "removeUserIds"
                         | "apiKeyIds"
                         | "policyIds"
+                        | "privateKeyTags"
                 ) {
                     let Some(ids) = value.as_array_mut() else {
                         return Err(InvalidInput(format!("{key} must be an array")).into());
