@@ -2,6 +2,7 @@
 
 mod auth;
 mod cli;
+mod enum_args;
 mod errors;
 mod git;
 mod gpg;
@@ -10,6 +11,7 @@ mod logging;
 mod operations;
 mod outcome;
 mod output;
+mod private_keys;
 mod registry;
 mod resources;
 mod secrets;

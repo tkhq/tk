@@ -42,6 +42,7 @@ Subcommands:
 - [`tk policy`](#tk-policy): Manage policies and inspect evaluations
 - [`tk api-key`](#tk-api-key): Manage registered API credentials
 - [`tk wallet`](#tk-wallet): Manage wallets and accounts
+- [`tk private-key`](#tk-private-key): Manage private keys
 - [`tk sign`](#tk-sign): Sign payloads and serialized transactions
 - [`tk secret`](#tk-secret): Manage encrypted secrets
 - [`tk session`](#tk-session): Rotate short-lived credentials for agent profiles
@@ -815,6 +816,61 @@ tk wallet account create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPU
 Constraints:
 
 - exactly one of `--input-json`, `--input-file`
+
+### `tk private-key`
+
+Manage private keys
+
+```
+tk private-key [OPTIONS] <COMMAND>
+```
+
+Subcommands:
+
+- [`tk private-key list`](#tk-private-key-list): List private keys
+- [`tk private-key get`](#tk-private-key-get): Fetch one private key by ID
+- [`tk private-key create`](#tk-private-key-create): Create a private key from flags, or one or more private keys from a `CreatePrivateKeysIntentV2` parameters object
+
+#### `tk private-key list`
+
+List private keys
+
+```
+tk private-key list [OPTIONS]
+```
+
+#### `tk private-key get`
+
+Fetch one private key by ID
+
+```
+tk private-key get [OPTIONS] --id <ID>
+```
+
+| Argument | Notes | Description |
+|---|---|---|
+| `--id <ID>` | required | Private key ID |
+
+#### `tk private-key create`
+
+Create a private key from flags, or one or more private keys from a `CreatePrivateKeysIntentV2` parameters object
+
+```
+tk private-key create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>|--name <NAME>>
+```
+
+| Argument | Notes | Description |
+|---|---|---|
+| `--input-json <INPUT_JSON>` |  | Inline JSON parameters (no activity envelope) |
+| `--input-file <INPUT_FILE>` |  | Read JSON parameters from a file, or - for stdin |
+| `--name <NAME>` |  | Name of the single private key to create |
+| `--curve <CURVE>` | one of `secp256k1`, `ed25519`, `p256` | Curve of the private key |
+| `--address-format <FORMAT> (repeatable)` | one of `uncompressed`, `compressed`, `ethereum`, `solana`, `cosmos`, `tron`, `sui`, `aptos`, `bitcoin-mainnet-p2pkh`, `bitcoin-mainnet-p2sh`, `bitcoin-mainnet-p2wpkh`, `bitcoin-mainnet-p2wsh`, `bitcoin-mainnet-p2tr`, `bitcoin-testnet-p2pkh`, `bitcoin-testnet-p2sh`, `bitcoin-testnet-p2wpkh`, `bitcoin-testnet-p2wsh`, `bitcoin-testnet-p2tr`, `bitcoin-signet-p2pkh`, `bitcoin-signet-p2sh`, `bitcoin-signet-p2wpkh`, `bitcoin-signet-p2wsh`, `bitcoin-signet-p2tr`, `bitcoin-regtest-p2pkh`, `bitcoin-regtest-p2sh`, `bitcoin-regtest-p2wpkh`, `bitcoin-regtest-p2wsh`, `bitcoin-regtest-p2tr`, `sei`, `xlm`, `doge-mainnet`, `doge-testnet`, `ton-v3r2`, `ton-v4r2`, `ton-v5r1`, `xrp`, `spark-mainnet`, `spark-regtest` | Address format to derive from the key |
+| `--tag <TAGS> (repeatable)` |  | ID of a private key tag to attach; user tags do not apply to private keys |
+
+Constraints:
+
+- exactly one of `--input-json`, `--input-file`, `--name`
 
 ### `tk sign`
 

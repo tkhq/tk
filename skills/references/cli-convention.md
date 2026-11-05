@@ -37,7 +37,7 @@ Branch on `reason` first. Three record families exist.
 
 ### `command_result`
 
-Every `activity`, `user`, `policy`, `api-key`, `wallet`, `sign`, `secret`,
+Every `activity`, `user`, `policy`, `api-key`, `wallet`, `private-key`, `sign`, `secret`,
 `session`, `profile`, `login`, `whoami`, `auth`, and `request` command prints
 this shape:
 
