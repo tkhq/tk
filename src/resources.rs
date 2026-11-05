@@ -178,7 +178,7 @@ pub enum ExpiryFilter {
 
 #[derive(Debug, Args)]
 #[group(skip)]
-struct BodySource {
+pub(crate) struct BodySource {
     /// Inline JSON parameters (no activity envelope).
     #[arg(long)]
     input_json: Option<String>,
@@ -306,7 +306,7 @@ impl BodyArgs {
 }
 
 impl BodySource {
-    fn parse<T: DeserializeOwned + Serialize>(self) -> Result<T> {
+    pub(crate) fn parse<T: DeserializeOwned + Serialize>(self) -> Result<T> {
         let bytes = match (self.input_json, self.input_file) {
             (Some(json), _) => json.into_bytes(),
             (None, Some(path)) if path.as_os_str() == "-" => {

@@ -1,6 +1,6 @@
 # Resources
 
-Manage users, policies, API keys, and wallets. Create and update commands
+Manage users, policies, API keys, wallets, and private keys. Create and update commands
 take the request's parameters object as `--input-json JSON` or
 `--input-file PATH` (`-` for stdin), without organization ID or activity
 envelope.
@@ -113,6 +113,18 @@ tk wallet account create --input-file ./accounts.json
 
 A command that needs approval exits zero with status `pending` and an
 activity ID; see [activities](./activities.md).
+
+## Private keys
+
+```bash
+tk private-key list
+tk private-key get --id PRIVATE_KEY_ID
+# Create one key from flags; the address format is optional and may repeat.
+tk private-key create --name treasury --curve secp256k1 --address-format ethereum
+tk private-key create --input-json '{"privateKeys": [{"privateKeyName": "ops", "curve": "CURVE_ED25519"}]}'
+```
+
+`create` takes the same pending flow as the other mutating commands.
 
 ## Skills
 

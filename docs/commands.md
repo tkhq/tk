@@ -42,6 +42,7 @@ Subcommands:
 - [`tk policy`](#tk-policy): Manage policies and inspect evaluations
 - [`tk api-key`](#tk-api-key): Manage registered API credentials
 - [`tk wallet`](#tk-wallet): Manage wallets and accounts
+- [`tk private-key`](#tk-private-key): Manage private keys
 - [`tk sign`](#tk-sign): Sign payloads and serialized transactions
 - [`tk secret`](#tk-secret): Manage encrypted secrets
 - [`tk session`](#tk-session): Rotate short-lived credentials for agent profiles
@@ -815,6 +816,61 @@ tk wallet account create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPU
 Constraints:
 
 - exactly one of `--input-json`, `--input-file`
+
+### `tk private-key`
+
+Manage private keys
+
+```
+tk private-key [OPTIONS] <COMMAND>
+```
+
+Subcommands:
+
+- [`tk private-key list`](#tk-private-key-list): List private keys
+- [`tk private-key get`](#tk-private-key-get): Fetch one private key by ID
+- [`tk private-key create`](#tk-private-key-create): Create a private key from flags, or one or more private keys from a `CreatePrivateKeysIntentV2` parameters object
+
+#### `tk private-key list`
+
+List private keys
+
+```
+tk private-key list [OPTIONS]
+```
+
+#### `tk private-key get`
+
+Fetch one private key by ID
+
+```
+tk private-key get [OPTIONS] --id <ID>
+```
+
+| Argument | Notes | Description |
+|---|---|---|
+| `--id <ID>` | required | Private key ID |
+
+#### `tk private-key create`
+
+Create a private key from flags, or one or more private keys from a `CreatePrivateKeysIntentV2` parameters object
+
+```
+tk private-key create [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>|--name <NAME>>
+```
+
+| Argument | Notes | Description |
+|---|---|---|
+| `--input-json <INPUT_JSON>` |  | Inline JSON parameters (no activity envelope) |
+| `--input-file <INPUT_FILE>` |  | Read JSON parameters from a file, or - for stdin |
+| `--name <NAME>` |  | Name of the single private key to create |
+| `--curve <CURVE>` | one of `secp256k1`, `ed25519`, `p256` | Curve of the private key |
+| `--address-format <FORMAT> (repeatable)` |  | Address format to derive from the key, such as `ethereum` |
+| `--tag <TAGS> (repeatable)` |  | Tag ID to attach |
+
+Constraints:
+
+- exactly one of `--input-json`, `--input-file`, `--name`
 
 ### `tk sign`
 
