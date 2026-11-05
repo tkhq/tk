@@ -907,7 +907,7 @@ tk sign payload [OPTIONS] <--input-json <INPUT_JSON>|--input-file <INPUT_FILE>|-
 | `--input-file <INPUT_FILE>` |  | Read JSON parameters from a file, or - for stdin |
 | `--sign-with <SIGN_WITH>` |  | Wallet account address or private key ID that signs |
 | `--payload <PAYLOAD>` |  | Payload to sign, in the given encoding |
-| `--payload-file <PAYLOAD_FILE>` |  | Read the payload verbatim from a file, or - for stdin |
+| `--payload-file <PAYLOAD_FILE>` |  | Read the payload from a file, or - for stdin |
 | `--encoding <ENCODING>` | one of `hexadecimal`, `text-utf8`, `eip712`, `eip7702-authorization` | How the payload is encoded |
 | `--hash-function <HASH_FUNCTION>` | one of `no-op`, `sha256`, `keccak256`, `not-applicable` | Hash function applied to the payload before signing |
 

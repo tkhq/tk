@@ -2,7 +2,7 @@ use std::{
     convert::Infallible,
     fs,
     io::{self, Read},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 
@@ -305,23 +305,28 @@ impl BodyArgs {
     }
 }
 
+/// Reads a file's bytes, or stdin's when the path is `-`.
+pub(crate) fn read_input(path: &Path, what: &str) -> Result<Vec<u8>> {
+    if path.as_os_str() == "-" {
+        let mut bytes = Vec::new();
+        io::stdin()
+            .read_to_end(&mut bytes)
+            .map_err(|error| Malformed::new(format!("could not read {what} from stdin"), error))?;
+        return Ok(bytes);
+    }
+    Ok(fs::read(path).map_err(|error| {
+        Malformed::new(
+            format!("could not read {what} from {}", path.display()),
+            error,
+        )
+    })?)
+}
+
 impl BodySource {
     pub(crate) fn parse<T: DeserializeOwned + Serialize>(self) -> Result<T> {
         let bytes = match (self.input_json, self.input_file) {
             (Some(json), _) => json.into_bytes(),
-            (None, Some(path)) if path.as_os_str() == "-" => {
-                let mut bytes = Vec::new();
-                io::stdin().read_to_end(&mut bytes).map_err(|error| {
-                    Malformed::new("could not read JSON parameters from stdin", error)
-                })?;
-                bytes
-            }
-            (None, Some(path)) => fs::read(&path).map_err(|error| {
-                Malformed::new(
-                    format!("could not read JSON parameters from {}", path.display()),
-                    error,
-                )
-            })?,
+            (None, Some(path)) => read_input(&path, "JSON parameters")?,
             (None, None) => unreachable!("clap requires exactly one parameters source"),
         };
         let mut value: Value = from_slice(&bytes)

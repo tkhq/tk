@@ -1,12 +1,11 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs,
-    io::{self, Read},
     path::PathBuf,
     str::FromStr,
+    sync::LazyLock,
 };
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{ArgGroup, Args, Subcommand};
 use serde::Deserialize;
 use serde_json::{json, to_value};
@@ -30,7 +29,7 @@ use crate::{
     enum_args::{self, ApiEnum},
     errors::{InvalidInput, Malformed, MissingResource},
     operations::{OperationOutput, query, submit_activity},
-    resources::{BodyArgs, BodySource},
+    resources::{BodyArgs, BodySource, read_input},
 };
 
 const ACCOUNT_PAGE_SIZE: u32 = 100;
@@ -42,23 +41,7 @@ fn parse_mnemonic_length(value: &str) -> Result<i32, String> {
     }
 }
 
-fn read_text(path: &PathBuf, what: &str) -> Result<String> {
-    if path.as_os_str() == "-" {
-        let mut text = String::new();
-        io::stdin()
-            .read_to_string(&mut text)
-            .map_err(|error| Malformed::new(format!("could not read {what} from stdin"), error))?;
-        return Ok(text);
-    }
-    Ok(fs::read_to_string(path).map_err(|error| {
-        Malformed::new(
-            format!("could not read {what} from {}", path.display()),
-            error,
-        )
-    })?)
-}
-
-fn curve_for(address_format: AddressFormat) -> Option<Curve> {
+fn inferred_curve(address_format: AddressFormat) -> Option<Curve> {
     match address_format {
         AddressFormat::Ethereum | AddressFormat::Cosmos | AddressFormat::Uncompressed => {
             Some(Curve::Secp256k1)
@@ -67,6 +50,24 @@ fn curve_for(address_format: AddressFormat) -> Option<Curve> {
         _ => None,
     }
 }
+
+/// `--address-format` values that need `--curve`, because no curve is inferred.
+static NEEDS_CURVE: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
+    AddressFormat::names()
+        .iter()
+        .filter(|&&(_, address_format)| inferred_curve(address_format).is_none())
+        .map(|&(name, _)| ("address_format", name))
+        .collect()
+});
+
+/// `--address-format` values that need `--path`, because no conventional path exists.
+static NEEDS_PATH: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
+    AddressFormat::names()
+        .iter()
+        .filter(|&&(_, address_format)| StandardFormat::of(address_format).is_none())
+        .map(|&(name, _)| ("address_format", name))
+        .collect()
+});
 
 /// One page of accounts, decoded loosely so an address format newer than this
 /// client does not fail path prediction.
@@ -117,39 +118,45 @@ impl StandardFormat {
     }
 }
 
-impl TryFrom<AddressFormat> for StandardFormat {
-    type Error = InvalidInput;
-
-    fn try_from(address_format: AddressFormat) -> Result<Self, InvalidInput> {
+impl StandardFormat {
+    fn of(address_format: AddressFormat) -> Option<Self> {
         match address_format {
-            AddressFormat::Ethereum => Ok(Self::Ethereum),
-            AddressFormat::Cosmos => Ok(Self::Cosmos),
-            AddressFormat::Solana => Ok(Self::Solana),
-            AddressFormat::Uncompressed => Ok(Self::Uncompressed),
-            AddressFormat::Compressed => Ok(Self::Compressed),
-            other => Err(InvalidInput(format!(
-                "no conventional derivation path for {}; pass --path",
-                other.cli_name()
-            ))),
+            AddressFormat::Ethereum => Some(Self::Ethereum),
+            AddressFormat::Cosmos => Some(Self::Cosmos),
+            AddressFormat::Solana => Some(Self::Solana),
+            AddressFormat::Uncompressed => Some(Self::Uncompressed),
+            AddressFormat::Compressed => Some(Self::Compressed),
+            _ => None,
         }
     }
 }
 
-fn require_curve(address_format: AddressFormat, curve: Option<Curve>, hint: &str) -> Result<Curve> {
-    curve.or_else(|| curve_for(address_format)).ok_or_else(|| {
-        InvalidInput(format!(
-            "cannot infer the curve for {}; {hint}",
-            address_format.cli_name()
-        ))
-        .into()
-    })
+impl From<StandardFormat> for AddressFormat {
+    fn from(standard: StandardFormat) -> Self {
+        match standard {
+            StandardFormat::Ethereum => Self::Ethereum,
+            StandardFormat::Cosmos => Self::Cosmos,
+            StandardFormat::Solana => Self::Solana,
+            StandardFormat::Uncompressed => Self::Uncompressed,
+            StandardFormat::Compressed => Self::Compressed,
+        }
+    }
 }
 
 /// An account to create with a new wallet, written `ADDRESS_FORMAT[:PATH]`.
 #[derive(Clone, Debug)]
 pub struct AccountSpec {
-    address_format: AddressFormat,
-    path: Option<String>,
+    curve: Curve,
+    target: AccountTarget,
+}
+
+#[derive(Clone, Debug)]
+enum AccountTarget {
+    Path {
+        address_format: AddressFormat,
+        path: String,
+    },
+    Next(StandardFormat),
 }
 
 impl FromStr for AccountSpec {
@@ -163,10 +170,19 @@ impl FromStr for AccountSpec {
         };
         let address_format = AddressFormat::lookup(format)
             .ok_or_else(|| format!("unknown address format `{format}`, such as ethereum"))?;
-        Ok(Self {
-            address_format,
-            path,
-        })
+        let curve = inferred_curve(address_format).ok_or_else(|| {
+            format!("cannot infer the curve for {format}; use --input-json to name it")
+        })?;
+        let target = match path {
+            Some(path) => AccountTarget::Path {
+                address_format,
+                path,
+            },
+            None => AccountTarget::Next(StandardFormat::of(address_format).ok_or_else(|| {
+                format!("{format} has no conventional derivation path; write {format}:PATH")
+            })?),
+        };
+        Ok(Self { curve, target })
     }
 }
 
@@ -209,13 +225,13 @@ pub struct CreateAccountArgs {
     #[arg(long, requires = "wallet_id", value_parser = enum_args::parser::<AddressFormat>())]
     address_format: Option<AddressFormat>,
     /// Curve of the account; inferred from the address format when omitted.
-    #[arg(long, requires = "wallet_id", value_parser = enum_args::parser::<Curve>())]
+    #[arg(long, requires = "wallet_id", required_if_eq_any = NEEDS_CURVE.iter().copied(), value_parser = enum_args::parser::<Curve>())]
     curve: Option<Curve>,
     /// Derivation path format.
     #[arg(long, requires = "wallet_id", value_parser = enum_args::parser::<PathFormat>(), default_value = "bip32")]
     path_format: PathFormat,
     /// Derivation path; the next unused conventional path is used when omitted.
-    #[arg(long, requires = "wallet_id")]
+    #[arg(long, requires = "wallet_id", required_if_eq_any = NEEDS_PATH.iter().copied())]
     path: Option<String>,
 }
 
@@ -232,9 +248,9 @@ pub struct SignPayloadArgs {
     /// Payload to sign, in the given encoding.
     #[arg(long, requires = "sign_with")]
     payload: Option<String>,
-    /// Read the payload verbatim from a file, or - for stdin.
+    /// Read the payload from a file, or - for stdin.
     ///
-    /// A trailing newline is part of the payload.
+    /// One trailing newline is removed; any other whitespace is signed.
     #[arg(long, requires = "sign_with")]
     payload_file: Option<PathBuf>,
     /// How the payload is encoded.
@@ -346,10 +362,9 @@ pub enum WalletMutation {
     },
     CreateNextAccount {
         wallet_id: Uuid,
-        address_format: AddressFormat,
+        standard: StandardFormat,
         curve: Curve,
         path_format: PathFormat,
-        standard: StandardFormat,
     },
     Payload(SignRawPayloadIntentV2),
     Transaction(SignTransactionIntentV2),
@@ -370,12 +385,11 @@ impl WalletCommand {
                 body: _,
             }) => {
                 let mut taken: HashMap<AddressFormat, HashSet<String>> = HashMap::new();
-                for AccountSpec {
-                    address_format,
-                    path,
-                } in &accounts
-                {
-                    if let Some(path) = path
+                for AccountSpec { target, .. } in &accounts {
+                    if let AccountTarget::Path {
+                        address_format,
+                        path,
+                    } = target
                         && !taken
                             .entry(*address_format)
                             .or_default()
@@ -388,31 +402,30 @@ impl WalletCommand {
                         .into());
                     }
                 }
-                let mut params = Vec::with_capacity(accounts.len());
-                for AccountSpec {
-                    address_format,
-                    path,
-                } in accounts
-                {
-                    let curve =
-                        require_curve(address_format, None, "use --input-json to name the curve")?;
-                    let path = match path {
-                        Some(path) => path,
-                        None => {
-                            let used = taken.entry(address_format).or_default();
-                            let path = StandardFormat::try_from(address_format)?.next_path(used);
-                            used.insert(path.clone());
-                            path
+                let params = accounts
+                    .into_iter()
+                    .map(|AccountSpec { curve, target }| {
+                        let (address_format, path) = match target {
+                            AccountTarget::Path {
+                                address_format,
+                                path,
+                            } => (address_format, path),
+                            AccountTarget::Next(standard) => {
+                                let used = taken.entry(standard.into()).or_default();
+                                let path = standard.next_path(used);
+                                used.insert(path.clone());
+                                (standard.into(), path)
+                            }
+                        };
+                        WalletAccountParams {
+                            curve,
+                            path_format: PathFormat::Bip32,
+                            path,
+                            address_format,
+                            name: None,
                         }
-                    };
-                    params.push(WalletAccountParams {
-                        curve,
-                        path_format: PathFormat::Bip32,
-                        path,
-                        address_format,
-                        name: None,
-                    });
-                }
+                    })
+                    .collect();
                 PreparedWalletCommand::Mutation(WalletMutation::Create(CreateWalletIntent {
                     wallet_name,
                     accounts: params,
@@ -473,9 +486,11 @@ impl WalletCommand {
                         body: _,
                     }),
             } => {
-                let curve = require_curve(address_format, curve, "pass --curve")?;
-                PreparedWalletCommand::Mutation(match path {
-                    Some(path) => WalletMutation::CreateAccounts {
+                let Some(curve) = curve.or_else(|| inferred_curve(address_format)) else {
+                    unreachable!("clap requires --curve when no curve is inferred")
+                };
+                PreparedWalletCommand::Mutation(match (path, StandardFormat::of(address_format)) {
+                    (Some(path), _) => WalletMutation::CreateAccounts {
                         wallet_id,
                         accounts: vec![WalletAccountParams {
                             curve,
@@ -486,13 +501,15 @@ impl WalletCommand {
                         }],
                         persist: None,
                     },
-                    None => WalletMutation::CreateNextAccount {
+                    (None, Some(standard)) => WalletMutation::CreateNextAccount {
                         wallet_id,
-                        address_format,
+                        standard,
                         curve,
                         path_format,
-                        standard: address_format.try_into()?,
                     },
+                    (None, None) => {
+                        unreachable!("clap requires --path when no conventional path exists")
+                    }
                 })
             }
             Self::Account {
@@ -521,7 +538,17 @@ impl SignCommand {
                 sign_with,
                 payload: match (payload, payload_file) {
                     (Some(payload), _) => payload,
-                    (None, Some(path)) => read_text(&path, "the payload")?,
+                    (None, Some(path)) => {
+                        let mut payload = String::from_utf8(read_input(&path, "the payload")?)
+                            .map_err(|error| Malformed::new("the payload must be UTF-8", error))?;
+                        if payload.ends_with('\n') {
+                            payload.pop();
+                            if payload.ends_with('\r') {
+                                payload.pop();
+                            }
+                        }
+                        payload
+                    }
                     (None, None) => unreachable!("clap requires a payload"),
                 },
                 encoding,
@@ -543,9 +570,14 @@ impl SignCommand {
                 sign_with,
                 unsigned_transaction: match (unsigned_transaction, unsigned_transaction_file) {
                     (Some(transaction), _) => transaction,
-                    (None, Some(path)) => read_text(&path, "the unsigned transaction")?
-                        .trim()
-                        .to_owned(),
+                    (None, Some(path)) => {
+                        String::from_utf8(read_input(&path, "the unsigned transaction")?)
+                            .map_err(|error| {
+                                Malformed::new("the unsigned transaction must be UTF-8", error)
+                            })?
+                            .trim()
+                            .to_owned()
+                    }
                     (None, None) => unreachable!("clap requires a transaction"),
                 },
                 r#type: transaction_type,
@@ -601,11 +633,11 @@ impl WalletMutation {
             ),
             Self::CreateNextAccount {
                 wallet_id,
-                address_format,
+                standard,
                 curve,
                 path_format,
-                standard,
             } => {
+                let address_format = AddressFormat::from(standard);
                 let mut taken = HashSet::new();
                 let mut cursor = String::new();
                 loop {
@@ -618,17 +650,21 @@ impl WalletMutation {
                             pagination_options: Some(Pagination {
                                 limit: ACCOUNT_PAGE_SIZE.to_string(),
                                 before: String::new(),
-                                after: cursor,
+                                after: cursor.clone(),
                             }),
                         },
                         &auth,
                     )
                     .await?;
                     let full_page = accounts.len() == ACCOUNT_PAGE_SIZE as usize;
-                    cursor = accounts
+                    let next = accounts
                         .last()
                         .map(|account| account.wallet_account_id.clone())
                         .unwrap_or_default();
+                    if full_page && next == cursor {
+                        bail!("wallet account pages stopped advancing after {cursor}");
+                    }
+                    cursor = next;
                     taken.extend(
                         accounts
                             .into_iter()
@@ -730,6 +766,8 @@ impl WalletQuery {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use clap::{Parser, error::ErrorKind};
 
     use super::*;
@@ -816,5 +854,196 @@ mod tests {
             panic!("expected prepared transaction")
         };
         assert_eq!(params.sign_with, "opaque-key");
+    }
+
+    fn wallet(args: &str) -> Result<WalletParser, clap::Error> {
+        WalletParser::try_parse_from(args.split(' '))
+    }
+
+    fn sign(args: &str) -> Result<SignParser, clap::Error> {
+        SignParser::try_parse_from(args.split(' '))
+    }
+
+    #[test]
+    fn flag_inputs_are_checked_during_parsing() {
+        let account = format!("wallet account create --wallet-id {}", Uuid::nil());
+        for (args, kind) in [
+            (
+                "wallet create --name x --input-json {}",
+                ErrorKind::ArgumentConflict,
+            ),
+            (
+                "wallet create --account ethereum",
+                ErrorKind::MissingRequiredArgument,
+            ),
+            (
+                "wallet create --name x --mnemonic-length 13",
+                ErrorKind::ValueValidation,
+            ),
+            (
+                "wallet create --name x --account nonsense",
+                ErrorKind::ValueValidation,
+            ),
+            (
+                "wallet create --name x --account ADDRESS_FORMAT_ETHEREUM",
+                ErrorKind::ValueValidation,
+            ),
+            (
+                "wallet create --name x --account sui",
+                ErrorKind::ValueValidation,
+            ),
+            (
+                "wallet create --name x --account ethereum:",
+                ErrorKind::ValueValidation,
+            ),
+            (
+                &format!("{account} --address-format Ethereum"),
+                ErrorKind::InvalidValue,
+            ),
+            (
+                &format!("{account} --address-format ethereum --path-format PATH_FORMAT_BIP32"),
+                ErrorKind::InvalidValue,
+            ),
+            (
+                &format!("{account} --address-format sui"),
+                ErrorKind::MissingRequiredArgument,
+            ),
+            (
+                &format!("{account} --address-format sui --curve ed25519"),
+                ErrorKind::MissingRequiredArgument,
+            ),
+            (
+                &format!("{account} --address-format tron --path m/0"),
+                ErrorKind::MissingRequiredArgument,
+            ),
+            (
+                &format!("{account} --address-format ethereum --input-json {{}}"),
+                ErrorKind::ArgumentConflict,
+            ),
+        ] {
+            assert_eq!(wallet(args).unwrap_err().kind(), kind, "{args}");
+        }
+        for (args, kind) in [
+            (
+                "sign payload --sign-with a --payload x --hash-function sha256",
+                ErrorKind::MissingRequiredArgument,
+            ),
+            (
+                "sign payload --sign-with a --payload x --encoding text-utf8",
+                ErrorKind::MissingRequiredArgument,
+            ),
+            (
+                "sign payload --sign-with a --encoding text-utf8 --hash-function sha256",
+                ErrorKind::MissingRequiredArgument,
+            ),
+            (
+                "sign payload --sign-with a --payload x --payload-file y --encoding text-utf8 --hash-function sha256",
+                ErrorKind::ArgumentConflict,
+            ),
+            (
+                "sign payload --sign-with a --payload x --encoding text_utf8 --hash-function sha256",
+                ErrorKind::InvalidValue,
+            ),
+            (
+                "sign payload --input-json {} --encoding text-utf8",
+                ErrorKind::ArgumentConflict,
+            ),
+            (
+                "sign transaction --sign-with a --unsigned-transaction 00",
+                ErrorKind::MissingRequiredArgument,
+            ),
+            (
+                "sign transaction --sign-with a --type ethereum",
+                ErrorKind::MissingRequiredArgument,
+            ),
+            (
+                "sign transaction --sign-with a --unsigned-transaction 00 --type unspecified",
+                ErrorKind::InvalidValue,
+            ),
+        ] {
+            assert_eq!(sign(args).unwrap_err().kind(), kind, "{args}");
+        }
+        let explicit = format!("{account} --address-format sui --curve ed25519 --path m/0");
+        wallet(&explicit).unwrap();
+    }
+
+    #[test]
+    fn predicted_wallet_paths_skip_explicit_paths_in_any_order() {
+        let PreparedWalletCommand::Mutation(WalletMutation::Create(intent)) = wallet(
+            "wallet create --name w --account ethereum --account ethereum:m/44'/60'/0'/0/0 --account ethereum --account solana",
+        )
+        .unwrap()
+        .command
+        .prepare()
+        .unwrap() else {
+            panic!("expected a wallet create intent")
+        };
+        let paths: Vec<(AddressFormat, Curve, &str)> = intent
+            .accounts
+            .iter()
+            .map(|account| (account.address_format, account.curve, account.path.as_str()))
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                (
+                    AddressFormat::Ethereum,
+                    Curve::Secp256k1,
+                    "m/44'/60'/1'/0/0"
+                ),
+                (
+                    AddressFormat::Ethereum,
+                    Curve::Secp256k1,
+                    "m/44'/60'/0'/0/0"
+                ),
+                (
+                    AddressFormat::Ethereum,
+                    Curve::Secp256k1,
+                    "m/44'/60'/2'/0/0"
+                ),
+                (AddressFormat::Solana, Curve::Ed25519, "m/44'/501'/0'/0'"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_repeated_explicit_wallet_path_is_invalid_input() {
+        let error = wallet("wallet create --name w --account ethereum:m/0 --account ethereum:m/0")
+            .unwrap()
+            .command
+            .prepare()
+            .err()
+            .expect("prepare should have failed");
+        assert_eq!(
+            error
+                .downcast_ref::<InvalidInput>()
+                .map(ToString::to_string),
+            Some("duplicate account path m/0 for ethereum".to_owned())
+        );
+    }
+
+    #[test]
+    fn payload_files_drop_one_trailing_newline() {
+        let dir = tempfile::tempdir().unwrap();
+        for (contents, payload) in [
+            ("hello", "hello"),
+            ("hello\n", "hello"),
+            ("hello\r\n", "hello"),
+            ("hello\n\n", "hello\n"),
+            (" hello \n", " hello "),
+        ] {
+            let file = dir.path().join("payload");
+            fs::write(&file, contents).unwrap();
+            let args = format!(
+                "sign payload --sign-with a --payload-file {} --encoding text-utf8 --hash-function sha256",
+                file.display()
+            );
+            let PreparedWalletCommand::Mutation(WalletMutation::Payload(intent)) =
+                sign(&args).unwrap().command.prepare().unwrap()
+            else {
+                panic!("expected a payload intent")
+            };
+            assert_eq!(intent.payload, payload, "{contents:?}");
+        }
     }
 }

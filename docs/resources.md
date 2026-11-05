@@ -125,7 +125,8 @@ holds. The paths are `m/44'/60'/N'/0/0` for `ethereum`, `m/44'/118'/N'/0/0`
 for `cosmos`, `m/44'/501'/N'/0'` for `solana`, and `m/N'` for `compressed` and
 `uncompressed`; other formats need `--path`. The curve is inferred as
 `secp256k1` for `ethereum`, `cosmos`, and `uncompressed`, and `ed25519` for
-`solana`; other formats need `--curve`. The lookup and the creation are two
+`solana`; other formats need `--curve`. Either one missing exits with
+`usage_error` before any request. The lookup and the creation are two
 requests, so concurrent creations can pick the same path.
 
 A command that needs approval exits zero with status `pending` and an

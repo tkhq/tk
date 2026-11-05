@@ -14,7 +14,7 @@ tk sign payload --sign-with 0xYourAddress --payload 0x… \
 tk sign payload --sign-with 0xYourAddress --payload hello \
   --encoding text-utf8 --hash-function keccak256
 
-# Read the payload verbatim from a file, or - for stdin.
+# Read the payload from a file, or - for stdin.
 tk sign payload --sign-with 0xYourAddress --payload-file ./message.txt \
   --encoding text-utf8 --hash-function sha256
 
@@ -34,8 +34,9 @@ tk sign payload --input-json '{
 `--sign-with` takes a wallet account address or a private key ID. Encoding,
 hash function, and transaction type have no defaults, because a silent hash
 function changes which digest is signed; the command exits with `usage_error`
-when one is missing. `--payload-file` keeps a trailing newline as part of the
-payload; `--unsigned-transaction-file` trims surrounding whitespace.
+when one is missing. `--payload-file` drops one trailing newline, so `echo` and
+saved editor files sign the text you see; `--unsigned-transaction-file` trims
+surrounding whitespace.
 
 Scripting:
 
