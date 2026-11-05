@@ -638,7 +638,7 @@ impl WalletMutation {
                 let mut cursor = String::new();
                 loop {
                     let AccountPage { accounts } = query(
-                        "/public/v1/query/get_wallet_accounts",
+                        "/public/v1/query/list_wallet_accounts",
                         &GetWalletAccountsRequest {
                             organization_id: auth.org_id.to_string(),
                             wallet_id: Some(wallet_id.to_string()),

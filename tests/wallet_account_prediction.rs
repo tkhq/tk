@@ -63,7 +63,7 @@ async fn mount_activity(server: &MockServer, endpoint: &str, status: &str) {
 async fn mount_accounts(server: &MockServer, pages: Vec<Value>) {
     for (index, accounts) in pages.into_iter().enumerate() {
         let mock = Mock::given(method("POST"))
-            .and(path("/public/v1/query/get_wallet_accounts"))
+            .and(path("/public/v1/query/list_wallet_accounts"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({"accounts": accounts})));
         if index == 0 {
             mock.up_to_n_times(1).mount(server).await;
@@ -197,7 +197,7 @@ async fn account_create_prediction_reads_every_page() {
         .await
         .unwrap()
         .iter()
-        .filter(|request| request.url.path().ends_with("get_wallet_accounts"))
+        .filter(|request| request.url.path().ends_with("list_wallet_accounts"))
         .map(|request| request.body_json::<Value>().unwrap()["paginationOptions"]["after"].clone())
         .collect::<Vec<_>>();
     assert_eq!(queries, [json!(""), json!("account-99")]);
@@ -216,7 +216,7 @@ async fn account_create_prediction_stops_when_pages_do_not_advance() {
         })
         .collect();
     Mock::given(method("POST"))
-        .and(path("/public/v1/query/get_wallet_accounts"))
+        .and(path("/public/v1/query/list_wallet_accounts"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"accounts": page})))
         .mount(&server)
         .await;
