@@ -5,7 +5,7 @@ use std::fmt::{self, Display, Formatter};
 use serde::Serialize;
 
 use crate::{
-    gpg, skills,
+    git, gpg, skills,
     ssh::{self, agent},
     update,
 };
@@ -43,6 +43,7 @@ pub enum Outcome {
     GpgPublicKeyExported(gpg::PublicKeyExported),
     GpgSignatureCreated(gpg::SignatureCreated),
     GpgAgentExited(MachineOnly),
+    CoAuthorHookReady(git::CoAuthorHookReady),
     SkillsListed(skills::Listed),
     SkillsShown(skills::Shown),
     SkillsInstalled(skills::Installed),
@@ -80,6 +81,7 @@ impl Display for Outcome {
             Outcome::GpgPublicKeyExported(msg) => msg.fmt(f),
             Outcome::GpgSignatureCreated(msg) => msg.fmt(f),
             Outcome::GpgAgentExited(msg) => msg.fmt(f),
+            Outcome::CoAuthorHookReady(msg) => msg.fmt(f),
             Outcome::SkillsListed(msg) => msg.fmt(f),
             Outcome::SkillsShown(msg) => msg.fmt(f),
             Outcome::SkillsInstalled(msg) => msg.fmt(f),

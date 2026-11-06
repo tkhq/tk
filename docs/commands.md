@@ -1172,6 +1172,7 @@ tk git [OPTIONS] <COMMAND>
 Subcommands:
 
 - [`tk git co-author`](#tk-git-co-author): Add a `Co-authored-by: Turnkey` trailer to a commit message, as Git's `commit-msg` hook
+- [`tk git co-author-check`](#tk-git-co-author-check): Check that the Git on `PATH` runs the `turnkey-co-author` hook on `commit-msg` in this repository
 
 #### `tk git co-author`
 
@@ -1184,6 +1185,14 @@ tk git co-author [OPTIONS] <MESSAGE_FILE>
 | Argument | Notes | Description |
 |---|---|---|
 | `<MESSAGE_FILE>` | required | Commit message file Git passes to the hook |
+
+#### `tk git co-author-check`
+
+Check that the Git on `PATH` runs the `turnkey-co-author` hook on `commit-msg` in this repository
+
+```
+tk git co-author-check [OPTIONS]
+```
 
 ### `tk skills`
 

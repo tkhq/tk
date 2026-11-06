@@ -171,12 +171,12 @@ and the committer identity as `Name <email>`. GnuPG for the GPG path,
    the committer email. Outside CI, set `gpg.ssh.program` to the wrapper
    from step 5.
 
-7. **Add the co-author trailer.** Set and check the
-   [hook](../../docs/git-signing.md#co-author-trailer) beside step 5 or 6's config.
+7. **Add the co-author trailer.** Set the [hook](../../docs/git-signing.md#co-author-trailer)
+   beside step 5 or 6's config and run its check; stop at `invalid_input`.
 
 8. **Hand off.** Report the wallet id or private key id, the fingerprint,
-   the policy id, the `git config` values set and where, and the
-   `git verify-commit HEAD` result; give the operator the browser steps in
+   the policy id, the `git config` values set and where, the
+   `git verify-commit HEAD` result, and the check's `gitVersion`; give the operator the browser steps in
    [GitHub](../../docs/gpg-signing.md#github). Stop.
 
 ## Verified by
