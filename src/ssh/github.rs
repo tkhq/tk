@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use reqwest::{Client, header::ACCEPT};
+use reqwest::{Client, Response, header::ACCEPT};
 use serde::{Deserialize, Serialize};
 use ssh_key::{HashAlg, PublicKey};
 
@@ -59,7 +59,6 @@ impl Display for GithubHostKeys {
     }
 }
 
-/// Builds the HTTPS-only client that reads GitHub's metadata.
 pub fn client() -> Result<Client> {
     Client::builder()
         .user_agent(CLIENT_VERSION)
@@ -69,14 +68,13 @@ pub fn client() -> Result<Client> {
         .context("build the GitHub metadata client")
 }
 
-/// Fetches GitHub's SSH host keys from `url` and computes their OpenSSH SHA256 fingerprints.
 pub async fn host_keys(client: &Client, url: &str) -> Result<GithubHostKeys> {
     let Meta { ssh_keys } = client
         .get(url)
         .header(ACCEPT, "application/vnd.github+json")
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
+        .and_then(Response::error_for_status)
         .with_context(|| format!("fetch GitHub's SSH host keys from {url}"))?
         .json()
         .await

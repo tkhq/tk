@@ -114,7 +114,6 @@ impl<'a> TurnkeySigner<'a> {
         Ok(signature)
     }
 
-    /// Signs an SSH userauth request through the typed activity, which verifies `session_bind` in the enclave.
     pub async fn sign_ssh_userauth(
         &self,
         userauth_data: &[u8],

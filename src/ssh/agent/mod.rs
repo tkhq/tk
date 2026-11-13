@@ -175,10 +175,7 @@ struct ServingArgs {
 
     /// How to sign SSH logins.
     ///
-    /// `typed` signs through Turnkey's SSH userauth activity: the enclave verifies
-    /// the server host key from `session-bind@openssh.com` (OpenSSH 8.9+), so
-    /// policies can allow only specific hosts. `typed` never falls back to raw
-    /// signing. `raw` signs the login bytes as a raw payload.
+    /// `typed` needs OpenSSH 8.9+ and never falls back to raw signing.
     #[arg(long, value_enum, default_value_t = UserauthMode::Raw)]
     userauth: UserauthMode,
 }

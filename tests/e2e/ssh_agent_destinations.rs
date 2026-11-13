@@ -8,6 +8,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
+use ssh_key::{HashAlg, PublicKey};
 
 use crate::{
     run::{Run, skip},
@@ -459,9 +460,9 @@ fn constrained_agent_accepts_ecdsa_and_rsa_host_keys() {
 
 fn host_fingerprint(run: &Run, host_key_type: &str) -> String {
     let line = fs::read_to_string(run.home().join(format!("host_{host_key_type}.pub"))).unwrap();
-    ssh_key::PublicKey::from_openssh(line.trim())
+    PublicKey::from_openssh(line.trim())
         .unwrap()
-        .fingerprint(ssh_key::HashAlg::Sha256)
+        .fingerprint(HashAlg::Sha256)
         .to_string()
 }
 

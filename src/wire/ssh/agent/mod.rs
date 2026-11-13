@@ -13,7 +13,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
+use clap::ValueEnum;
 use destination::{DestinationPolicy, Destinations};
+use serde::{Deserialize, Serialize};
 use socket2::{Domain, SockAddr, Socket, Type};
 use ssh_key::Fingerprint;
 use tokio::{
@@ -52,17 +54,8 @@ pub enum SignError {
 }
 
 /// How the agent signs SSH login requests.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    Eq,
-    PartialEq,
-    clap::ValueEnum,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, ValueEnum)]
+#[cfg_attr(test, derive(PartialEq))]
 #[serde(rename_all = "lowercase")]
 pub enum UserauthMode {
     /// Sign the login bytes as a raw payload.
@@ -296,7 +289,6 @@ async fn sign_response(
     let data = authorized.bytes();
     let input = match userauth {
         UserauthMode::Raw => SignInput::Raw(data),
-        // Typed mode never falls back to raw signing for a login request.
         UserauthMode::Typed => match protocol::classify_signed_data(data) {
             protocol::SignedData::Userauth { session_id, .. } => {
                 match destinations.authentication_bind(session_id) {

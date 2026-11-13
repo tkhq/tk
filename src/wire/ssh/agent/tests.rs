@@ -3,6 +3,7 @@
 use std::{
     collections::BTreeMap,
     io::{self, Error, ErrorKind},
+    mem,
     path::{Path, PathBuf},
     slice,
     sync::{Arc, Mutex},
@@ -1111,7 +1112,7 @@ impl TypedAgent {
     }
 
     fn received(&self) -> Vec<Received> {
-        std::mem::take(&mut *self.keyring.received.lock().unwrap())
+        mem::take(&mut *self.keyring.received.lock().unwrap())
     }
 }
 

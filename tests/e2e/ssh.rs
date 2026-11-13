@@ -677,3 +677,27 @@ fn brokers_share_one_signing_key_through_per_broker_policies() {
     run.err_unauthorized(&mut sign(&unlisted));
     assert!(!signature.exists(), "an unlisted broker signed");
 }
+
+#[test]
+#[ignore]
+fn github_host_keys_prints_githubs_published_keys() {
+    let run = Run::new();
+    let record = run.ok(run.cli().args(["ssh", "github-host-keys"]));
+    assert_eq!(record["reason"], "github_host_keys_printed");
+    let keys = record["hostKeys"].as_array().unwrap();
+    for key in keys {
+        assert!(key["fingerprint"].as_str().unwrap().starts_with("SHA256:"));
+        let algorithm = key["algorithm"].as_str().unwrap();
+        assert!(
+            key["publicKey"]
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("{algorithm} "))
+        );
+    }
+    assert!(keys.contains(&json!({
+        "fingerprint": "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU",
+        "algorithm": "ssh-ed25519",
+        "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+    })));
+}
