@@ -282,6 +282,7 @@ fn constrained_agent_signs_only_allowed_namespaces_and_reports_them() {
             "pid": agent.started["pid"],
             "socket": agent.started["socket"],
             "socketMode": "600",
+            "userauth": "raw",
             "keys": agent.fingerprints(),
             "allowedHosts": ["github.com"],
             "allowedNamespaces": ["git"],
@@ -454,4 +455,82 @@ fn constrained_agent_accepts_ecdsa_and_rsa_host_keys() {
         );
         assert_eq!(agent.stop(), json!({"reason": "agent_stopped"}));
     }
+}
+
+fn host_fingerprint(run: &Run, host_key_type: &str) -> String {
+    let line = fs::read_to_string(run.home().join(format!("host_{host_key_type}.pub"))).unwrap();
+    ssh_key::PublicKey::from_openssh(line.trim())
+        .unwrap()
+        .fingerprint(ssh_key::HashAlg::Sha256)
+        .to_string()
+}
+
+#[test]
+#[ignore]
+fn typed_agent_signs_logins_only_to_hosts_the_policy_lists() {
+    // The target organization's environment must offer the SSH userauth activity and enable it for the
+    // organization, which CI's organization does not yet.
+    if std::env::var_os("TK_E2E_SSH_USERAUTH").is_none() {
+        eprintln!("skipping the typed SSH userauth test: TK_E2E_SSH_USERAUTH is not set");
+        return;
+    }
+    let Some(tools) = Tools::locate("typed SSH userauth test") else {
+        return;
+    };
+    let run = Run::new();
+    let (_, agent_id, agent_key) = run.create_agent();
+    let key_id = create_ed25519_key(&run);
+    let registered = register_key(&run, &mut run.as_user(&agent_key), &key_id);
+    let public_key = public_key_file(&run, "typed.pub", &registered);
+    let allowed = Sshd::start(&run, &tools, "ed25519", &public_key);
+    let other = Sshd::start(&run, &tools, "ecdsa", &public_key);
+    run.create_policy_from_flags(
+        &run.name("agents-ssh-one-host"),
+        "allow",
+        &format!("approvers.any(user, user.id == '{agent_id}')"),
+        &format!(
+            "activity.type == 'ACTIVITY_TYPE_SIGN_SSH_USERAUTH' && private_key.id == '{key_id}' && activity.params.service == 'ssh-connection' && activity.params.host_bound == true && activity.params.host_key_fingerprint in ['{}']",
+            host_fingerprint(&run, "ed25519")
+        ),
+    );
+
+    let (socket, _) = agent_paths(&run, "typed");
+    let agent = Agent::spawn(
+        &run,
+        &mut run.as_user(&agent_key),
+        &[],
+        vec!["--socket".to_string(), socket.display().to_string()],
+        &["--userauth", "typed"],
+    );
+    assert_eq!(agent.started["userauth"], "typed", "{}", agent.started);
+
+    let accepted = allowed.login(&tools.ssh, &agent, &[], "true");
+    allowed.assert_logged_in(&accepted, "a typed login to the listed host failed");
+    let refused = other.login(&tools.ssh, &agent, &[], "true");
+    assert!(
+        !refused.status.success(),
+        "a typed login to an unlisted host succeeded"
+    );
+
+    let listed = run.ok(run.admin().args(["activity", "list", "--limit", "20"]));
+    let statuses = listed["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["type"] == "ACTIVITY_TYPE_SIGN_SSH_USERAUTH")
+        .map(|item| item["status"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        statuses.contains(&"ACTIVITY_STATUS_COMPLETED".to_string()),
+        "{listed}"
+    );
+    assert!(
+        listed["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["type"] != "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2"),
+        "typed mode signed a raw payload: {listed}"
+    );
+    assert_eq!(agent.stop(), json!({"reason": "agent_stopped"}));
 }

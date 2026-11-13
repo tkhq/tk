@@ -107,6 +107,12 @@ the policy set.
 
 ## Troubleshooting
 
+- An SSH host policy (`agents-ssh-github` in
+  [policy-patterns.md](../references/policy-patterns.md)) still lets the key
+  log in elsewhere: some ALLOW also grants `ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2`,
+  or `activity.action == 'SIGN'` without `activity.type`, on that key. A raw
+  grant signs a login for any host; remove it, and check that the agent runs
+  with `--userauth typed`.
 - `policy create` fails with `usage_error`: `--name` needs `--effect` and at
   least one of `--condition` or `--consensus`.
 - `policy update` fails with `invalid_input` naming an unsupported field:

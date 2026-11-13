@@ -17,6 +17,7 @@ use crate::{
 };
 
 pub mod agent;
+pub mod github;
 pub mod keys;
 pub mod registry;
 pub mod shim;
@@ -35,6 +36,11 @@ pub enum SshCommand {
     GitSign(GitSignArgs),
     /// Manage a background SSH agent over a Unix socket.
     Agent(agent::Args),
+    /// Print GitHub's SSH host key fingerprints, read from <https://api.github.com/meta> over TLS.
+    ///
+    /// Use these in a `activity.params.host_key_fingerprint` policy condition.
+    /// Unlike `ssh-keyscan`, this does not trust whatever server answers.
+    GithubHostKeys,
 }
 
 #[derive(Debug, Subcommand)]
@@ -266,5 +272,8 @@ pub async fn run(command: SshCommand, options: &AuthOptions) -> Result<Outcome> 
             Ok(Outcome::GitSignCompleted(MachineOnly {}))
         }
         SshCommand::Agent(args) => agent::run(args, options).await,
+        SshCommand::GithubHostKeys => Ok(Outcome::GithubHostKeysPrinted(
+            github::host_keys(&github::client()?, github::META_URL).await?,
+        )),
     }
 }

@@ -20,12 +20,13 @@ pub enum DestinationPolicy {
 struct Destination {
     host_key: KeyData,
     session_id: Vec<u8>,
+    contents: Vec<u8>,
 }
 
 #[derive(Default)]
 pub(super) struct BoundSessions {
     forwarding: Vec<Destination>,
-    authentication: Option<Destination>,
+    authentication: Option<Box<Destination>>,
 }
 
 pub(super) enum Destinations {
@@ -51,7 +52,8 @@ impl<'a> AuthorizedData<'a> {
 }
 
 impl Destinations {
-    pub(super) fn bind(&mut self, contents: &[u8], hosts: &[Fingerprint]) -> Result<()> {
+    /// Records a verified session-bind; `hosts`, when given, must list its host key.
+    pub(super) fn bind(&mut self, contents: &[u8], hosts: Option<&[Fingerprint]>) -> Result<()> {
         // OpenSSH's process_ext_session_bind marks a bind attempted before parsing it, and
         // identity_permitted refuses destination-constrained keys after a failed attempt,
         // because ssh forwards the agent even when its forwarding bind fails.
@@ -59,16 +61,46 @@ impl Destinations {
             return Err(anyhow!("an earlier session-bind failed on this connection"));
         };
 
-        let recorded = parse_session_bind(contents).and_then(|bind| sessions.bind(bind, hosts));
+        let recorded =
+            parse_session_bind(contents).and_then(|bind| sessions.bind(bind, contents, hosts));
         if recorded.is_err() {
             *self = Self::FailedBind;
         }
         recorded
     }
+
+    /// The raw session-bind contents that bound this connection, with no forwarding hop, for authentication to
+    /// `session_id`.
+    pub(super) fn authentication_bind(&self, session_id: &[u8]) -> Result<&[u8]> {
+        let Self::Bound(sessions) = self else {
+            return Err(anyhow!("a session-bind failed on this connection"));
+        };
+        if let Some(hop) = sessions.forwarding.first() {
+            return Err(anyhow!(
+                "the session-bind for host key {} is a forwarding hop",
+                hop.host_key.fingerprint(HashAlg::Sha256)
+            ));
+        }
+        sessions
+            .authentication
+            .as_ref()
+            .filter(|destination| destination.session_id == session_id)
+            .map(|destination| destination.contents.as_slice())
+            .ok_or_else(|| {
+                anyhow!(
+                    "no session-bind@openssh.com matches the login; typed userauth needs an OpenSSH 8.9+ client"
+                )
+            })
+    }
 }
 
 impl BoundSessions {
-    fn bind(&mut self, bind: SessionBind<'_>, hosts: &[Fingerprint]) -> Result<()> {
+    fn bind(
+        &mut self,
+        bind: SessionBind<'_>,
+        contents: &[u8],
+        hosts: Option<&[Fingerprint]>,
+    ) -> Result<()> {
         let SessionBind {
             host_key_blob,
             session_id,
@@ -77,7 +109,9 @@ impl BoundSessions {
         } = bind;
 
         let fingerprint = Fingerprint::Sha256(Sha256::digest(host_key_blob).into());
-        if !hosts.contains(&fingerprint) {
+        if let Some(hosts) = hosts
+            && !hosts.contains(&fingerprint)
+        {
             return Err(anyhow!(
                 "host key {fingerprint} is not in the allowed hosts file"
             ));
@@ -99,7 +133,7 @@ impl BoundSessions {
         if self
             .forwarding
             .iter()
-            .chain(&self.authentication)
+            .chain(self.authentication.as_deref())
             .any(|destination| destination.session_id == session_id)
         {
             return Err(anyhow!("the session is already bound on this connection"));
@@ -120,11 +154,12 @@ impl BoundSessions {
         let bound = Destination {
             host_key: host_key.into(),
             session_id: session_id.to_vec(),
+            contents: contents.to_vec(),
         };
         if is_forwarding {
             self.forwarding.push(bound);
         } else {
-            self.authentication = Some(bound);
+            self.authentication = Some(Box::new(bound));
         }
         Ok(())
     }
@@ -199,7 +234,7 @@ impl DestinationPolicy {
                 if let Some(bound) = sessions
                     .forwarding
                     .first()
-                    .or(sessions.authentication.as_ref())
+                    .or(sessions.authentication.as_deref())
                 {
                     return Err(anyhow!(
                         "SSHSIG is refused on a connection bound to host key {}",

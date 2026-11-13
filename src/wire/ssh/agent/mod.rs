@@ -3,6 +3,7 @@
 pub mod destination;
 
 use std::{
+    fmt::{self, Display, Formatter},
     io::{self, ErrorKind},
     os::unix::{fs::FileTypeExt, net::UnixListener as StdUnixListener},
     path::{Path, PathBuf},
@@ -50,6 +51,49 @@ pub enum SignError {
     Signer(#[from] anyhow::Error),
 }
 
+/// How the agent signs SSH login requests.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    clap::ValueEnum,
+    serde::Deserialize,
+    serde::Serialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum UserauthMode {
+    /// Sign the login bytes as a raw payload.
+    #[default]
+    Raw,
+    /// Sign through the typed SSH userauth activity, which verifies the server host key in the enclave.
+    Typed,
+}
+
+impl Display for UserauthMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Raw => "raw",
+            Self::Typed => "typed",
+        })
+    }
+}
+
+/// The bytes a [`Keyring`] signs, and how.
+pub enum SignInput<'a> {
+    /// Sign `data` as a raw payload.
+    Raw(&'a [u8]),
+    /// Sign an SSH login request together with the session-bind that names its server.
+    SshUserauth {
+        /// The userauth request bytes the SSH client asked the agent to sign.
+        userauth_data: &'a [u8],
+        /// The `session-bind@openssh.com` contents for the same session.
+        session_bind: &'a [u8],
+    },
+}
+
 /// A future returned by a [`Keyring`] signing operation.
 pub type SignFuture<'a> = Pin<Box<dyn Future<Output = Result<[u8; 64], SignError>> + Send + 'a>>;
 
@@ -58,8 +102,9 @@ pub trait Keyring: Send + Sync {
     /// Returns the identities advertised by the agent.
     fn identities(&self) -> Vec<AgentIdentity>;
 
-    /// Signs data with the requested public key.
-    fn sign<'a>(&'a self, public_key: &'a Ed25519PublicKey, data: &'a [u8]) -> SignFuture<'a>;
+    /// Signs `input` with the requested public key.
+    fn sign<'a>(&'a self, public_key: &'a Ed25519PublicKey, input: SignInput<'a>)
+    -> SignFuture<'a>;
 }
 
 /// Runs a foreground SSH agent bound to the provided Unix socket path.
@@ -68,6 +113,7 @@ pub async fn run(
     mode: SocketMode,
     keyring: Arc<dyn Keyring>,
     policy: Arc<DestinationPolicy>,
+    userauth: UserauthMode,
 ) -> Result<()> {
     remove_stale_socket(&socket).await?;
 
@@ -104,7 +150,7 @@ pub async fn run(
                     };
                     let keyring = Arc::clone(&keyring);
                     let policy = Arc::clone(&policy);
-                    connections.spawn(async move { handle_connection(stream, keyring, policy).await });
+                    connections.spawn(async move { handle_connection(stream, keyring, policy, userauth).await });
                 }
                 _ = interrupt.recv() => break,
                 _ = terminate.recv() => break,
@@ -143,6 +189,7 @@ async fn handle_connection(
     mut stream: UnixStream,
     keyring: Arc<dyn Keyring>,
     policy: Arc<DestinationPolicy>,
+    userauth: UserauthMode,
 ) -> io::Result<()> {
     let mut destinations = Destinations::default();
 
@@ -171,13 +218,16 @@ async fn handle_connection(
                 protocol::encode_request_identities_response(&identities)
             }
             Ok((protocol::SSH_AGENTC_SIGN_REQUEST, payload)) => {
-                sign_response(payload, keyring.as_ref(), &policy, &destinations).await
+                sign_response(payload, keyring.as_ref(), &policy, &destinations, userauth).await
             }
-            Ok((protocol::SSH_AGENTC_EXTENSION, payload)) => match policy.as_ref() {
-                DestinationPolicy::Restricted { hosts, .. } => {
-                    bind_response(payload, hosts, &mut destinations)
+            Ok((protocol::SSH_AGENTC_EXTENSION, payload)) => match (policy.as_ref(), userauth) {
+                (DestinationPolicy::Restricted { hosts, .. }, _) => {
+                    bind_response(payload, Some(hosts), &mut destinations)
                 }
-                DestinationPolicy::Unrestricted => failure_frame(),
+                (DestinationPolicy::Unrestricted, UserauthMode::Typed) => {
+                    bind_response(payload, None, &mut destinations)
+                }
+                (DestinationPolicy::Unrestricted, UserauthMode::Raw) => failure_frame(),
             },
             Ok(_) | Err(_) => failure_frame(),
         };
@@ -193,7 +243,7 @@ async fn handle_connection(
 
 fn bind_response(
     payload: &[u8],
-    hosts: &[Fingerprint],
+    hosts: Option<&[Fingerprint]>,
     destinations: &mut Destinations,
 ) -> Vec<u8> {
     let Some(contents) = protocol::parse_extension(payload) else {
@@ -216,6 +266,7 @@ async fn sign_response(
     keyring: &dyn Keyring,
     policy: &DestinationPolicy,
     destinations: &Destinations,
+    userauth: UserauthMode,
 ) -> Vec<u8> {
     let request = match protocol::parse_sign_request(payload) {
         Ok(request) => request,
@@ -242,7 +293,32 @@ async fn sign_response(
         }
     };
 
-    match keyring.sign(&public_key, authorized.bytes()).await {
+    let data = authorized.bytes();
+    let input = match userauth {
+        UserauthMode::Raw => SignInput::Raw(data),
+        // Typed mode never falls back to raw signing for a login request.
+        UserauthMode::Typed => match protocol::classify_signed_data(data) {
+            protocol::SignedData::Userauth { session_id, .. } => {
+                match destinations.authentication_bind(session_id) {
+                    Ok(session_bind) => SignInput::SshUserauth {
+                        userauth_data: data,
+                        session_bind,
+                    },
+                    Err(refusal) => {
+                        warn!(fingerprint = %public_key.fingerprint(), %refusal, "refused an SSH login signature");
+                        return failure_frame();
+                    }
+                }
+            }
+            protocol::SignedData::SshSig { .. } => SignInput::Raw(data),
+            protocol::SignedData::Unrecognized => {
+                debug!(fingerprint = %public_key.fingerprint(), "refused data that is neither SSH userauth nor SSHSIG");
+                return failure_frame();
+            }
+        },
+    };
+
+    match keyring.sign(&public_key, input).await {
         Ok(signature) => protocol::encode_sign_response(&signature),
         Err(SignError::UnknownKey) => {
             debug!(fingerprint = %public_key.fingerprint(), "SSH agent sign request named an unknown key");

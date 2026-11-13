@@ -61,7 +61,7 @@ never a bare boolean.
 | Keyword | Fields used here |
 |---|---|
 | `activity` | `type` (full `ACTIVITY_TYPE_*` name), `resource` (`USER`, `CREDENTIAL`, `POLICY`, `SECRET`, `PRIVATE_KEY`, `WALLET`, `ORGANIZATION`, and others), `action` (`CREATE`, `UPDATE`, `DELETE`, `EXPORT`, `IMPORT`, `SIGN`), `params` |
-| `activity.params` | for `ACTIVITY_TYPE_CREATE_API_KEYS_V2`: `user_id` of the target user, as a string, and `api_keys`, one entry per key with `expiration_seconds` (integer); for `ACTIVITY_TYPE_DELETE_API_KEYS`: `user_id` and `api_key_ids` (list of strings). The target's tags are not exposed |
+| `activity.params` | for `ACTIVITY_TYPE_CREATE_API_KEYS_V2`: `user_id` of the target user, as a string, and `api_keys`, one entry per key with `expiration_seconds` (integer); for `ACTIVITY_TYPE_DELETE_API_KEYS`: `user_id` and `api_key_ids` (list of strings). The target's tags are not exposed; for `ACTIVITY_TYPE_SIGN_SSH_USERAUTH`: `username`, `service`, `host_key_fingerprint` (OpenSSH `SHA256:` form), `host_key_algorithm`, and `host_bound` (boolean), all verified by Turnkey from the login request and its `session-bind@openssh.com` |
 | `secret` | `static_properties['KEY']` on `ACTIVITY_TYPE_EXPORT_SECRETS` only; deletion does not load properties |
 | `wallet` | `id` |
 | `private_key` | `id`, `tags` |
@@ -87,6 +87,7 @@ All signing, including the raw-payload signatures behind `tk ssh` and
 | `tk secret export`, `tk secret env` | `ACTIVITY_TYPE_EXPORT_SECRETS` | `SECRET` |
 | `tk secret delete` | `ACTIVITY_TYPE_DELETE_SECRETS` | `SECRET` |
 | `tk ssh agent`, `tk gpg sign`, `tk sign payload` | `ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2` | `PRIVATE_KEY` |
+| `tk ssh agent start --userauth typed` | `ACTIVITY_TYPE_SIGN_SSH_USERAUTH` | `PRIVATE_KEY` |
 
 ## Defaults that surprise
 

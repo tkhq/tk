@@ -1790,15 +1790,15 @@ dependencies = [
 
 [[package]]
 name = "qos_hex"
-version = "0.14.1"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ce8ff826544cdba595de1e96d7c1158c380ff8775d9424a23a6be9380e38a79"
+checksum = "9a77ccb6b6607437076e9117d1157e485ef2d187f9c15a2c878baddbf8d32e39"
 
 [[package]]
 name = "qos_p256"
-version = "0.14.1"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f99b975811441f64011a00010766cf7921eab8717b89ea5a3499a0005d8a9a93"
+checksum = "c254bb8190cee509462acd40b553a5553760c3f5727379c010ff1fb33402a583"
 dependencies = [
  "aes-gcm",
  "borsh",
@@ -2821,9 +2821,8 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "turnkey_api_key_stamper"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a19161c1a3a53621b52afc0b73fbcde592d3c7852cc094b49b6b87e9c7235d3b"
+version = "0.18.0"
+source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Fsign-ssh-userauth#fdd36871fa94a6f7ad7caf8037edb0662defae5c"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -2837,9 +2836,8 @@ dependencies = [
 
 [[package]]
 name = "turnkey_client"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ac978b6ea74d22a610463302edfd082eac5b0812fcc753e7c71685116347291"
+version = "0.18.0"
+source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Fsign-ssh-userauth#fdd36871fa94a6f7ad7caf8037edb0662defae5c"
 dependencies = [
  "chrono",
  "hex",
@@ -2858,9 +2856,8 @@ dependencies = [
 
 [[package]]
 name = "turnkey_enclave_encrypt"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8d699c7cbe677b4f7a055dafb12d2aec9746bdcd10e4dcd8e020b1c1d33a7cb"
+version = "0.18.0"
+source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Fsign-ssh-userauth#fdd36871fa94a6f7ad7caf8037edb0662defae5c"
 dependencies = [
  "bs58",
  "hex",

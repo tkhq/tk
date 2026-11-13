@@ -95,6 +95,41 @@ through a mount, and never forward it over SSH or relay it beyond that
 boundary. It matches host keys only; the hostnames in the file are reported,
 never matched.
 
+## Typed logins
+
+```bash
+# Print GitHub's host key fingerprints, read from https://api.github.com/meta.
+tk ssh github-host-keys
+
+# Sign SSH logins through Turnkey's SSH userauth activity.
+tk ssh agent start --userauth typed
+```
+
+By default (`--userauth raw`) the agent signs each login as a raw payload,
+so Turnkey policy cannot see which server it is for. With `--userauth typed`,
+the agent sends Turnkey the login request together with the
+`session-bind@openssh.com` message that an OpenSSH 8.9+ client sends first.
+Turnkey checks the server's host key signature over the session ID, checks
+that the login is for the same session, and only then evaluates policy with
+`activity.params.username`, `service`, `host_key_fingerprint`,
+`host_key_algorithm`, and `host_bound`. Phase one verifies Ed25519 and ECDSA
+P-256 host keys.
+
+In typed mode the agent refuses a login that has no matching bind (clients
+older than OpenSSH 8.9, or a socket relay such as `socat`) and any login on a
+connection that a client forwarded with `ssh -A`. It never falls back to raw
+signing. `ssh-keygen -Y sign` requests still sign as raw payloads, and other
+data is refused.
+
+A policy that limits the key to GitHub is `agents-ssh-github` in
+[policy-patterns.md](../skills/references/policy-patterns.md). It is only as
+strong as the key's other grants: an ALLOW for
+`ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2` on the same key can sign a login for any
+host, so remove raw-payload grants on SSH keys. Turnkey enforces the host;
+GitHub enforces which repositories the key opens, through the account or
+deploy key it is registered on. `--allowed-hosts-file` still works with typed
+mode as an early local refusal.
+
 ## Skills
 
 - [sidecar-patterns](../skills/sidecar-patterns/SKILL.md): serving keys from a socket under the agent's `HOME` beside the renewal loop.

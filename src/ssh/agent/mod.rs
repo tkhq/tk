@@ -14,7 +14,10 @@ use clap::{Args as ClapArgs, Subcommand};
 pub use daemon::is_default_running;
 use serde::{Deserialize, Serialize};
 
-use crate::{auth::AuthOptions, outcome::Outcome, socket::SocketMode, ssh::registry::SshKeyName};
+use crate::{
+    auth::AuthOptions, outcome::Outcome, socket::SocketMode, ssh::registry::SshKeyName,
+    wire::ssh::agent::UserauthMode,
+};
 
 #[derive(Debug, ClapArgs)]
 #[command(
@@ -44,6 +47,7 @@ pub struct AgentRunning {
     pub keys: Vec<String>,
     #[serde(flatten)]
     pub constraints: Option<DestinationConstraints>,
+    pub userauth: UserauthMode,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -63,6 +67,7 @@ impl Default for AgentRunning {
             socket_mode: "600".parse().unwrap(),
             keys: Vec::new(),
             constraints: None,
+            userauth: UserauthMode::Raw,
         }
     }
 }
@@ -74,6 +79,7 @@ impl Display for AgentRunning {
             "ssh-agent running with pid {} on {}",
             self.pid, self.socket
         )?;
+        write!(f, "\nuserauth: {}", self.userauth)?;
         if let Some(DestinationConstraints {
             allowed_hosts,
             allowed_namespaces,
@@ -166,6 +172,15 @@ struct ServingArgs {
     /// and never forward it over SSH or relay it beyond that boundary.
     #[arg(long, value_name = "NAMESPACE", requires = "allowed_hosts_file")]
     allow_namespace: Vec<String>,
+
+    /// How to sign SSH logins.
+    ///
+    /// `typed` signs through Turnkey's SSH userauth activity: the enclave verifies
+    /// the server host key from `session-bind@openssh.com` (OpenSSH 8.9+), so
+    /// policies can allow only specific hosts. `typed` never falls back to raw
+    /// signing. `raw` signs the login bytes as a raw payload.
+    #[arg(long, value_enum, default_value_t = UserauthMode::Raw)]
+    userauth: UserauthMode,
 }
 
 #[derive(Debug, ClapArgs)]
