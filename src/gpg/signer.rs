@@ -62,7 +62,6 @@ impl SignDigest for TurnkeySigner<'_> {
                         payload: hex::encode(digest),
                         encoding: PayloadEncoding::Hexadecimal,
                         hash_function: HashFunction::NoOp,
-                        external_signer_pubkey: None,
                     },
                 )
                 .await

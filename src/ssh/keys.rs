@@ -67,8 +67,6 @@ pub async fn create_private_key(
                     private_key_tags: Vec::new(),
                     address_formats: Vec::new(),
                 }],
-                external_signer_pubkey: None,
-                external_signer_wrapping_key_id: None,
             },
         )
         .await
