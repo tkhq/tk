@@ -38,22 +38,19 @@ struct GithubHostKey {
 
 impl Display for GithubHostKeys {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut keys = self.host_keys.iter();
-        if let Some(GithubHostKey {
-            fingerprint,
-            algorithm,
-            public_key: _,
-        }) = keys.next()
+        for (
+            index,
+            GithubHostKey {
+                fingerprint,
+                algorithm,
+                public_key: _,
+            },
+        ) in self.host_keys.iter().enumerate()
         {
+            if index > 0 {
+                writeln!(f)?;
+            }
             write!(f, "{fingerprint}  {algorithm}")?;
-        }
-        for GithubHostKey {
-            fingerprint,
-            algorithm,
-            public_key: _,
-        } in keys
-        {
-            write!(f, "\n{fingerprint}  {algorithm}")?;
         }
         Ok(())
     }

@@ -599,32 +599,42 @@ struct RestrictedAgent {
     socket: PathBuf,
     served: AgentIdentity,
     allowed_host: PrivateKey,
+    keyring: Arc<StubKeyring>,
     server: JoinHandle<Result<()>>,
 }
 
 impl RestrictedAgent {
     fn start(namespaces: &[&str]) -> Self {
-        let directory = TempDir::new().expect("temporary directory should be created");
-        let socket = directory.path().join("agent.sock");
-        let served = identity(0x11, "turnkey:served");
         let allowed_host = host_key();
         let policy = DestinationPolicy::Restricted {
             hosts: vec![allowed_host.public_key().fingerprint(HashAlg::Sha256)],
             namespaces: namespaces.iter().map(ToString::to_string).collect(),
         };
-        let keyring: Arc<dyn Keyring> = Arc::new(StubKeyring {
+        Self::with_policy(allowed_host, policy, UserauthMode::Raw)
+    }
+
+    fn with_policy(
+        allowed_host: PrivateKey,
+        policy: DestinationPolicy,
+        userauth: UserauthMode,
+    ) -> Self {
+        let directory = TempDir::new().expect("temporary directory should be created");
+        let socket = directory.path().join("agent.sock");
+        let served = identity(0x11, "turnkey:served");
+        let keyring = Arc::new(StubKeyring {
             signatures: BTreeMap::from([(served.public_key, SIGNATURE)]),
             identities: vec![served.clone()],
             refused: Ed25519PublicKey::from_bytes([0xff; 32]),
             received: Mutex::default(),
         });
-        let server = spawn_agent(socket.clone(), keyring, policy, UserauthMode::Raw);
+        let server = spawn_agent(socket.clone(), keyring.clone(), policy, userauth);
 
         Self {
             _directory: directory,
             socket,
             served,
             allowed_host,
+            keyring,
             server,
         }
     }
@@ -651,6 +661,10 @@ impl RestrictedAgent {
     fn userauth_sign_frame(&self) -> Vec<u8> {
         let blob = self.served.public_key.blob();
         self.sign_frame(&userauth_data(&SESSION_ID, &blob, true, None))
+    }
+
+    fn received(&self) -> Vec<Received> {
+        mem::take(&mut *self.keyring.received.lock().unwrap())
     }
 }
 
@@ -1076,54 +1090,6 @@ fn bind_contents(key: &PrivateKey, session_id: &[u8], is_forwarding: bool) -> Ve
     frame[4 + 1 + 4 + b"session-bind@openssh.com".len()..].to_vec()
 }
 
-struct TypedAgent {
-    _directory: TempDir,
-    socket: PathBuf,
-    served: AgentIdentity,
-    keyring: Arc<StubKeyring>,
-    server: JoinHandle<Result<()>>,
-}
-
-impl TypedAgent {
-    fn start(policy: DestinationPolicy, userauth: UserauthMode) -> Self {
-        let directory = TempDir::new().expect("temporary directory should be created");
-        let socket = directory.path().join("agent.sock");
-        let served = identity(0x11, "turnkey:served");
-        let keyring = Arc::new(StubKeyring {
-            signatures: BTreeMap::from([(served.public_key, SIGNATURE)]),
-            identities: vec![served.clone()],
-            refused: Ed25519PublicKey::from_bytes([0xff; 32]),
-            received: Mutex::default(),
-        });
-        let server = spawn_agent(socket.clone(), keyring.clone(), policy, userauth);
-        Self {
-            _directory: directory,
-            socket,
-            served,
-            keyring,
-            server,
-        }
-    }
-
-    fn userauth(&self, session_id: &[u8]) -> Vec<u8> {
-        userauth_data(session_id, &self.served.public_key.blob(), true, None)
-    }
-
-    fn sign_frame(&self, data: &[u8]) -> Vec<u8> {
-        sign_request_frame(&self.served.public_key.blob(), data)
-    }
-
-    fn received(&self) -> Vec<Received> {
-        mem::take(&mut *self.keyring.received.lock().unwrap())
-    }
-}
-
-impl Drop for TypedAgent {
-    fn drop(&mut self) {
-        self.server.abort();
-    }
-}
-
 #[tokio::test]
 async fn typed_mode_signs_userauth_with_the_matching_session_bind() {
     let host = host_key();
@@ -1134,14 +1100,14 @@ async fn typed_mode_signs_userauth_with_the_matching_session_bind() {
             namespaces: Vec::new(),
         },
     ] {
-        let agent = TypedAgent::start(policy, UserauthMode::Typed);
+        let agent = RestrictedAgent::with_policy(host_key(), policy, UserauthMode::Typed);
         let mut stream = connect(&agent.socket).await.unwrap();
         assert_eq!(
             answer(&mut stream, &bind_frame(&host, false)).await,
             success_frame()
         );
 
-        let data = agent.userauth(&SESSION_ID);
+        let data = userauth_data(&SESSION_ID, &agent.served.public_key.blob(), true, None);
         assert_eq!(
             answer(&mut stream, &agent.sign_frame(&data)).await,
             expected_sign_response(&SIGNATURE)
@@ -1204,8 +1170,8 @@ async fn typed_mode_never_signs_userauth_without_a_matching_authentication_bind(
             namespaces: Vec::new(),
         },
     ] {
-        let agent = TypedAgent::start(policy, UserauthMode::Typed);
-        let sign = agent.sign_frame(&agent.userauth(&SESSION_ID));
+        let agent = RestrictedAgent::with_policy(host_key(), policy, UserauthMode::Typed);
+        let sign = agent.userauth_sign_frame();
 
         assert_eq!(answer_fresh(&agent.socket, &sign).await, failure_frame());
 
@@ -1255,7 +1221,11 @@ async fn typed_mode_never_signs_userauth_without_a_matching_authentication_bind(
 
 #[tokio::test]
 async fn typed_mode_signs_sshsig_raw_and_refuses_unrecognized_data() {
-    let agent = TypedAgent::start(DestinationPolicy::Unrestricted, UserauthMode::Typed);
+    let agent = RestrictedAgent::with_policy(
+        host_key(),
+        DestinationPolicy::Unrestricted,
+        UserauthMode::Typed,
+    );
     let sshsig = build_signed_data("git", b"payload");
 
     assert_eq!(
@@ -1272,7 +1242,8 @@ async fn typed_mode_signs_sshsig_raw_and_refuses_unrecognized_data() {
 #[tokio::test]
 async fn raw_mode_signs_userauth_as_a_raw_payload() {
     let host = host_key();
-    let agent = TypedAgent::start(
+    let agent = RestrictedAgent::with_policy(
+        host_key(),
         DestinationPolicy::Restricted {
             hosts: vec![host.public_key().fingerprint(HashAlg::Sha256)],
             namespaces: Vec::new(),
@@ -1284,7 +1255,7 @@ async fn raw_mode_signs_userauth_as_a_raw_payload() {
         answer(&mut stream, &bind_frame(&host, false)).await,
         success_frame()
     );
-    let data = agent.userauth(&SESSION_ID);
+    let data = userauth_data(&SESSION_ID, &agent.served.public_key.blob(), true, None);
 
     assert_eq!(
         answer(&mut stream, &agent.sign_frame(&data)).await,
@@ -1295,7 +1266,11 @@ async fn raw_mode_signs_userauth_as_a_raw_payload() {
 
 #[tokio::test]
 async fn typed_mode_refuses_host_key_types_turnkey_does_not_verify() {
-    let agent = TypedAgent::start(DestinationPolicy::Unrestricted, UserauthMode::Typed);
+    let agent = RestrictedAgent::with_policy(
+        host_key(),
+        DestinationPolicy::Unrestricted,
+        UserauthMode::Typed,
+    );
     let host = PrivateKey::random(
         &mut OsRng,
         Algorithm::Ecdsa {
@@ -1310,7 +1285,7 @@ async fn typed_mode_refuses_host_key_types_turnkey_does_not_verify() {
     );
 
     assert_eq!(
-        answer(&mut stream, &agent.sign_frame(&agent.userauth(&SESSION_ID))).await,
+        answer(&mut stream, &agent.userauth_sign_frame()).await,
         failure_frame()
     );
     assert_eq!(agent.received(), Vec::new());

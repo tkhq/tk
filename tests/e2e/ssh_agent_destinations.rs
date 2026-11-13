@@ -512,21 +512,16 @@ fn typed_agent_signs_logins_only_to_hosts_the_policy_lists() {
     );
 
     let listed = run.ok(run.admin().args(["activity", "list", "--limit", "20"]));
-    let statuses = listed["data"]["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|item| item["type"] == "ACTIVITY_TYPE_SIGN_SSH_USERAUTH")
-        .map(|item| item["status"].as_str().unwrap().to_string())
-        .collect::<Vec<_>>();
+    let items = listed["data"]["items"].as_array().unwrap();
     assert!(
-        statuses.contains(&"ACTIVITY_STATUS_COMPLETED".to_string()),
+        items
+            .iter()
+            .any(|item| item["type"] == "ACTIVITY_TYPE_SIGN_SSH_USERAUTH"
+                && item["status"] == "ACTIVITY_STATUS_COMPLETED"),
         "{listed}"
     );
     assert!(
-        listed["data"]["items"]
-            .as_array()
-            .unwrap()
+        items
             .iter()
             .all(|item| item["type"] != "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2"),
         "typed mode signed a raw payload: {listed}"
