@@ -248,6 +248,7 @@ fn agent_serves_every_registered_key_and_reports_its_lifecycle() {
             "pid": agent.started["pid"],
             "socket": agent.started["socket"],
             "socketMode": "600",
+            "userauth": "raw",
             "keys": expected_fingerprints,
         })
     );
@@ -338,6 +339,7 @@ echo passphrase
             "pid": beside.started["pid"],
             "socket": beside.started["socket"],
             "socketMode": "600",
+            "userauth": "raw",
             "keys": expected_fingerprints,
         })
     );
@@ -360,6 +362,7 @@ echo passphrase
             "pid": explicit.started["pid"],
             "socket": explicit_socket.display().to_string(),
             "socketMode": "600",
+            "userauth": "raw",
             "keys": expected_fingerprints,
         })
     );
@@ -372,6 +375,7 @@ echo passphrase
             "pid": explicit.started["pid"],
             "socket": explicit.started["socket"],
             "socketMode": "600",
+            "userauth": "raw",
             "keys": expected_fingerprints,
         })
     );
@@ -678,6 +682,7 @@ fn using_ssh_register_serve_sign() {
             "pid": agent.started["pid"],
             "socket": agent.started["socket"],
             "socketMode": "660",
+            "userauth": "raw",
             "keys": agent.fingerprints(),
         })
     );

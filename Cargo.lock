@@ -2822,8 +2822,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "turnkey_api_key_stamper"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a19161c1a3a53621b52afc0b73fbcde592d3c7852cc094b49b6b87e9c7235d3b"
+source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Fsign-ssh-userauth-0.16#decd9b64630773b60d37a5956b4684563cf38d1b"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -2838,8 +2837,7 @@ dependencies = [
 [[package]]
 name = "turnkey_client"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ac978b6ea74d22a610463302edfd082eac5b0812fcc753e7c71685116347291"
+source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Fsign-ssh-userauth-0.16#decd9b64630773b60d37a5956b4684563cf38d1b"
 dependencies = [
  "chrono",
  "hex",
@@ -2859,8 +2857,7 @@ dependencies = [
 [[package]]
 name = "turnkey_enclave_encrypt"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8d699c7cbe677b4f7a055dafb12d2aec9746bdcd10e4dcd8e020b1c1d33a7cb"
+source = "git+https://github.com/tkhq/rust-sdk?branch=zeke%2Fsign-ssh-userauth-0.16#decd9b64630773b60d37a5956b4684563cf38d1b"
 dependencies = [
  "bs58",
  "hex",

@@ -181,6 +181,7 @@ Subcommands:
 - [`tk ssh public-key`](#tk-ssh-public-key): Print a registered SSH public key
 - [`tk ssh git-sign`](#tk-ssh-git-sign): Sign a payload using the Git SSH signer interface
 - [`tk ssh agent`](#tk-ssh-agent): Manage a background SSH agent over a Unix socket
+- [`tk ssh github-host-keys`](#tk-ssh-github-host-keys): Print GitHub's SSH host key fingerprints, read from <https://api.github.com/meta> over TLS
 
 #### `tk ssh keys`
 
@@ -292,6 +293,7 @@ tk ssh agent start [OPTIONS]
 | `--key <KEY> (repeatable)` |  | Serve only this registered key |
 | `--allowed-hosts-file <PATH>` |  | Sign SSH connections only for host keys in this `known_hosts` file |
 | `--allow-namespace <NAMESPACE> (repeatable)` |  | Also sign `ssh-keygen -Y sign` requests in this `SSHSIG` namespace |
+| `--userauth <USERAUTH>` | default `raw`; one of `raw`, `typed` | How to sign SSH logins |
 | `--socket <PATH>` |  | Unix socket path for SSH agent connections |
 | `--pid-file <PATH>` |  | PID file of the background SSH agent; defaults to `SOCKET.pid` when `--socket` is given |
 | `--socket-mode <SOCKET_MODE>` | default `600` | Octal permissions for the socket |
@@ -321,6 +323,14 @@ tk ssh agent status [OPTIONS]
 |---|---|---|
 | `--socket <PATH>` |  | Unix socket path for SSH agent connections |
 | `--pid-file <PATH>` |  | PID file of the background SSH agent; defaults to `SOCKET.pid` when `--socket` is given |
+
+#### `tk ssh github-host-keys`
+
+Print GitHub's SSH host key fingerprints, read from <https://api.github.com/meta> over TLS
+
+```
+tk ssh github-host-keys [OPTIONS]
+```
 
 ### `tk request`
 

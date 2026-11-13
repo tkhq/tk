@@ -1,4 +1,4 @@
-//! Ed25519 signing through Turnkey's raw-payload activity.
+//! Ed25519 signing through Turnkey's raw-payload and SSH userauth activities.
 
 use std::time::Duration;
 
@@ -8,7 +8,8 @@ use turnkey_api_key_stamper::TurnkeyP256ApiKey;
 use turnkey_client::{
     ActivityResult, TurnkeyClient, TurnkeyClientError,
     generated::{
-        GetActivityRequest, SignRawPayloadIntentV2, SignRawPayloadResult,
+        GetActivityRequest, SignRawPayloadIntentV2, SignRawPayloadResult, SignSshUserauthIntent,
+        SignSshUserauthResult,
         immutable::common::v1::{HashFunction, PayloadEncoding},
     },
 };
@@ -51,6 +52,19 @@ fn transient(error: &TurnkeyClientError) -> bool {
     }
 }
 
+fn decode_hex<const N: usize>(value: &str, field: &str) -> Result<[u8; N]> {
+    let malformed = |reason: &str| {
+        ActivityError::new(
+            ActivityErrorKind::MalformedResponse,
+            format!("{field} is {reason}"),
+        )
+    };
+    let bytes = hex::decode(value).map_err(|error| malformed("not hex").with_source(error))?;
+    bytes
+        .try_into()
+        .map_err(|_wrong_length: Vec<u8>| malformed(&format!("not {N} bytes")).into())
+}
+
 pub struct TurnkeySigner<'a> {
     client: &'a TurnkeyClient<TurnkeyP256ApiKey>,
     organization_id: Uuid,
@@ -74,23 +88,73 @@ impl<'a> TurnkeySigner<'a> {
     }
 
     pub async fn sign_raw_payload(&self, payload: &[u8]) -> Result<[u8; 64]> {
+        let SignRawPayloadResult { r, s, v: _ } = self
+            .submit(
+                "sign the SSH payload",
+                |client, organization_id, timestamp| {
+                    client.sign_raw_payload(
+                        organization_id,
+                        timestamp,
+                        SignRawPayloadIntentV2 {
+                            sign_with: self.private_key_id.to_string(),
+                            payload: hex::encode(payload),
+                            encoding: PayloadEncoding::Hexadecimal,
+                            hash_function: HashFunction::NotApplicable,
+                        },
+                    )
+                },
+            )
+            .await?;
+        let mut signature = [0; 64];
+        signature[..32].copy_from_slice(&decode_hex::<32>(&r, "signRawPayloadResult.r")?);
+        signature[32..].copy_from_slice(&decode_hex::<32>(&s, "signRawPayloadResult.s")?);
+        Ok(signature)
+    }
+
+    pub async fn sign_ssh_userauth(
+        &self,
+        userauth_data: &[u8],
+        session_bind: &[u8],
+    ) -> Result<[u8; 64]> {
+        let SignSshUserauthResult { signature } = self
+            .submit(
+                "sign the SSH userauth request",
+                |client, organization_id, timestamp| {
+                    client.sign_ssh_userauth(
+                        organization_id,
+                        timestamp,
+                        SignSshUserauthIntent {
+                            sign_with: self.private_key_id.to_string(),
+                            userauth_data: hex::encode(userauth_data),
+                            session_bind: hex::encode(session_bind),
+                        },
+                    )
+                },
+            )
+            .await?;
+        decode_hex(&signature, "signSshUserauthResult.signature")
+    }
+
+    async fn submit<T, F, Fut>(&self, action: &'static str, request: F) -> Result<T>
+    where
+        F: Fn(&'a TurnkeyClient<TurnkeyP256ApiKey>, String, u128) -> Fut,
+        Fut: Future<Output = Result<ActivityResult<T>, TurnkeyClientError>>,
+    {
         let mut attempt = 1;
-        let activity = loop {
-            match self
-                .client
-                .sign_raw_payload(
-                    self.organization_id.to_string(),
-                    self.client.current_timestamp(),
-                    SignRawPayloadIntentV2 {
-                        sign_with: self.private_key_id.to_string(),
-                        payload: hex::encode(payload),
-                        encoding: PayloadEncoding::Hexadecimal,
-                        hash_function: HashFunction::NotApplicable,
-                    },
-                )
-                .await
+        loop {
+            match request(
+                self.client,
+                self.organization_id.to_string(),
+                self.client.current_timestamp(),
+            )
+            .await
             {
-                Ok(activity) => break activity,
+                Ok(ActivityResult {
+                    result,
+                    activity_id: _,
+                    status: _,
+                    app_proofs: _,
+                }) => return Ok(result),
                 Err(TurnkeyClientError::ActivityRequiresApproval(activity_id)) => {
                     return Err(self.approval_required_error(activity_id).await);
                 }
@@ -98,33 +162,9 @@ impl<'a> TurnkeySigner<'a> {
                     sleep(self.backoff * (1 << (attempt - 1))).await;
                     attempt += 1;
                 }
-                Err(error) => return Err(Error::new(error).context("sign the SSH payload")),
+                Err(error) => return Err(Error::new(error).context(action)),
             }
-        };
-        let ActivityResult {
-            result,
-            activity_id: _,
-            status: _,
-            app_proofs: _,
-        } = activity;
-        let SignRawPayloadResult { r, s, v: _ } = result;
-        let decode = |value: &str, field: &str| -> Result<[u8; 32]> {
-            let malformed = |reason: &str| {
-                ActivityError::new(
-                    ActivityErrorKind::MalformedResponse,
-                    format!("{field} is {reason}"),
-                )
-            };
-            let bytes =
-                hex::decode(value).map_err(|error| malformed("not hex").with_source(error))?;
-            bytes
-                .try_into()
-                .map_err(|_wrong_length: Vec<u8>| malformed("not 32 bytes").into())
-        };
-        let mut signature = [0; 64];
-        signature[..32].copy_from_slice(&decode(&r, "signRawPayloadResult.r")?);
-        signature[32..].copy_from_slice(&decode(&s, "signRawPayloadResult.s")?);
-        Ok(signature)
+        }
     }
 
     async fn approval_required_error(&self, activity_id: String) -> Error {

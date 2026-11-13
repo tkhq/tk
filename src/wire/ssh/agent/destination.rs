@@ -3,10 +3,13 @@
 use anyhow::{Context, Result, anyhow};
 use sha2::{Digest, Sha256};
 use signature::Verifier;
-use ssh_key::{Fingerprint, HashAlg, PublicKey, Signature, public::KeyData};
+use ssh_key::{Algorithm, EcdsaCurve, Fingerprint, HashAlg, PublicKey, Signature, public::KeyData};
 
-use super::super::protocol::{
-    AgentSignRequest, SessionBind, SignedData, classify_signed_data, parse_session_bind,
+use super::{
+    super::protocol::{
+        AgentSignRequest, SessionBind, SignedData, classify_signed_data, parse_session_bind,
+    },
+    SignInput, UserauthMode,
 };
 
 pub enum DestinationPolicy {
@@ -22,10 +25,15 @@ struct Destination {
     session_id: Vec<u8>,
 }
 
+struct AuthenticationBind {
+    destination: Destination,
+    contents: Vec<u8>,
+}
+
 #[derive(Default)]
 pub(super) struct BoundSessions {
     forwarding: Vec<Destination>,
-    authentication: Option<Destination>,
+    authentication: Option<Box<AuthenticationBind>>,
 }
 
 pub(super) enum Destinations {
@@ -42,16 +50,16 @@ impl Default for Destinations {
 // OpenSSH's AGENT_MAX_SESSION_IDS caps the session binds one connection records.
 const MAX_SESSION_BINDS: usize = 16;
 
-pub(super) struct AuthorizedData<'a>(&'a [u8]);
+pub(super) struct AuthorizedData<'a>(SignInput<'a>);
 
 impl<'a> AuthorizedData<'a> {
-    pub(super) fn bytes(&self) -> &'a [u8] {
+    pub(super) fn into_input(self) -> SignInput<'a> {
         self.0
     }
 }
 
 impl Destinations {
-    pub(super) fn bind(&mut self, contents: &[u8], hosts: &[Fingerprint]) -> Result<()> {
+    pub(super) fn bind(&mut self, contents: &[u8], hosts: Option<&[Fingerprint]>) -> Result<()> {
         // OpenSSH's process_ext_session_bind marks a bind attempted before parsing it, and
         // identity_permitted refuses destination-constrained keys after a failed attempt,
         // because ssh forwards the agent even when its forwarding bind fails.
@@ -59,7 +67,8 @@ impl Destinations {
             return Err(anyhow!("an earlier session-bind failed on this connection"));
         };
 
-        let recorded = parse_session_bind(contents).and_then(|bind| sessions.bind(bind, hosts));
+        let recorded =
+            parse_session_bind(contents).and_then(|bind| sessions.bind(bind, contents, hosts));
         if recorded.is_err() {
             *self = Self::FailedBind;
         }
@@ -68,7 +77,12 @@ impl Destinations {
 }
 
 impl BoundSessions {
-    fn bind(&mut self, bind: SessionBind<'_>, hosts: &[Fingerprint]) -> Result<()> {
+    fn bind(
+        &mut self,
+        bind: SessionBind<'_>,
+        contents: &[u8],
+        hosts: Option<&[Fingerprint]>,
+    ) -> Result<()> {
         let SessionBind {
             host_key_blob,
             session_id,
@@ -77,7 +91,9 @@ impl BoundSessions {
         } = bind;
 
         let fingerprint = Fingerprint::Sha256(Sha256::digest(host_key_blob).into());
-        if !hosts.contains(&fingerprint) {
+        if let Some(hosts) = hosts
+            && !hosts.contains(&fingerprint)
+        {
             return Err(anyhow!(
                 "host key {fingerprint} is not in the allowed hosts file"
             ));
@@ -99,7 +115,7 @@ impl BoundSessions {
         if self
             .forwarding
             .iter()
-            .chain(&self.authentication)
+            .chain(self.authentication.as_deref().map(|bind| &bind.destination))
             .any(|destination| destination.session_id == session_id)
         {
             return Err(anyhow!("the session is already bound on this connection"));
@@ -108,7 +124,10 @@ impl BoundSessions {
         if let Some(authentication) = &self.authentication {
             return Err(anyhow!(
                 "the connection is already bound for authentication to host key {}",
-                authentication.host_key.fingerprint(HashAlg::Sha256)
+                authentication
+                    .destination
+                    .host_key
+                    .fingerprint(HashAlg::Sha256)
             ));
         }
         if self.forwarding.len() >= MAX_SESSION_BINDS {
@@ -124,7 +143,10 @@ impl BoundSessions {
         if is_forwarding {
             self.forwarding.push(bound);
         } else {
-            self.authentication = Some(bound);
+            self.authentication = Some(Box::new(AuthenticationBind {
+                destination: bound,
+                contents: contents.to_vec(),
+            }));
         }
         Ok(())
     }
@@ -146,17 +168,23 @@ impl DestinationPolicy {
     pub(super) fn evaluate<'a>(
         &self,
         request: AgentSignRequest<'a>,
-        destinations: &Destinations,
+        destinations: &'a Destinations,
+        userauth: UserauthMode,
     ) -> Result<AuthorizedData<'a>> {
         let AgentSignRequest {
             public_key_blob: requested_key_blob,
             data,
         } = request;
-        let Self::Restricted { namespaces, .. } = self else {
-            return Ok(AuthorizedData(data));
+        let namespaces = match (self, userauth) {
+            (Self::Unrestricted, UserauthMode::Raw) => {
+                return Ok(AuthorizedData(SignInput::Raw(data)));
+            }
+            (Self::Unrestricted, UserauthMode::Typed) => None,
+            (Self::Restricted { namespaces, .. }, _) => Some(namespaces),
         };
-        let Destinations::Bound(sessions) = destinations else {
-            return Err(anyhow!("a session-bind failed on this connection"));
+        let sessions = match destinations {
+            Destinations::Bound(sessions) => Ok(sessions),
+            Destinations::FailedBind => Err(anyhow!("a session-bind failed on this connection")),
         };
 
         match classify_signed_data(data) {
@@ -165,6 +193,7 @@ impl DestinationPolicy {
                 public_key_blob,
                 server_host_key_blob,
             } => {
+                let sessions = sessions?;
                 if public_key_blob != requested_key_blob {
                     return Err(anyhow!(
                         "the signed userauth blob names a different public key"
@@ -177,29 +206,60 @@ impl DestinationPolicy {
                     ));
                 }
 
-                let destination = sessions
+                let bind = sessions
                     .authentication
-                    .as_ref()
-                    .filter(|destination| destination.session_id == session_id)
-                    .ok_or_else(|| anyhow!("no verified session-bind matches the signed data"))?;
+                    .as_deref()
+                    .filter(|bind| bind.destination.session_id == session_id)
+                    .ok_or_else(|| match userauth {
+                        UserauthMode::Raw => {
+                            anyhow!("no verified session-bind matches the signed data")
+                        }
+                        UserauthMode::Typed => anyhow!(
+                            "no session-bind@openssh.com matches the login; typed userauth needs an OpenSSH 8.9+ client"
+                        ),
+                    })?;
                 if let Some(blob) = server_host_key_blob {
                     let signed_host_key = PublicKey::from_bytes(blob)
                         .context("decode the hostbound userauth server host key")?;
-                    if *signed_host_key.key_data() != destination.host_key {
+                    if *signed_host_key.key_data() != bind.destination.host_key {
                         return Err(anyhow!(
                             "the hostbound userauth names host key {}, not the bound host key {}",
                             signed_host_key.fingerprint(HashAlg::Sha256),
-                            destination.host_key.fingerprint(HashAlg::Sha256)
+                            bind.destination.host_key.fingerprint(HashAlg::Sha256)
                         ));
                     }
                 }
-                Ok(AuthorizedData(data))
+                Ok(AuthorizedData(match userauth {
+                    UserauthMode::Raw => SignInput::Raw(data),
+                    UserauthMode::Typed => {
+                        let algorithm = bind.destination.host_key.algorithm();
+                        if !matches!(
+                            algorithm,
+                            Algorithm::Ed25519
+                                | Algorithm::Ecdsa {
+                                    curve: EcdsaCurve::NistP256
+                                }
+                        ) {
+                            return Err(anyhow!(
+                                "typed userauth verifies only ssh-ed25519 and ecdsa-sha2-nistp256 host keys, not {algorithm}"
+                            ));
+                        }
+                        SignInput::SshUserauth {
+                            userauth_data: data,
+                            session_bind: &bind.contents,
+                        }
+                    }
+                }))
             }
             SignedData::SshSig { namespace } => {
-                if let Some(bound) = sessions
-                    .forwarding
-                    .first()
-                    .or(sessions.authentication.as_ref())
+                let Some(namespaces) = namespaces else {
+                    return Ok(AuthorizedData(SignInput::Raw(data)));
+                };
+                let sessions = sessions?;
+                if let Some(bound) = sessions.forwarding.first().or(sessions
+                    .authentication
+                    .as_deref()
+                    .map(|bind| &bind.destination))
                 {
                     return Err(anyhow!(
                         "SSHSIG is refused on a connection bound to host key {}",
@@ -208,7 +268,7 @@ impl DestinationPolicy {
                 }
 
                 if namespaces.iter().any(|allowed| allowed == namespace) {
-                    Ok(AuthorizedData(data))
+                    Ok(AuthorizedData(SignInput::Raw(data)))
                 } else {
                     Err(anyhow!("SSHSIG namespace {namespace:?} is not allowed"))
                 }

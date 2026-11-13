@@ -144,6 +144,20 @@ tk --profile admin --message-format json policy create --name agents-sign-ssh --
   --condition "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && private_key.id == '${PRIVATE_KEY_ID}'"
 ```
 
+An SSH key can instead be limited to the servers it logs in to. The agent
+runs with `--userauth typed`, and Turnkey verifies the server host key from
+the client's `session-bind@openssh.com` before policy sees
+`activity.params.host_key_fingerprint`. Take the fingerprints from
+`tk ssh github-host-keys`. Do not also create `agents-sign-ssh` for the same
+key: a raw-payload grant can sign a login for any host.
+
+<!-- example: policy-patterns.agents-ssh-github -->
+```sh
+tk --profile admin --message-format json policy create --name agents-ssh-github --effect allow \
+  --consensus "approvers.any(user, user.id == '${AGENT_USER_ID}')" \
+  --condition "activity.type == 'ACTIVITY_TYPE_SIGN_SSH_USERAUTH' && private_key.id == '${PRIVATE_KEY_ID}' && activity.params.username == 'git' && activity.params.service == 'ssh-connection' && activity.params.host_key_fingerprint in ['SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU', 'SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM']"
+```
+
 <!-- shared: agents-sign-gpg -->
 <!-- example: policy-patterns.agents-sign-gpg -->
 ```sh

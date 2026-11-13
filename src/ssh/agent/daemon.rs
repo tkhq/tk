@@ -44,7 +44,8 @@ use crate::{
     wire::ssh::{
         Ed25519PublicKey,
         agent::{
-            self, AgentIdentity, Keyring, SignError, SignFuture, destination::DestinationPolicy,
+            self, AgentIdentity, Keyring, SignError, SignFuture, SignInput, UserauthMode,
+            destination::DestinationPolicy,
         },
         protocol,
     },
@@ -80,7 +81,11 @@ impl Keyring for RegistryKeyring {
             .collect()
     }
 
-    fn sign<'a>(&'a self, public_key: &'a Ed25519PublicKey, data: &'a [u8]) -> SignFuture<'a> {
+    fn sign<'a>(
+        &'a self,
+        public_key: &'a Ed25519PublicKey,
+        input: SignInput<'a>,
+    ) -> SignFuture<'a> {
         Box::pin(async move {
             let entry = self.entries.get(public_key).ok_or(SignError::UnknownKey)?;
             let organization_id = entry.organization_id;
@@ -95,14 +100,19 @@ impl Keyring for RegistryKeyring {
                         })?
                 }
             };
-            TurnkeySigner::new(
+            let signer = TurnkeySigner::new(
                 &client,
                 organization_id,
                 &entry.private_key_id,
                 self.backoff,
-            )
-            .sign_raw_payload(data)
-            .await
+            );
+            match input {
+                SignInput::Raw(data) => signer.sign_raw_payload(data).await,
+                SignInput::SshUserauth {
+                    userauth_data,
+                    session_bind,
+                } => signer.sign_ssh_userauth(userauth_data, session_bind).await,
+            }
             .map_err(SignError::Signer)
         })
     }
@@ -116,6 +126,8 @@ struct AgentMetadata {
     keys: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     constraints: Option<DestinationConstraints>,
+    #[serde(default)]
+    userauth: UserauthMode,
 }
 
 struct AgentPaths {
@@ -145,6 +157,7 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
         key,
         allowed_hosts_file,
         allow_namespace,
+        userauth,
     } = args.serving;
     if let Some(path) = allowed_hosts_file.as_deref() {
         let contents = allowed_hosts::read(path).await?;
@@ -169,6 +182,7 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
     for namespace in allow_namespace {
         command.arg(flag("--allow-namespace", namespace));
     }
+    command.arg(flag("--userauth", userauth.to_string()));
 
     let mut registry = LoadedRegistry::load().await?;
     select_keys(options, key, &mut registry)?;
@@ -218,12 +232,14 @@ pub async fn start(args: StartArgs, options: &AuthOptions) -> Result<Outcome> {
             socket_mode,
             keys,
             constraints,
+            userauth,
         }) => Ok(Outcome::AgentStarted(AgentRunning {
             pid,
             socket: socket.display().to_string(),
             socket_mode,
             keys,
             constraints,
+            userauth,
         })),
         Err(error) => {
             remove_pid_file_owned_by(&pid_file, child_pid).await;
@@ -265,6 +281,7 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
         socket_mode,
         keys,
         constraints,
+        userauth,
     } = require_metadata(&pid_file).await?;
     if !is_process_alive(pid) {
         return Err(anyhow!("ssh-agent pid {} is not running", pid));
@@ -282,6 +299,7 @@ pub async fn status(args: AgentPathArgs) -> Result<Outcome> {
         socket_mode,
         keys,
         constraints,
+        userauth,
     }))
 }
 
@@ -350,6 +368,7 @@ pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result
         constraints: restricted
             .as_ref()
             .map(|(_, constraints)| constraints.clone()),
+        userauth: args.serving.userauth,
     };
     write_pid_file(&args.pid_file, &metadata).await?;
 
@@ -361,7 +380,14 @@ pub async fn internal_run(args: InternalRunArgs, options: AuthOptions) -> Result
         },
     };
 
-    let result = agent::run(args.socket, args.socket_mode, keyring, Arc::new(policy)).await;
+    let result = agent::run(
+        args.socket,
+        args.socket_mode,
+        keyring,
+        Arc::new(policy),
+        args.serving.userauth,
+    )
+    .await;
     let _ = fs::remove_file(&args.pid_file).await;
     result.map(|()| Outcome::AgentDaemonExited(MachineOnly {}))
 }
@@ -659,7 +685,10 @@ mod tests {
 
     use serde_json::json;
     use tempfile::TempDir;
-    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{body_partial_json, path, path_regex},
+    };
 
     use super::*;
     use crate::{
@@ -678,8 +707,10 @@ mod tests {
         let server = MockServer::start().await;
         let last = responses.len() - 1;
         for (index, response) in responses.into_iter().enumerate() {
-            let mock =
-                Mock::given(path("/public/v1/submit/sign_raw_payload")).respond_with(response);
+            let mock = Mock::given(path_regex(
+                "^/public/v1/submit/sign_(raw_payload|ssh_userauth)$",
+            ))
+            .respond_with(response);
             if index < last {
                 mock.up_to_n_times(1).mount(&server).await;
             } else {
@@ -717,6 +748,7 @@ mod tests {
             socket_mode: "600".parse().unwrap(),
             keys: vec!["SHA256:example".to_string()],
             constraints: None,
+            userauth: UserauthMode::Raw,
         }
     }
 
@@ -734,7 +766,7 @@ mod tests {
             }))])
             .await;
         let SignError::Signer(error) = keyring
-            .sign(&public_key, b"payload")
+            .sign(&public_key, SignInput::Raw(b"payload"))
             .await
             .expect_err("consensus should fail the signature")
         else {
@@ -745,6 +777,51 @@ mod tests {
             error.to_string(),
             "signing requires additional approval (activity id: activity-1)"
         );
+    }
+
+    #[tokio::test]
+    async fn a_typed_userauth_signature_goes_through_the_ssh_userauth_activity() {
+        let (server, keyring, public_key) = keyring_against(vec![
+            ResponseTemplate::new(400).set_body_string("unmatched request"),
+        ])
+        .await;
+        Mock::given(path("/public/v1/submit/sign_ssh_userauth"))
+            .and(body_partial_json(json!({
+                "type": "ACTIVITY_TYPE_SIGN_SSH_USERAUTH",
+                "parameters": {
+                    "signWith": "private-key-id",
+                    "userauthData": "0a0b",
+                    "sessionBind": "0c0d",
+                }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "activity": {
+                    "type": "ACTIVITY_TYPE_SIGN_SSH_USERAUTH",
+                    "status": "ACTIVITY_STATUS_COMPLETED",
+                    "id": "activity-1",
+                    "organizationId": ORG,
+                    "fingerprint": "sha256:example",
+                    "result": {
+                        "signSshUserauthResult": { "signature": "44".repeat(64) }
+                    }
+                }
+            })))
+            .with_priority(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let signature = keyring
+            .sign(
+                &public_key,
+                SignInput::SshUserauth {
+                    userauth_data: &[0x0a, 0x0b],
+                    session_bind: &[0x0c, 0x0d],
+                },
+            )
+            .await
+            .expect("the typed request should sign");
+        assert_eq!(signature, [0x44; 64]);
     }
 
     #[tokio::test]
@@ -770,7 +847,7 @@ mod tests {
         ])
         .await;
         let signature = keyring
-            .sign(&public_key, b"payload")
+            .sign(&public_key, SignInput::Raw(b"payload"))
             .await
             .expect("the retried request should sign");
         let mut expected = [0x11; 64];
@@ -786,7 +863,7 @@ mod tests {
         ])
         .await;
         let SignError::Signer(error) = keyring
-            .sign(&public_key, b"payload")
+            .sign(&public_key, SignInput::Raw(b"payload"))
             .await
             .expect_err("a server error should fail the signature")
         else {

@@ -71,7 +71,8 @@ Inputs: the root profile (`admin`), the `agent` profile and `AGENT_USER_ID` from
    ```
 
    One policy per key. A key without a matching policy is still listed by
-   the agent, and every signature with it is refused.
+   the agent, and every signature with it is refused. To limit the key to
+   servers, use `agents-ssh-github` ([policy-patterns](../references/policy-patterns.md)) instead, never both.
 
 3. **Register the key and publish the public half.** The agent, in the home
    the daemon will use:
@@ -100,19 +101,17 @@ Inputs: the root profile (`admin`), the `agent` profile and `AGENT_USER_ID` from
    deployment passes `--key SSH_FINGERPRINT` so the daemon serves one key;
    custom socket and pid-file paths are in [ssh](../../docs/ssh-agent.md#agent).
 
-   Optionally, pin the destinations; no Turnkey policy can see the host a
-   challenge came from. The daemon then signs an SSH login only after the
-   client's `session-bind@openssh.com` names a host key in the file, and
-   git's `ssh-keygen -Y sign -n git` (`gpg.ssh.program=ssh-keygen`) only in
-   an `--allow-namespace` namespace on an unbound connection, a tk
-   extension. An OpenSSH 8.9+ `ssh -A` forward arrives bound and gets
-   neither; a relay (`ssh -R`, `socat`, a pre-8.9 forward) sends no bind, so
-   share an `--allow-namespace` socket only with the one boundary that signs
-   git (another OS user, or one container or VM through a mount) and never
-   forward or relay it beyond that boundary.
-   `gpg.ssh.program=tk` needs no socket ([signing-git-commits](../signing-git-commits/SKILL.md)); see [ssh](../../docs/ssh-agent.md#destination-constraints).
-   Check `ssh-keyscan` output against the host's published fingerprints, and
-   drop `--allow-namespace git` when git does not sign through the socket:
+   With `agents-ssh-github`, add `--userauth typed` ([ssh](../../docs/ssh-agent.md#typed-logins)):
+
+   <!-- example: ssh.agent-start-typed -->
+   ```sh
+   tk --profile agent --message-format json ssh agent start --userauth typed
+   ```
+
+   Optionally, pin destinations with `--allowed-hosts-file`; `-Y sign -n git`
+   then signs only in an `--allow-namespace` namespace on an unbound connection,
+   so never forward or relay that socket ([ssh](../../docs/ssh-agent.md#destination-constraints)).
+   Check `ssh-keyscan` output against the host's published fingerprints:
 
    <!-- example: ssh.constrain -->
    ```sh
@@ -170,6 +169,7 @@ Inputs: the root profile (`admin`), the `agent` profile and `AGENT_USER_ID` from
 | ssh.constrain-forwarded | ssh_agent_destinations::constrained_agent_refuses_a_forwarded_hop |
 | ssh.constrain-forwarded | ssh_agent_destinations::constrained_agent_signs_only_allowed_namespaces_and_reports_them |
 | ssh.register | ssh::ssh_key_register_list_print_and_remove_by_every_name |
+| ssh.agent-start-typed | ssh_agent_destinations::typed_agent_signs_logins_only_to_hosts_the_policy_lists |
 
 ## Troubleshooting
 
