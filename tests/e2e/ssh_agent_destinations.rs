@@ -1,7 +1,7 @@
 //! Live SSH agent destination constraints: allowed hosts, namespaces, and forwarding.
 
 use std::{
-    fs,
+    env, fs,
     net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
@@ -469,9 +469,7 @@ fn host_fingerprint(run: &Run, host_key_type: &str) -> String {
 #[test]
 #[ignore]
 fn typed_agent_signs_logins_only_to_hosts_the_policy_lists() {
-    // The target organization's environment must offer the SSH userauth activity and enable it for the
-    // organization, which CI's organization does not yet.
-    if std::env::var_os("TK_E2E_SSH_USERAUTH").is_none() {
+    if env::var_os("TK_E2E_SSH_USERAUTH").is_none() {
         eprintln!("skipping the typed SSH userauth test: TK_E2E_SSH_USERAUTH is not set");
         return;
     }

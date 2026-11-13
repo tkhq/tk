@@ -112,8 +112,9 @@ the agent sends Turnkey the login request together with the
 Turnkey checks the server's host key signature over the session ID, checks
 that the login is for the same session, and only then evaluates policy with
 `activity.params.username`, `service`, `host_key_fingerprint`,
-`host_key_algorithm`, and `host_bound`. Phase one verifies Ed25519 and ECDSA
-P-256 host keys.
+`host_key_algorithm`, and `host_bound`. Turnkey verifies Ed25519 and ECDSA
+P-256 host keys; a server that presents another host key type (such as RSA)
+cannot be used in typed mode.
 
 In typed mode the agent refuses a login that has no matching bind (clients
 older than OpenSSH 8.9, or a socket relay such as `socat`) and any login on a

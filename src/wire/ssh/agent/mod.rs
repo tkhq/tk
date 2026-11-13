@@ -53,7 +53,6 @@ pub enum SignError {
     Signer(#[from] anyhow::Error),
 }
 
-/// How the agent signs SSH login requests.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, ValueEnum)]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(rename_all = "lowercase")]
@@ -74,15 +73,10 @@ impl Display for UserauthMode {
     }
 }
 
-/// The bytes a [`Keyring`] signs, and how.
 pub enum SignInput<'a> {
-    /// Sign `data` as a raw payload.
     Raw(&'a [u8]),
-    /// Sign an SSH login request together with the session-bind that names its server.
     SshUserauth {
-        /// The userauth request bytes the SSH client asked the agent to sign.
         userauth_data: &'a [u8],
-        /// The `session-bind@openssh.com` contents for the same session.
         session_bind: &'a [u8],
     },
 }
@@ -278,36 +272,20 @@ async fn sign_response(
             return failure_frame();
         }
     };
-    let authorized = match policy.evaluate(request, destinations) {
-        Ok(authorized) => authorized,
+    let input = match policy.evaluate(request, destinations, userauth) {
+        Ok(authorized) => authorized.into_input(),
         Err(refusal) => {
-            debug!(fingerprint = %public_key.fingerprint(), %refusal, "refused an SSH agent sign request");
-            return failure_frame();
-        }
-    };
-
-    let data = authorized.bytes();
-    let input = match userauth {
-        UserauthMode::Raw => SignInput::Raw(data),
-        UserauthMode::Typed => match protocol::classify_signed_data(data) {
-            protocol::SignedData::Userauth { session_id, .. } => {
-                match destinations.authentication_bind(session_id) {
-                    Ok(session_bind) => SignInput::SshUserauth {
-                        userauth_data: data,
-                        session_bind,
-                    },
-                    Err(refusal) => {
-                        warn!(fingerprint = %public_key.fingerprint(), %refusal, "refused an SSH login signature");
-                        return failure_frame();
-                    }
+            let fingerprint = public_key.fingerprint();
+            match userauth {
+                UserauthMode::Raw => {
+                    debug!(%fingerprint, %refusal, "refused an SSH agent sign request");
+                }
+                UserauthMode::Typed => {
+                    warn!(%fingerprint, %refusal, "refused an SSH agent sign request");
                 }
             }
-            protocol::SignedData::SshSig { .. } => SignInput::Raw(data),
-            protocol::SignedData::Unrecognized => {
-                debug!(fingerprint = %public_key.fingerprint(), "refused data that is neither SSH userauth nor SSHSIG");
-                return failure_frame();
-            }
-        },
+            return failure_frame();
+        }
     };
 
     match keyring.sign(&public_key, input).await {

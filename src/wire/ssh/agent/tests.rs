@@ -1,18 +1,19 @@
 //! Tests for the SSH agent protocol and keyring-backed server.
 
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
     io::{self, Error, ErrorKind},
     mem,
     path::{Path, PathBuf},
     slice,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Once},
 };
 
 use anyhow::{Result, anyhow};
 use rand_core::OsRng;
 use signature::Signer;
-use ssh_key::{Algorithm, HashAlg, PrivateKey, Signature};
+use ssh_key::{Algorithm, EcdsaCurve, HashAlg, PrivateKey, Signature};
 use tempfile::TempDir;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -20,6 +21,7 @@ use tokio::{
     task::JoinHandle,
     time::{Duration, Instant, sleep},
 };
+use tracing::Level;
 
 use crate::wire::ssh::{
     Ed25519PublicKey,
@@ -1154,46 +1156,101 @@ async fn typed_mode_signs_userauth_with_the_matching_session_bind() {
     }
 }
 
+thread_local! {
+    static THREAD_LOG: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+struct ThreadLog;
+
+impl io::Write for ThreadLog {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        THREAD_LOG.with_borrow_mut(|log| log.extend_from_slice(buf));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn take_thread_warnings() -> Vec<String> {
+    static SUBSCRIBER: Once = Once::new();
+    SUBSCRIBER.call_once(|| {
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::fmt()
+                .with_max_level(Level::WARN)
+                .with_ansi(false)
+                .without_time()
+                .with_writer(|| ThreadLog)
+                .finish(),
+        )
+        .unwrap();
+    });
+    String::from_utf8(THREAD_LOG.take())
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
 #[tokio::test]
 async fn typed_mode_never_signs_userauth_without_a_matching_authentication_bind() {
-    let agent = TypedAgent::start(DestinationPolicy::Unrestricted, UserauthMode::Typed);
+    take_thread_warnings();
     let host = host_key();
-    let sign = agent.sign_frame(&agent.userauth(&SESSION_ID));
+    for policy in [
+        DestinationPolicy::Unrestricted,
+        DestinationPolicy::Restricted {
+            hosts: vec![host.public_key().fingerprint(HashAlg::Sha256)],
+            namespaces: Vec::new(),
+        },
+    ] {
+        let agent = TypedAgent::start(policy, UserauthMode::Typed);
+        let sign = agent.sign_frame(&agent.userauth(&SESSION_ID));
 
-    assert_eq!(answer_fresh(&agent.socket, &sign).await, failure_frame());
+        assert_eq!(answer_fresh(&agent.socket, &sign).await, failure_frame());
 
-    let mut other_session = connect(&agent.socket).await.unwrap();
-    assert_eq!(
-        answer(
-            &mut other_session,
-            &bind_session_frame(&host, &[0xbb; 32], false)
-        )
-        .await,
-        success_frame()
-    );
-    assert_eq!(answer(&mut other_session, &sign).await, failure_frame());
-
-    let mut forwarded = connect(&agent.socket).await.unwrap();
-    for (session_id, is_forwarding) in [([0xcc; 32], true), (SESSION_ID, false)] {
+        let mut other_session = connect(&agent.socket).await.unwrap();
         assert_eq!(
             answer(
-                &mut forwarded,
-                &bind_session_frame(&host, &session_id, is_forwarding)
+                &mut other_session,
+                &bind_session_frame(&host, &[0xbb; 32], false)
             )
             .await,
             success_frame()
         );
+        assert_eq!(answer(&mut other_session, &sign).await, failure_frame());
+
+        let mut forwarded = connect(&agent.socket).await.unwrap();
+        for (session_id, is_forwarding) in [([0xcc; 32], true), (SESSION_ID, false)] {
+            assert_eq!(
+                answer(
+                    &mut forwarded,
+                    &bind_session_frame(&host, &session_id, is_forwarding)
+                )
+                .await,
+                success_frame()
+            );
+        }
+        assert_eq!(answer(&mut forwarded, &sign).await, failure_frame());
+
+        let mut forged = connect(&agent.socket).await.unwrap();
+        assert_eq!(
+            answer(&mut forged, &forged_bind_frame(&host, &SESSION_ID, false)).await,
+            extension_failure_frame()
+        );
+        assert_eq!(answer(&mut forged, &sign).await, failure_frame());
+
+        assert_eq!(agent.received(), Vec::new());
+        let lines = take_thread_warnings();
+        assert_eq!(lines.len(), 4, "{lines:?}");
+        for line in &lines {
+            assert!(
+                line.trim_start().starts_with("WARN")
+                    && line.contains("refused an SSH agent sign request"),
+                "{line}"
+            );
+        }
     }
-    assert_eq!(answer(&mut forwarded, &sign).await, failure_frame());
-
-    let mut forged = connect(&agent.socket).await.unwrap();
-    assert_eq!(
-        answer(&mut forged, &forged_bind_frame(&host, &SESSION_ID, false)).await,
-        extension_failure_frame()
-    );
-    assert_eq!(answer(&mut forged, &sign).await, failure_frame());
-
-    assert_eq!(agent.received(), Vec::new());
 }
 
 #[tokio::test]
@@ -1234,4 +1291,27 @@ async fn raw_mode_signs_userauth_as_a_raw_payload() {
         expected_sign_response(&SIGNATURE)
     );
     assert_eq!(agent.received(), vec![Received::Raw(data)]);
+}
+
+#[tokio::test]
+async fn typed_mode_refuses_host_key_types_turnkey_does_not_verify() {
+    let agent = TypedAgent::start(DestinationPolicy::Unrestricted, UserauthMode::Typed);
+    let host = PrivateKey::random(
+        &mut OsRng,
+        Algorithm::Ecdsa {
+            curve: EcdsaCurve::NistP384,
+        },
+    )
+    .expect("a P-384 host key should generate");
+    let mut stream = connect(&agent.socket).await.unwrap();
+    assert_eq!(
+        answer(&mut stream, &bind_frame(&host, false)).await,
+        success_frame()
+    );
+
+    assert_eq!(
+        answer(&mut stream, &agent.sign_frame(&agent.userauth(&SESSION_ID))).await,
+        failure_frame()
+    );
+    assert_eq!(agent.received(), Vec::new());
 }

@@ -52,19 +52,17 @@ fn transient(error: &TurnkeyClientError) -> bool {
     }
 }
 
-fn malformed(field: &str, reason: &str) -> ActivityError {
-    ActivityError::new(
-        ActivityErrorKind::MalformedResponse,
-        format!("{field} is {reason}"),
-    )
-}
-
 fn decode_hex<const N: usize>(value: &str, field: &str) -> Result<[u8; N]> {
-    let bytes =
-        hex::decode(value).map_err(|error| malformed(field, "not hex").with_source(error))?;
+    let malformed = |reason: &str| {
+        ActivityError::new(
+            ActivityErrorKind::MalformedResponse,
+            format!("{field} is {reason}"),
+        )
+    };
+    let bytes = hex::decode(value).map_err(|error| malformed("not hex").with_source(error))?;
     bytes
         .try_into()
-        .map_err(|_wrong_length: Vec<u8>| malformed(field, &format!("not {N} bytes")).into())
+        .map_err(|_wrong_length: Vec<u8>| malformed(&format!("not {N} bytes")).into())
 }
 
 pub struct TurnkeySigner<'a> {

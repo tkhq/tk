@@ -96,6 +96,7 @@ pub async fn host_keys(client: &Client, url: &str) -> Result<GithubHostKeys> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{header, method, path},
@@ -113,7 +114,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/meta"))
             .and(header("accept", "application/vnd.github+json"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "ssh_key_fingerprints": {},
                 "ssh_keys": [ED25519, ECDSA],
             })))
