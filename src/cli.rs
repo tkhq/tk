@@ -31,6 +31,7 @@ use crate::{
     sessions::{self, SessionCommand},
     skills::{self, SkillsCommand},
     ssh::{self, SshCommand},
+    token::TokenArgs,
     update::{self, UpdateArgs},
     wallets::{PreparedWalletCommand, SignCommand, WalletCommand},
 };
@@ -243,6 +244,7 @@ async fn run_operation(
             return emit(&mut ctx, result);
         }
         Operation::Session { command } => sessions::run(command, options).await,
+        Operation::Token(token) => run_prepared(Ok(token), options, TokenArgs::run).await,
         Operation::Login(login) => auth::run_auth(AuthCommand::Login(login), options).await,
         Operation::Whoami => auth::run_auth(AuthCommand::Whoami, options).await,
         Operation::Auth { command } => auth::run_auth(command, options).await,
@@ -435,6 +437,10 @@ enum Operation {
     ///
     /// Direct updates require Cosign 2.4.2 or later on PATH.
     Update(UpdateArgs),
+    /// Get an access token for another service, such as an MCP server, as the profile's user.
+    ///
+    /// The token is printed; treat it as a secret until it expires.
+    Token(TokenArgs),
     /// Verify a saved profile with Turnkey and select it.
     Login(LoginArgs),
     /// Verify the selected identity with Turnkey.
@@ -480,6 +486,7 @@ impl Operation {
             Operation::Git { .. } => "git",
             Operation::Skills { .. } => "skills",
             Operation::Update(_) => "update",
+            Operation::Token(_) => "token",
             Operation::Login(_) => "login",
             Operation::Whoami => "whoami",
             Operation::Auth { .. } => "auth",

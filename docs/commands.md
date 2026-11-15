@@ -49,6 +49,7 @@ Subcommands:
 - [`tk git`](#tk-git): Serve Git hooks for commits signed with `tk`
 - [`tk skills`](#tk-skills): Serve the embedded turnkey-tk agent skills
 - [`tk update`](#tk-update): Replace this tk binary with a verified release
+- [`tk token`](#tk-token): Get an access token for another service, such as an MCP server, as the profile's user
 - [`tk login`](#tk-login): Verify a saved profile with Turnkey and select it
 - [`tk whoami`](#tk-whoami): Verify the selected identity with Turnkey
 - [`tk auth`](#tk-auth): Manage API authentication
@@ -1251,6 +1252,22 @@ tk update [OPTIONS]
 | Argument | Notes | Description |
 |---|---|---|
 | `--tag <TAG>` |  | Install this release tag instead of the latest release |
+
+### `tk token`
+
+Get an access token for another service, such as an MCP server, as the profile's user
+
+```
+tk token [OPTIONS] --resource <URL> --parent-organization-id <ORG_UUID>
+```
+
+| Argument | Notes | Description |
+|---|---|---|
+| `--resource <URL>` | required | Service the token is for, such as an MCP server's URL |
+| `--scope <SCOPE>` |  | Scopes to ask for, space separated |
+| `--parent-organization-id <ORG_UUID>` | required | Parent organization whose issuer mints the token |
+| `--identity-origin <IDENTITY_ORIGIN>` | default `https://id.turnkey.com`; env `TK_IDENTITY_ORIGIN` | Identity service origin |
+| `--bearer` |  | Ask for a bearer token instead of one bound to the profile's key |
 
 ### `tk login`
 

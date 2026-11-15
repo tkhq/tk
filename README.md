@@ -86,6 +86,7 @@ Running background agents:
 Foundations:
 
 - [Authentication](./docs/authentication.md): profiles and the environment bundle
+- [Access tokens](./docs/tokens.md): OAuth tokens for MCP servers and other services
 - [Resources](./docs/resources.md): users, policies, API keys, and wallets
 - [Activities](./docs/activities.md): inspect, approve, reject, and wait
 - [Signing](./docs/signing.md): payloads and serialized transactions
