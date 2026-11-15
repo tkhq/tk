@@ -2,6 +2,7 @@
 
 mod auth;
 mod cli;
+mod device;
 mod errors;
 mod git;
 mod gpg;

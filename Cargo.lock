@@ -2886,6 +2886,7 @@ dependencies = [
  "flate2",
  "hex",
  "libc",
+ "p256 0.13.2",
  "predicates",
  "rand_core 0.6.4",
  "reqwest",

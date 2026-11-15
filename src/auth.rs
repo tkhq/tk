@@ -33,6 +33,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::{
+    device,
     errors::{
         CredentialRejected, InvalidInput, Malformed, MissingCredentialFile, NoSelectedIdentity,
         OrganizationMismatch, ProfileNotFound, SavedProfiles, is_unauthorized,
@@ -40,13 +41,17 @@ use crate::{
     gpg::registry::{GpgKeyEntry, GpgKeyTable, KeyName, SelectError, SigningKeyName, StoredGpgKey},
     keygen::{GeneratedApiKey, ImportedApiKey, generate, import},
     operations::OperationOutput,
-    sessions::public_key::CompressedPublicKey,
+    sessions::{
+        duration::{ExpiresIn, human_seconds},
+        public_key::CompressedPublicKey,
+    },
     ssh::registry::{
         SelectError as SshSelectError, SshKeyEntry, SshKeyName, SshKeyTable, StoredSshKey,
     },
 };
 
 const DEFAULT_URL: &str = "https://api.turnkey.com";
+const DEFAULT_IDENTITY_ISSUER: &str = "https://id.turnkey.com/login";
 const DEFAULT_PROFILE_NAME: &str = "default";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const CLIENT_VERSION: &str = concat!("tk/", env!("CARGO_PKG_VERSION"));
@@ -96,13 +101,24 @@ pub enum AuthCommand {
 
 #[derive(Debug, Args)]
 pub struct LoginArgs {
-    /// Saved profile to verify and select.
+    /// Saved profile to verify and select; with `--device`, the profile to create or replace.
     #[arg(
         long = "profile-name",
         default_value = DEFAULT_PROFILE_NAME,
         value_parser = NonEmptyStringValueParser::new()
     )]
     name: String,
+    /// Sign in by approving a new key in the Turnkey dashboard with a passkey, instead of with a saved credential.
+    ///
+    /// The key is generated here and never leaves this machine. The profile is created, or its credential replaced, only after the approval.
+    #[arg(long)]
+    device: bool,
+    /// Identity service that runs the device login.
+    #[arg(long, env = "TK_IDENTITY_ISSUER_URL", default_value = DEFAULT_IDENTITY_ISSUER, value_parser = parse_url)]
+    issuer_url: ApiBaseUrl,
+    /// How long the device session lasts; the identity service's default when omitted.
+    #[arg(long, requires = "device")]
+    expires_in: Option<ExpiresIn>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -254,8 +270,7 @@ impl Display for SelectedIdentity {
 /// An HTTP(S) origin, optionally with a path prefix, that carries no
 /// credentials, query, or fragment. The text is kept exactly as supplied so
 /// persisted and reported values match the input.
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(try_from = "String")]
 pub struct ApiBaseUrl(String);
 
@@ -301,6 +316,10 @@ impl TryFrom<String> for ApiBaseUrl {
     }
 }
 
+fn parse_url(raw: &str) -> Result<ApiBaseUrl> {
+    ApiBaseUrl::try_from(raw.to_owned())
+}
+
 impl ApiBaseUrl {
     pub fn as_str(&self) -> &str {
         &self.0
@@ -339,6 +358,12 @@ impl ResolvedAuth {
             http: OnceLock::new(),
         }
     }
+}
+
+pub(crate) fn http_client() -> Result<Client> {
+    transport(Client::builder())
+        .build()
+        .context("could not initialize HTTP client")
 }
 
 fn transport(builder: ClientBuilder) -> ClientBuilder {
@@ -1128,13 +1153,21 @@ pub async fn run_auth(command: AuthCommand, options: &AuthOptions) -> Result<Ope
 }
 
 async fn login(args: LoginArgs, options: &AuthOptions) -> Result<OperationOutput> {
-    let LoginArgs { name } = args;
+    let LoginArgs {
+        name,
+        device,
+        issuer_url,
+        expires_in,
+    } = args;
     if options.profile.is_some() {
         return Err(InvalidInput(
             "login selects a profile with --profile-name; do not pass --profile or TK_PROFILE"
                 .into(),
         )
         .into());
+    }
+    if device {
+        return device_login(name, &issuer_url, expires_in, options).await;
     }
     let path = registry_path()?;
     let mut saved = load(&path).await?;
@@ -1188,6 +1221,91 @@ async fn login(args: LoginArgs, options: &AuthOptions) -> Result<OperationOutput
     let record = json!({"profile": name, "identity": identity});
     registry.active_profile = Some(name);
     save(&path, &registry).await?;
+    Ok(OperationOutput::result("auth.login", record).with_human(human))
+}
+
+async fn device_login(
+    name: String,
+    issuer: &ApiBaseUrl,
+    expires_in: Option<ExpiresIn>,
+    options: &AuthOptions,
+) -> Result<OperationOutput> {
+    let path = registry_path()?;
+    let api_base_url = match endpoint_override(options)? {
+        Some(requested) => requested,
+        None => load(&path)
+            .await?
+            .profiles
+            .remove(&name)
+            .map(|profile| profile.api_base_url)
+            .unwrap_or_default(),
+    };
+    let device::Approved {
+        key_file,
+        public_key,
+        organization_id,
+        user_id,
+        expires_in,
+    } = device::login(issuer, expires_in).await?;
+    let verified: Result<GetWhoamiResponse> = async {
+        if let Some(requested) = options.organization_id
+            && requested != organization_id
+        {
+            return Err(InvalidInput(format!(
+                "the device login was approved for organization {organization_id}, not {requested}"
+            ))
+            .into());
+        }
+        let client = build_turnkey_client(read_key(&key_file).await?, &api_base_url)?;
+        whoami(&client, organization_id).await.map_err(|error| {
+            rejected(
+                error,
+                organization_id,
+                public_key.clone(),
+                CredentialSource::Profile(name.clone()),
+            )
+        })
+    }
+    .await;
+    let identity = match verified {
+        Ok(identity) => identity,
+        Err(error) => {
+            let _ = fs::remove_file(&key_file).await;
+            return Err(error);
+        }
+    };
+    let previous = {
+        let _lock = registry_lock(&path).await?;
+        let mut registry = load(&path).await?;
+        let previous = registry.profiles.insert(
+            name.clone(),
+            Profile {
+                organization_id,
+                api_base_url,
+                api_key_file: key_file,
+            },
+        );
+        registry.active_profile = Some(name.clone());
+        save(&path, &registry).await?;
+        previous
+    };
+    let previous_key_removed = match previous {
+        Some(previous) => remove_generated_key(&previous.api_key_file).await,
+        None => false,
+    };
+    let expires_in = expires_in.as_secs();
+    let human = format!(
+        "logged in with profile {name} to organization {organization_id}; the session expires in {}",
+        human_seconds(expires_in)
+    );
+    let record = json!({
+        "profile": name,
+        "identity": identity,
+        "userId": user_id,
+        "publicKey": public_key,
+        "sessionExpiresInSeconds": expires_in,
+        "previousKeyRemoved": previous_key_removed,
+    });
     Ok(OperationOutput::result("auth.login", record).with_human(human))
 }
 

@@ -15,6 +15,17 @@ tk auth status
 tk whoami
 ```
 
+## Device login
+
+Sign in without copying a key into the dashboard: `tk` makes the key, and a person approves it there with a passkey.
+
+```bash
+# Print a code to enter at the dashboard's device page, then wait for approval.
+tk login --device --profile-name agent --expires-in 8h
+```
+
+The private key is generated on this machine and never leaves it. The command writes the code and the key's fingerprint to stderr; the person approving checks both on the review page. Once approved, the profile is created, or its credential replaced, and selected, and the replaced key file is deleted unless another profile uses it. A denied or expired request exits with `unauthorized` and saves nothing. `TK_IDENTITY_ISSUER_URL` or `--issuer-url` points at another identity service, such as `https://id.dev.turnkey.engineering/login`.
+
 Several profiles can share one machine:
 
 ```bash

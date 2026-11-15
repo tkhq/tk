@@ -99,6 +99,10 @@ pub struct CredentialRejected {
 pub struct NextStep(pub String);
 
 #[derive(Debug, thiserror::Error)]
+#[error("device login {0}")]
+pub struct DeviceLoginRefused(pub String);
+
+#[derive(Debug, thiserror::Error)]
 #[error("the selected identity ({identity}) belongs to organization {actual}, not {expected}")]
 pub struct OrganizationMismatch {
     pub expected: Uuid,
@@ -295,6 +299,9 @@ impl Classification {
 
 pub fn classify(error: &anyhow::Error) -> Classification {
     for cause in error.chain() {
+        if cause.downcast_ref::<DeviceLoginRefused>().is_some() {
+            return Classification::new(ErrorCode::Unauthorized, None);
+        }
         if cause.downcast_ref::<InvalidInput>().is_some()
             || cause.downcast_ref::<Malformed>().is_some()
             || cause.downcast_ref::<OrganizationMismatch>().is_some()

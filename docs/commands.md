@@ -1262,7 +1262,10 @@ tk login [OPTIONS]
 
 | Argument | Notes | Description |
 |---|---|---|
-| `--profile-name <NAME>` | default `default` | Saved profile to verify and select |
+| `--profile-name <NAME>` | default `default` | Saved profile to verify and select; with `--device`, the profile to create or replace |
+| `--device` |  | Sign in by approving a new key in the Turnkey dashboard with a passkey, instead of with a saved credential |
+| `--issuer-url <ISSUER_URL>` | default `https://id.turnkey.com/login`; env `TK_IDENTITY_ISSUER_URL` | Identity service that runs the device login |
+| `--expires-in <EXPIRES_IN>` |  | How long the device session lasts; the identity service's default when omitted |
 
 ### `tk whoami`
 
@@ -1297,7 +1300,10 @@ tk auth login [OPTIONS]
 
 | Argument | Notes | Description |
 |---|---|---|
-| `--profile-name <NAME>` | default `default` | Saved profile to verify and select |
+| `--profile-name <NAME>` | default `default` | Saved profile to verify and select; with `--device`, the profile to create or replace |
+| `--device` |  | Sign in by approving a new key in the Turnkey dashboard with a passkey, instead of with a saved credential |
+| `--issuer-url <ISSUER_URL>` | default `https://id.turnkey.com/login`; env `TK_IDENTITY_ISSUER_URL` | Identity service that runs the device login |
+| `--expires-in <EXPIRES_IN>` |  | How long the device session lasts; the identity service's default when omitted |
 
 #### `tk auth status`
 
