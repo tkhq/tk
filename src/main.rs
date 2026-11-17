@@ -3,7 +3,6 @@
 mod auth;
 mod cli;
 mod errors;
-mod git;
 mod gpg;
 mod keygen;
 mod logging;

@@ -85,29 +85,6 @@ the environment is enough. To sign from a process that holds no Turnkey
 credential, set `TK_GPG_AGENT_SOCK` as in
 [GPG agent](./gpg-signing.md#gpg-agent); Git needs no other change.
 
-## Co-author trailer
-
-Run this after either signing setup:
-
-```bash
-# Add `Co-authored-by: Turnkey <noreply@turnkey.com>` to every commit message.
-git config --global hook.turnkey-co-author.event commit-msg
-git config --global hook.turnkey-co-author.command "$(command -v tk) git co-author"
-
-# Inside a repository the agent commits to, check that its Git runs the hook.
-tk git co-author-check
-```
-
-The check exits 1 with `invalid_input` when the hook is not configured for
-`commit-msg` or when the Git on `PATH` is older than 2.54. That older Git,
-including the `/usr/bin/git` that ships with macOS, ignores the hook without
-an error, so put a newer Git first on the `PATH` of every process that
-commits, including an agent runtime that builds its own `PATH`. The hook
-does not remove a co-author trailer that the agent runtime writes itself;
-turn that off in the runtime, for example Claude Code's `Co-Authored-By`
-trailer with `"attribution": {"commit": "", "pr": ""}` in
-`~/.claude/settings.json`.
-
 ## Committer identity
 
 An agent that commits for a person signs as that person's name with
@@ -126,15 +103,13 @@ under that `HOME`, and give the agent's process the configuration instead:
 
 ```bash
 # Set these in the agent process's environment only.
-export GIT_CONFIG_COUNT=8
+export GIT_CONFIG_COUNT=6
 export GIT_CONFIG_KEY_0=gpg.format       GIT_CONFIG_VALUE_0=openpgp
 export GIT_CONFIG_KEY_1=gpg.program      GIT_CONFIG_VALUE_1="$HOME/.local/bin/tk-sign"
 export GIT_CONFIG_KEY_2=user.signingkey  GIT_CONFIG_VALUE_2="$FINGERPRINT"
 export GIT_CONFIG_KEY_3=commit.gpgsign   GIT_CONFIG_VALUE_3=true
 export GIT_CONFIG_KEY_4=user.name        GIT_CONFIG_VALUE_4='Jane Doe (agent)'
 export GIT_CONFIG_KEY_5=user.email       GIT_CONFIG_VALUE_5=jane+agent@example.com
-export GIT_CONFIG_KEY_6=hook.turnkey-co-author.event   GIT_CONFIG_VALUE_6=commit-msg
-export GIT_CONFIG_KEY_7=hook.turnkey-co-author.command GIT_CONFIG_VALUE_7="$(command -v tk) git co-author"
 # Verify against a GnuPG home of the agent's own, not the human's keyring.
 export GNUPGHOME="$HOME/.config/turnkey/tk/gnupg"
 mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"

@@ -20,11 +20,9 @@ use crate::{
         SavedProfileCommand,
     },
     errors::{CredentialRejected, NextStep, NoSelectedIdentity, ProfileNotFound},
-    git::{self, GitCommand},
     gpg::{self, GpgCommand},
     keygen::GenerateArgs,
     operations::{ActivityCommand, RequestArgs, run_activity},
-    outcome::Outcome,
     output::{ColorChoice, Ctx, ErrorMessage, MessageFormat, Shell, StdCtx},
     resources::{ApiKeyCommand, PolicyCommand, PreparedResource, UserCommand},
     secrets::{PreparedSecret, SecretCommand},
@@ -188,22 +186,6 @@ async fn run_operation(
             command: ApiKeyCommands::Generate(generate),
         } => return emit(&mut ctx, generate.run().await),
         Operation::Gpg { command } => return emit(&mut ctx, gpg::run(command, options).await),
-        Operation::Git {
-            command: GitCommand::CoAuthor { message_file },
-        } => {
-            return match git::co_author(message_file) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(error) => emit::<Outcome>(&mut ctx, Err(error)),
-            };
-        }
-        Operation::Git {
-            command: GitCommand::CoAuthorCheck,
-        } => {
-            return emit(
-                &mut ctx,
-                git::check_co_author().map(Outcome::CoAuthorHookReady),
-            );
-        }
         Operation::Skills { command } => return emit(&mut ctx, skills::run(command)),
         Operation::Update(update) => return emit(&mut ctx, update::run(update).await),
         Operation::Request(request) => {
@@ -421,11 +403,6 @@ enum Operation {
         #[command(subcommand)]
         command: GpgCommand,
     },
-    /// Serve Git hooks for commits signed with `tk`.
-    Git {
-        #[command(subcommand)]
-        command: GitCommand,
-    },
     /// Serve the embedded turnkey-tk agent skills.
     Skills {
         #[command(subcommand)]
@@ -477,7 +454,6 @@ impl Operation {
             Operation::Secret { .. } => "secret",
             Operation::Session { .. } => "session",
             Operation::Gpg { .. } => "gpg",
-            Operation::Git { .. } => "git",
             Operation::Skills { .. } => "skills",
             Operation::Update(_) => "update",
             Operation::Login(_) => "login",
