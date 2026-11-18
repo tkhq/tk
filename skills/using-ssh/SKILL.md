@@ -1,13 +1,13 @@
 ---
 name: using-ssh
-description: Give an agent SSH access (git over SSH, remote hosts) with a Turnkey-held Ed25519 key served by tk ssh agent, so no private key is on disk. Use to register a key, start the agent, or point git or ssh at the socket; not for commit signing (signing-git-commits).
+description: Give an agent SSH access (git over SSH, remote hosts) with an Ed25519 key in Turnkey's secure enclaves, served by tk ssh agent, so no private key is on disk. Use to register a key, start the agent, or point git or ssh at the socket; not for commit signing (signing-git-commits).
 ---
 
 # Using SSH
 
 Result: an agent that authenticates to git hosts and remote machines with an
-Ed25519 key that exists only inside Turnkey. `tk ssh agent` answers the
-OpenSSH agent protocol on a Unix socket and turns each challenge into a
+Ed25519 key that exists only inside Turnkey's secure enclaves. `tk ssh agent`
+answers the OpenSSH agent protocol on a Unix socket and turns each challenge into a
 policy-checked signing activity under the agent's own credential.
 
 Inputs: the root profile (`admin`), the `agent` profile and `AGENT_USER_ID` from
@@ -24,7 +24,7 @@ Inputs: the root profile (`admin`), the `agent` profile and `AGENT_USER_ID` from
 - Root creates the Turnkey private key once with `ssh keys create`, which
   also registers it in root's own registry. The agent host registers the
   same id with `ssh keys add`, which needs nothing but the id. The private
-  key never leaves Turnkey and there is nothing to back up on the host.
+  key stays in Turnkey's secure enclaves and there is nothing to back up on the host.
 - The signing policy is allow-always, scoped by `private_key.id`
   (`agents-sign-ssh` in [policy-patterns.md](../references/policy-patterns.md)).
   SSH waits for the signature synchronously, so an approval-gated policy

@@ -1,7 +1,8 @@
 # GPG signing
 
 Sign with an OpenPGP key backed by a Turnkey wallet account. The private key
-never leaves Turnkey.
+stays in Turnkey's secure enclaves. Use a dedicated wallet with no funds for
+Git signing keys.
 
 Follow [authentication](./authentication.md) first.
 

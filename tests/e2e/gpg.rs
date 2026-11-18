@@ -620,12 +620,11 @@ exec '{}' "$@"
     fs::write(&human_config, human_settings).unwrap();
     let shared_repo = run.home.path().join("shared-repo");
     fs::create_dir(&shared_repo).unwrap();
-    let co_author_hook = format!("{} git co-author", tk.display());
     let agent_environment = |cmd: &mut process::Command| {
         run.inherit_environment(run.cli(), cmd);
         cmd.env("HOME", run.home.path())
             .env("GNUPGHOME", &gnupghome)
-            .env("GIT_CONFIG_COUNT", "6")
+            .env("GIT_CONFIG_COUNT", "4")
             .env("GIT_CONFIG_KEY_0", "gpg.format")
             .env("GIT_CONFIG_VALUE_0", "openpgp")
             .env("GIT_CONFIG_KEY_1", "gpg.program")
@@ -633,11 +632,7 @@ exec '{}' "$@"
             .env("GIT_CONFIG_KEY_2", "user.signingkey")
             .env("GIT_CONFIG_VALUE_2", &fingerprint)
             .env("GIT_CONFIG_KEY_3", "commit.gpgsign")
-            .env("GIT_CONFIG_VALUE_3", "true")
-            .env("GIT_CONFIG_KEY_4", "hook.turnkey-co-author.event")
-            .env("GIT_CONFIG_VALUE_4", "commit-msg")
-            .env("GIT_CONFIG_KEY_5", "hook.turnkey-co-author.command")
-            .env("GIT_CONFIG_VALUE_5", &co_author_hook);
+            .env("GIT_CONFIG_VALUE_3", "true");
     };
     run.git_ok(&git, &shared_repo, agent_environment, &["init", "--quiet"]);
     run.git_ok(
@@ -657,77 +652,6 @@ exec '{}' "$@"
         &shared_repo,
         agent_environment,
         &["verify-commit", "HEAD"],
-    );
-    let hooks = run.git_ok(
-        &git,
-        &shared_repo,
-        agent_environment,
-        &["hook", "list", "commit-msg"],
-    );
-    assert_eq!(
-        String::from_utf8(hooks.stdout).unwrap(),
-        "turnkey-co-author\n"
-    );
-    let git_version = {
-        let output = run.git_ok(&git, &shared_repo, agent_environment, &["version"]);
-        let version = String::from_utf8(output.stdout).unwrap();
-        version
-            .trim()
-            .strip_prefix("git version ")
-            .unwrap()
-            .to_owned()
-    };
-    let co_author_check = |configure: &dyn Fn(&mut process::Command)| {
-        let mut cmd = process::Command::new(tk);
-        configure(&mut cmd);
-        let output = cmd
-            .current_dir(&shared_repo)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args(["--message-format=json", "git", "co-author-check"])
-            .output()
-            .unwrap();
-        let record: Value = serde_json::from_slice(&output.stdout).unwrap();
-        (output.status.code(), record)
-    };
-    assert_eq!(
-        co_author_check(&agent_environment),
-        (
-            Some(0),
-            json!({"reason": "co_author_hook_ready", "gitVersion": git_version})
-        )
-    );
-    let (exit, unhooked) = co_author_check(&|cmd| {
-        agent_environment(cmd);
-        cmd.env("GIT_CONFIG_COUNT", "4");
-    });
-    assert_eq!(exit, Some(1), "{unhooked}");
-    assert_eq!(unhooked["code"], "invalid_input", "{unhooked}");
-    let message = run.git_ok(
-        &git,
-        &shared_repo,
-        agent_environment,
-        &["log", "-1", "--format=%B"],
-    );
-    assert_eq!(
-        String::from_utf8(message.stdout).unwrap(),
-        r#"signed from the agent environment
-
-Co-authored-by: Turnkey <noreply@turnkey.com>
-
-"#
-    );
-    let abandoned = Run::git(
-        &git,
-        &shared_repo,
-        |cmd| {
-            agent_environment(cmd);
-            cmd.env("GIT_EDITOR", "true");
-        },
-        &["commit", "--allow-empty"],
-    );
-    assert!(
-        !abandoned.status.success(),
-        "an untouched commit template must still abort the commit"
     );
     let count = run.git_ok(
         &git,

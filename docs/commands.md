@@ -46,7 +46,6 @@ Subcommands:
 - [`tk secret`](#tk-secret): Manage encrypted secrets
 - [`tk session`](#tk-session): Rotate short-lived credentials for agent profiles
 - [`tk gpg`](#tk-gpg): Sign with PGP keys backed by wallet accounts
-- [`tk git`](#tk-git): Serve Git hooks for commits signed with `tk`
 - [`tk skills`](#tk-skills): Serve the embedded turnkey-tk agent skills
 - [`tk update`](#tk-update): Replace this tk binary with a verified release
 - [`tk login`](#tk-login): Verify a saved profile with Turnkey and select it
@@ -1160,39 +1159,6 @@ tk gpg agent serve [OPTIONS] --key <KEY>
 | `--key <KEY>` | required | Serve only this registered key |
 | `--socket <PATH>` |  | Unix socket path to bind for PGP signing requests |
 | `--socket-mode <SOCKET_MODE>` | default `600` | Octal permissions for the socket |
-
-### `tk git`
-
-Serve Git hooks for commits signed with `tk`
-
-```
-tk git [OPTIONS] <COMMAND>
-```
-
-Subcommands:
-
-- [`tk git co-author`](#tk-git-co-author): Add a `Co-authored-by: Turnkey` trailer to a commit message, as Git's `commit-msg` hook
-- [`tk git co-author-check`](#tk-git-co-author-check): Check that the Git on `PATH` runs the `turnkey-co-author` hook on `commit-msg` in this repository
-
-#### `tk git co-author`
-
-Add a `Co-authored-by: Turnkey` trailer to a commit message, as Git's `commit-msg` hook
-
-```
-tk git co-author [OPTIONS] <MESSAGE_FILE>
-```
-
-| Argument | Notes | Description |
-|---|---|---|
-| `<MESSAGE_FILE>` | required | Commit message file Git passes to the hook |
-
-#### `tk git co-author-check`
-
-Check that the Git on `PATH` runs the `turnkey-co-author` hook on `commit-msg` in this repository
-
-```
-tk git co-author-check [OPTIONS]
-```
 
 ### `tk skills`
 

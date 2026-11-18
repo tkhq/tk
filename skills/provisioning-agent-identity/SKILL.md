@@ -154,7 +154,7 @@ no minting row here: the one key never expires.
   exports and give its process a startup environment.
 - [signing-git-commits](../signing-git-commits/SKILL.md): grant this agent
   a scoped signing key for its commits.
-- [using-ssh](../using-ssh/SKILL.md): grant this agent a Turnkey-held SSH
-  key.
+- [using-ssh](../using-ssh/SKILL.md): grant this agent an SSH key in
+  Turnkey's secure enclaves.
 - [provisioning-session-agent](../provisioning-session-agent/SKILL.md): the
   expiring-key alternative when a permanent credential is not acceptable.
