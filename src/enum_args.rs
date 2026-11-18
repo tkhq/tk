@@ -3,7 +3,9 @@
 use std::sync::LazyLock;
 
 use clap::builder::{PossibleValuesParser, TypedValueParser};
-use turnkey_client::generated::immutable::common::v1::{AddressFormat, Curve};
+use turnkey_client::generated::immutable::common::v1::{
+    AddressFormat, Curve, HashFunction, PathFormat, PayloadEncoding, TransactionType,
+};
 
 /// An API enum with a fixed list of specified variants, excluding `Unspecified`.
 pub trait ApiEnum: Copy + Send + Sync + 'static {
@@ -110,6 +112,22 @@ api_enum!(
     ]
 );
 api_enum!(Curve, "CURVE_", [Secp256k1, Ed25519, P256]);
+api_enum!(PathFormat, "PATH_FORMAT_", [Bip32]);
+api_enum!(
+    PayloadEncoding,
+    "PAYLOAD_ENCODING_",
+    [Hexadecimal, TextUtf8, Eip712, Eip7702Authorization]
+);
+api_enum!(
+    HashFunction,
+    "HASH_FUNCTION_",
+    [NoOp, Sha256, Keccak256, NotApplicable]
+);
+api_enum!(
+    TransactionType,
+    "TRANSACTION_TYPE_",
+    [Ethereum, Solana, Tron, Bitcoin, Tempo]
+);
 
 /// Parses the kebab-case names of `T` and lists them in `--help`.
 pub fn parser<T: ApiEnum>() -> impl TypedValueParser<Value = T> {
@@ -132,6 +150,10 @@ mod tests {
     fn names_are_unique_and_resolve_without_the_prefix() {
         assert_unique_names::<AddressFormat>();
         assert_unique_names::<Curve>();
+        assert_unique_names::<PathFormat>();
+        assert_unique_names::<PayloadEncoding>();
+        assert_unique_names::<HashFunction>();
+        assert_unique_names::<TransactionType>();
         assert_eq!(
             AddressFormat::lookup("ton-v3r2"),
             Some(AddressFormat::TonV3r2)
