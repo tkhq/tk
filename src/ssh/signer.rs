@@ -86,6 +86,7 @@ impl<'a> TurnkeySigner<'a> {
                         payload: hex::encode(payload),
                         encoding: PayloadEncoding::Hexadecimal,
                         hash_function: HashFunction::NotApplicable,
+                        external_signer_pubkey: None,
                     },
                 )
                 .await
