@@ -1,0 +1,18 @@
+{
+  "name": "tkhq",
+  "owner": {
+    "name": "Turnkey",
+    "url": "https://www.turnkey.com"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for the Turnkey tk CLI."
+  },
+  "plugins": [
+    {
+      "name": "tk",
+      "source": "./plugin",
+      "description": "Loads the turnkey-tk skills from the installed tk binary, so the skills always match its commands.",
+      "category": "security"
+    }
+  ]
+}

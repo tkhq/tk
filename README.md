@@ -49,6 +49,13 @@ read the installed turnkey-tk/SKILL.md, and walk me through bootstrapping my
 Turnkey organization at https://app.turnkey.com.
 ```
 
+### Claude plugin
+
+```
+/plugin marketplace add tkhq/tk
+/plugin install tk@tkhq
+```
+
 ## Manual installation
 
 ```bash
