@@ -5,8 +5,8 @@ description: Configure git to sign commits and tags with a Turnkey-held key thro
 
 # Signing git commits
 
-Result: commits and tags signed by a key that never leaves Turnkey, which
-`git verify-commit` accepts on the machine that made them.
+Result: commits and tags signed by keys that stay inside Turnkey's secure
+enclaves, which `git verify-commit` accepts on the machine that made them.
 
 ## Reference
 
@@ -18,8 +18,9 @@ Result: commits and tags signed by a key that never leaves Turnkey, which
 
 ## Rules
 
-- The private key never leaves Turnkey. GPG signing uses a wallet account
-  under an empty wallet; SSH signing uses a Turnkey Ed25519 private key. Never
+- The private key stays in Turnkey's secure enclaves. GPG signing uses a
+  wallet account under a dedicated wallet with no funds for Git signing keys;
+  SSH signing uses a Turnkey Ed25519 private key. Never
   print key material; verify by exit code and `git verify-commit`.
 - Signing waits synchronously, so the policy is allow-always for the agent
   user, scoped to the exact resource: `wallet.id` for GPG, `private_key.id`

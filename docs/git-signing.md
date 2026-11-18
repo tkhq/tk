@@ -3,7 +3,10 @@
 `tk` signs Git commits and tags as Git's SSH signing program, backed by a
 Turnkey Ed25519 key, or as its GPG program, backed by a Turnkey OpenPGP key.
 
-Follow [authentication](./authentication.md) first.
+Follow [authentication](./authentication.md) first. If an earlier `tk` set up
+the co-author hook, remove it with
+`git config --global --unset hook.turnkey-co-author.event` and
+`git config --global --unset hook.turnkey-co-author.command`.
 
 ## SSH signing
 

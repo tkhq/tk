@@ -24,7 +24,7 @@ Inputs: the root profile (`admin`), the `agent` profile and `AGENT_USER_ID` from
 - Root creates the Turnkey private key once with `ssh keys create`, which
   also registers it in root's own registry. The agent host registers the
   same id with `ssh keys add`, which needs nothing but the id. The private
-  key never leaves Turnkey and there is nothing to back up on the host.
+  key stays in Turnkey's secure enclaves and there is nothing to back up on the host.
 - The signing policy is allow-always, scoped by `private_key.id`
   (`agents-sign-ssh` in [policy-patterns.md](../references/policy-patterns.md)).
   SSH waits for the signature synchronously, so an approval-gated policy
