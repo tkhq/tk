@@ -6,7 +6,10 @@ Turnkey Ed25519 key, or as its GPG program, backed by a Turnkey OpenPGP key.
 Follow [authentication](./authentication.md) first. If an earlier `tk` set up
 the co-author hook, remove it with
 `git config --global --unset hook.turnkey-co-author.event` and
-`git config --global --unset hook.turnkey-co-author.command`.
+`git config --global --unset hook.turnkey-co-author.command`. An agent
+environment that set the hook through `GIT_CONFIG_KEY_6` and
+`GIT_CONFIG_KEY_7` also needs those two entries deleted and
+`GIT_CONFIG_COUNT` lowered from 8 to 6.
 
 ## SSH signing
 
