@@ -29,6 +29,7 @@ mod gpg;
 mod gpg_agent;
 mod identity;
 mod policies;
+mod private_keys;
 mod request;
 mod secrets;
 mod sessions;

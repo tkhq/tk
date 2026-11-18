@@ -24,6 +24,7 @@ use crate::{
     keygen::GenerateArgs,
     operations::{ActivityCommand, RequestArgs, run_activity},
     output::{ColorChoice, Ctx, ErrorMessage, MessageFormat, Shell, StdCtx},
+    private_keys::{PreparedPrivateKeyCommand, PrivateKeyCommand},
     resources::{ApiKeyCommand, PolicyCommand, PreparedResource, UserCommand},
     secrets::{PreparedSecret, SecretCommand},
     sessions::{self, SessionCommand},
@@ -215,6 +216,9 @@ async fn run_operation(
         Operation::Sign { command } => {
             run_prepared(command.prepare(), options, PreparedWalletCommand::run).await
         }
+        Operation::PrivateKey { command } => {
+            run_prepared(command.prepare(), options, PreparedPrivateKeyCommand::run).await
+        }
         Operation::Secret { command } => {
             let result = run_prepared(
                 command.prepare(ctx.is_non_interactive()),
@@ -383,6 +387,11 @@ enum Operation {
         #[command(subcommand)]
         command: WalletCommand,
     },
+    /// Manage private keys.
+    PrivateKey {
+        #[command(subcommand)]
+        command: PrivateKeyCommand,
+    },
     /// Sign payloads and serialized transactions.
     Sign {
         #[command(subcommand)]
@@ -450,6 +459,7 @@ impl Operation {
             Operation::Policy { .. } => "policy",
             Operation::ApiKey { .. } => "api-key",
             Operation::Wallet { .. } => "wallet",
+            Operation::PrivateKey { .. } => "private-key",
             Operation::Sign { .. } => "sign",
             Operation::Secret { .. } => "secret",
             Operation::Session { .. } => "session",
