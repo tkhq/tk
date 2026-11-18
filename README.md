@@ -1,12 +1,12 @@
 <img width="1500" height="500" alt="tk" src="assets/banner.png" />
 
 <h4 align="center">
-    Git signing and SSH for agents, with keys that never leave Turnkey.
+    Git signing and SSH for agents, with keys in Turnkey's secure enclaves.
 </h4>
 
 `tk` lets an agent sign Git commits and open SSH connections without a private
-key on its machine. Turnkey holds the key, enforces expressive policies on
-every signature, and logs every approval.
+key on its machine. The key stays in Turnkey's secure enclaves. Turnkey
+enforces expressive policies on every signature and logs every approval.
 
 - **Git signing**: `tk` acts as Git's SSH or GPG signing program, so
   `git commit -S` and `git verify-commit` work unchanged.
@@ -17,8 +17,8 @@ every signature, and logs every approval.
 
 For an agent on your laptop, for example Claude Code or Codex in a terminal:
 
-- **No key for the agent to read**: the signing and SSH keys stay in Turnkey,
-  not in `~/.ssh` or a GnuPG keyring that the agent could read or copy.
+- **No key for the agent to read**: the signing and SSH keys stay in Turnkey's
+  secure enclaves, not in `~/.ssh` or a GnuPG keyring that the agent could read or copy.
 - **Its own identity**: the agent signs and connects with its own key, not
   yours, so its commits are attributable and its access can be revoked
   without touching your keys.

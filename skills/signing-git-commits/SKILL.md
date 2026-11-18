@@ -1,6 +1,6 @@
 ---
 name: signing-git-commits
-description: Configure git to sign commits and tags with a Turnkey-held key through tk, OpenPGP via tk gpg first or SSH signing as the alternative, and verify the signature locally. Use to set up or fix commit signing for an agent; not for SSH transport to a git remote (using-ssh).
+description: Configure git to sign commits and tags with a key in Turnkey's secure enclaves through tk, OpenPGP via tk gpg first or SSH signing as the alternative, and verify the signature locally. Use to set up or fix commit signing for an agent; not for SSH transport to a git remote (using-ssh).
 ---
 
 # Signing git commits

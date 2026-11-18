@@ -1,13 +1,13 @@
 ---
 name: using-ssh
-description: Give an agent SSH access (git over SSH, remote hosts) with a Turnkey-held Ed25519 key served by tk ssh agent, so no private key is on disk. Use to register a key, start the agent, or point git or ssh at the socket; not for commit signing (signing-git-commits).
+description: Give an agent SSH access (git over SSH, remote hosts) with an Ed25519 key in Turnkey's secure enclaves, served by tk ssh agent, so no private key is on disk. Use to register a key, start the agent, or point git or ssh at the socket; not for commit signing (signing-git-commits).
 ---
 
 # Using SSH
 
 Result: an agent that authenticates to git hosts and remote machines with an
-Ed25519 key that exists only inside Turnkey. `tk ssh agent` answers the
-OpenSSH agent protocol on a Unix socket and turns each challenge into a
+Ed25519 key that exists only inside Turnkey's secure enclaves. `tk ssh agent`
+answers the OpenSSH agent protocol on a Unix socket and turns each challenge into a
 policy-checked signing activity under the agent's own credential.
 
 Inputs: the root profile (`admin`), the `agent` profile and `AGENT_USER_ID` from
